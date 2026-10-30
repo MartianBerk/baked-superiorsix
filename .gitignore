@@ -1,2 +1,15 @@
 # Read-only legacy reference (MartianBerk/supersix) for migration; not part of this repo.
 reference/supersix/
+
+# Python / Poetry
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+.env
+.python-version

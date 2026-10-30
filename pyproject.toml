@@ -1,0 +1,35 @@
+[project]
+name = "baked-superiorsix"
+version = "0.1.0"
+description = "Superior Six game API (modern supersix)"
+authors = [
+    {name = "Martin Baker",email = "baker.bsc@gmail.com"}
+]
+readme = "README.md"
+requires-python = "^3.12"
+dependencies = [
+    "fastapi (>=0.162.0,<0.163.0)",
+    "uvicorn[standard] (>=0.54.0,<0.55.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry]
+packages = [{ include = "baked_superiorsix", from = "src" }]
+
+[project.scripts]
+baked-superiorsix = "baked_superiorsix.main:run"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.2.0,<10.0.0)",
+    "httpx (>=0.28.1,<0.29.0)"
+]
