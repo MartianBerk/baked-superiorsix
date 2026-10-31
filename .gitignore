@@ -1,18 +1,49 @@
+# Repo root: only bootstrap files + src/ and tests/ (add !/path/ here when adding CI, etc.)
+/*
+!/.github/
+!/.github/**
+!/src/
+!/src/**
+!/tests/
+!/tests/**
+
+!/.gitignore
+!/.env.example
+!/.python-version
+!/README.md
+!/pyproject.toml
+!/poetry.lock
+!/poetry.toml
+!/Dockerfile
+!/docker-compose.yml
+!/.dockerignore
+
 # Read-only legacy reference (MartianBerk/supersix) for migration; not part of this repo.
 reference/supersix/
-<<<<<<< HEAD
 
-# Python / Poetry
-.venv/
+# Python bytecode and packaging
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.eggs/
 dist/
 build/
+
+# Local env and secrets
+.venv/
+venv/
 .env
-.python-version
-=======
->>>>>>> origin/master
+
+# Local runtime data
+*.db
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
