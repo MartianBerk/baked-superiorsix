@@ -9,6 +9,11 @@ from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.core.security import JwtKeySet, principal_from_token
 from baked.superiorsix.domain.exceptions import AuthenticationError
 from baked.superiorsix.domain.models import AuthPrincipal
+from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
+from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
+from baked.superiorsix.services.ingest import MatchIngestService
+from baked.superiorsix.services.leagues import LeagueService
+from baked.superiorsix.services.matches import MatchService
 
 
 def get_oauth2_scheme(settings: Settings) -> OAuth2PasswordBearer:
@@ -49,6 +54,26 @@ async def get_current_principal(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+async def get_league_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LeagueService:
+    return LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
+
+
+async def get_match_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    leagues: Annotated[LeagueService, Depends(get_league_service)],
+) -> MatchService:
+    return MatchService(SqlAlchemyMatchRepository(session), leagues)
+
+
+async def get_match_ingest_service(
+    matches: Annotated[MatchService, Depends(get_match_service)],
+    leagues: Annotated[LeagueService, Depends(get_league_service)],
+) -> MatchIngestService:
+    return MatchIngestService(matches, leagues)
 
 
 def require_roles(*roles: str) -> Callable[..., AuthPrincipal]:
