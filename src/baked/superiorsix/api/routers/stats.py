@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from baked_superiorsix.noop import noop
+from baked.superiorsix.noop import noop
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 

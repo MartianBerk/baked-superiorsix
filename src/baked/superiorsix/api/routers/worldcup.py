@@ -4,8 +4,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from baked_superiorsix.api.deps import RequireQatarHero
-from baked_superiorsix.noop import noop
+from baked.superiorsix.api.deps import RequireQatarHero
+from baked.superiorsix.noop import noop
 
 router = APIRouter(tags=["worldcup"])
 

@@ -1,0 +1,22 @@
+services:
+  baked-superiorsix:
+    build: .
+    image: baked-superiorsix:dev
+    container_name: baked-superiorsix
+    ports:
+      - "8030:8000"
+    environment:
+      SUPERIORSIX_ENVIRONMENT: ${SUPERIORSIX_ENVIRONMENT:-development}
+      SUPERIORSIX_JWT_SECRET_KEY: ${SUPERIORSIX_JWT_SECRET_KEY:-insecure-development-secret-change-me}
+      SUPERIORSIX_JWT_ALGORITHM: ${SUPERIORSIX_JWT_ALGORITHM:-HS256}
+      SUPERIORSIX_JWT_KEY_ID: ${SUPERIORSIX_JWT_KEY_ID:-}
+      SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS: ${SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS:-[]}
+      SUPERIORSIX_CORS_ORIGINS: ${SUPERIORSIX_CORS_ORIGINS:-["http://localhost:3000"]}
+      SUPERIORSIX_DATABASE_URL: sqlite+aiosqlite:////data/baked_superiorsix.db
+      SUPERIORSIX_AUTH_TOKEN_URL: ${SUPERIORSIX_AUTH_TOKEN_URL:-http://127.0.0.1:8010/v1/auth/token}
+    volumes:
+      - baked-superiorsix-data:/data
+    restart: unless-stopped
+
+volumes:
+  baked-superiorsix-data:

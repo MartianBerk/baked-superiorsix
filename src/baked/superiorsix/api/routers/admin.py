@@ -4,8 +4,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from baked_superiorsix.api.deps import RequireAdmin
-from baked_superiorsix.noop import noop
+from baked.superiorsix.api.deps import RequireAdmin
+from baked.superiorsix.noop import noop
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

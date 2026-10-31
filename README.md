@@ -5,19 +5,35 @@ profiles in **baked-user**. This service owns the game itself.
 
 ## Status
 
-Scaffold: FastAPI + Poetry. Legacy supersix routes are mounted as **no-ops**
-(path prefixes replace the old subdomains). Role requirements are declared for
-baked-auth roles but not enforced yet.
+Scaffold: FastAPI + Poetry matching the baked-auth / baked-user layout. Legacy
+supersix routes are mounted as **no-ops** (path prefixes replace the old
+subdomains). Role-gated routes verify baked-auth JWTs and require the declared
+roles.
+
+## Requirements
+
+- Python 3.12.3
+- [Poetry](https://python-poetry.org/) 2.x
 
 ## Setup
 
 ```bash
+cp .env.example .env
 poetry install
-poetry run uvicorn baked_superiorsix.main:app --reload --port 8002
 ```
 
+Set `SUPERIORSIX_JWT_SECRET_KEY` to the same value as `AUTH_JWT_SECRET_KEY` (and
+keep previous secrets in `SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS` during rotation).
+
+## Run
+
+```bash
+poetry run baked-superiorsix
+```
+
+OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs).
+
 - Health: `GET /health`
-- Docs: http://127.0.0.1:8002/docs
 
 ## Tests
 
