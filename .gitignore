@@ -1,5 +1,6 @@
 # Read-only legacy reference (MartianBerk/supersix) for migration; not part of this repo.
 reference/supersix/
+<<<<<<< HEAD
 
 # Python / Poetry
 .venv/
@@ -13,3 +14,5 @@ dist/
 build/
 .env
 .python-version
+=======
+>>>>>>> origin/master
