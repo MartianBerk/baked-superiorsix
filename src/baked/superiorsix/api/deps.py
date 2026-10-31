@@ -11,7 +11,6 @@ from baked.superiorsix.domain.exceptions import AuthenticationError
 from baked.superiorsix.domain.models import AuthPrincipal
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
-from baked.superiorsix.services.ingest import MatchIngestService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
 
@@ -67,13 +66,6 @@ async def get_match_service(
     leagues: Annotated[LeagueService, Depends(get_league_service)],
 ) -> MatchService:
     return MatchService(SqlAlchemyMatchRepository(session), leagues)
-
-
-async def get_match_ingest_service(
-    matches: Annotated[MatchService, Depends(get_match_service)],
-    leagues: Annotated[LeagueService, Depends(get_league_service)],
-) -> MatchIngestService:
-    return MatchIngestService(matches, leagues)
 
 
 def require_roles(*roles: str) -> Callable[..., AuthPrincipal]:
