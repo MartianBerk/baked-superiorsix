@@ -16,3 +16,15 @@ class LeagueNotFoundError(SuperiorSixError):
 
 class MatchSelectionError(SuperiorSixError):
     """Raised when selecting a Super Six match slot fails."""
+
+
+class RoundNotFoundError(SuperiorSixError):
+    """Raised when no open round is available."""
+
+
+class RoundError(SuperiorSixError):
+    """Raised when opening or closing a round fails."""
+
+
+class PredictionError(SuperiorSixError):
+    """Raised when a prediction cannot be accepted."""

@@ -1,8 +1,16 @@
 from datetime import date, datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from baked.superiorsix.domain.models import League, Match, MatchDetail, TeamResult
+from baked.superiorsix.domain.models import (
+    League,
+    Match,
+    MatchDetail,
+    Prediction,
+    Round,
+    TeamResult,
+)
 
 
 class AvailableMatchResponse(BaseModel):
@@ -121,3 +129,59 @@ class MatchResponse(BaseModel):
 
 class MatchesResponse(BaseModel):
     matches: list[MatchResponse]
+
+
+class AddPredictionRequest(BaseModel):
+    game_id: int
+    prediction: str
+
+
+class GetPredictionResponse(BaseModel):
+    prediction: str | None
+
+
+class PredictionResponse(BaseModel):
+    id: int
+    round_id: int
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    dropped: bool = False
+
+    @classmethod
+    def from_domain(cls, prediction: Prediction) -> "PredictionResponse":
+        assert prediction.id is not None
+        return cls(
+            id=prediction.id,
+            round_id=prediction.round_id,
+            auth_id=prediction.auth_id,
+            match_id=prediction.match_id,
+            prediction=prediction.prediction,
+            dropped=prediction.dropped,
+        )
+
+
+class OpenRoundRequest(BaseModel):
+    start_date: date
+    buy_in_pence: int = Field(default=0, ge=0)
+
+
+class RoundResponse(BaseModel):
+    id: int
+    start_date: date
+    end_date: date | None = None
+    buy_in_pence: int
+
+    @classmethod
+    def from_domain(cls, round_: Round) -> "RoundResponse":
+        assert round_.id is not None
+        return cls(
+            id=round_.id,
+            start_date=round_.start_date,
+            end_date=round_.end_date,
+            buy_in_pence=round_.buy_in_pence,
+        )
+
+
+class CurrentRoundResponse(BaseModel):
+    current_round: RoundResponse | None

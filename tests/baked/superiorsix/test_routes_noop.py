@@ -22,26 +22,19 @@ PUBLIC_NOOP = [
     ("GET", "/worldcup/getpredictions"),
 ]
 
-# Implemented routes that must remain registered in OpenAPI.
 IMPLEMENTED_PUBLIC = [
     ("GET", "/game/livematches"),
     ("GET", "/game/matchdetail"),
 ]
 
 PROTECTED_NOOP = [
-    ("GET", "/user/getprediction", "PLAYER"),
-    ("POST", "/user/addprediction", "PLAYER"),
     ("POST", "/user/updatedetails", "DETAILS"),
     ("GET", "/admin/listplayers", "ADMIN"),
-    ("GET", "/admin/listrounds", "ADMIN"),
-    ("GET", "/admin/currentround", "ADMIN"),
     ("GET", "/admin/historicrounds", "ADMIN"),
     ("GET", "/admin/listpredictions", "ADMIN"),
     ("GET", "/admin/listpredictionsnew", "ADMIN"),
     ("POST", "/admin/addprediction", "ADMIN"),
     ("POST", "/admin/addplayer", "ADMIN"),
-    ("POST", "/admin/addround", "ADMIN"),
-    ("POST", "/admin/endround", "ADMIN"),
     ("GET", "/admin/getround", "ADMIN"),
     ("GET", "/admin/listmatchesnew", "ADMIN"),
     ("GET", "/admin/getmatch", "ADMIN"),
@@ -61,7 +54,13 @@ PROTECTED_NOOP = [
 ]
 
 PROTECTED_IMPLEMENTED = [
+    ("GET", "/user/getprediction", "PLAYER"),
+    ("POST", "/user/addprediction", "PLAYER"),
     ("GET", "/admin/listleagues", "ADMIN"),
+    ("GET", "/admin/listrounds", "ADMIN"),
+    ("GET", "/admin/currentround", "ADMIN"),
+    ("POST", "/admin/addround", "ADMIN"),
+    ("POST", "/admin/endround", "ADMIN"),
     ("GET", "/admin/listmatches", "ADMIN"),
     ("POST", "/admin/addmatch", "ADMIN"),
 ]
@@ -97,10 +96,7 @@ def test_protected_noop_routes_with_role(client: TestClient) -> None:
 
 def test_openapi_lists_expected_paths(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
-    for method, path in (
-        PUBLIC_NOOP
-        + IMPLEMENTED_PUBLIC
-        + [(m, p) for m, p, _ in PROTECTED_NOOP + PROTECTED_IMPLEMENTED]
-    ):
+    implemented = [(m, p) for m, p, _ in PROTECTED_NOOP + PROTECTED_IMPLEMENTED]
+    for method, path in PUBLIC_NOOP + IMPLEMENTED_PUBLIC + implemented:
         assert path in paths, f"missing {path}"
         assert method.lower() in paths[path], f"missing {method} {path}"

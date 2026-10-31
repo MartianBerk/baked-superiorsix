@@ -26,6 +26,13 @@ class TeamResult(StrEnum):
     DRAW = "DRAW"
 
 
+class PredictionChoice(StrEnum):
+    HOME = "home"
+    AWAY = "away"
+    DRAW = "draw"
+    VOID = "void"
+
+
 @dataclass(slots=True)
 class League:
     name: str
@@ -73,3 +80,21 @@ class MatchDetail:
     league_position: dict[str, str | None]
     team_performance: dict[str, list[TeamResult]]
     head_to_head: dict[str, list[TeamResult]]
+
+
+@dataclass(slots=True)
+class Round:
+    start_date: date
+    buy_in_pence: int
+    id: int | None = None
+    end_date: date | None = None
+
+
+@dataclass(slots=True)
+class Prediction:
+    round_id: int
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    id: int | None = None
+    dropped: bool = False
