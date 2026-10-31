@@ -5,10 +5,15 @@ profiles in **baked-user**. This service owns the game itself.
 
 ## Status
 
-Scaffold: FastAPI + Poetry matching the baked-auth / baked-user layout. Legacy
-supersix routes are mounted as **no-ops** (path prefixes replace the old
-subdomains). Role-gated routes verify baked-auth JWTs and require the declared
-roles.
+FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
+`matches` tables are live. Public game reads:
+
+- `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
+- `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions
+
+Fixture/score ingest is **process-driven** via `MatchIngestService` (not user
+REST). Admin can list leagues/matches and select slots with `POST /admin/addmatch`.
+Other legacy routes remain no-ops for now.
 
 ## Requirements
 
