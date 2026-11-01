@@ -7,7 +7,7 @@ from baked.superiorsix.repositories.predictions import PredictionRepository
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.rounds import RoundService
 
-_CUTOFF = timedelta(hours=1)
+_CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
 
 

@@ -11,7 +11,7 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
-  (JWT `PLAYER`, keyed by auth id; needs an open round + selected match; 1h cutoff)
+  (JWT `PLAYER`, keyed by auth id; needs an open round + selected match; 10m cutoff)
 
 Fixture/score ingest is **process-driven** via `MatchIngestService` (not user
 REST). Admin can open rounds, list leagues/matches, and select slots with
