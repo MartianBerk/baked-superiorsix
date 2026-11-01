@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12.3-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,13 +9,29 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir "poetry>=2.0,<3.0"
 
 COPY pyproject.toml poetry.lock poetry.toml README.md ./
-RUN poetry install --only main --no-root --no-interaction --no-ansi
+RUN --mount=type=secret,id=baked_auth_client_git_token \
+    set -eu; \
+    TOKEN="$(cat /run/secrets/baked_auth_client_git_token)"; \
+    printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > /root/.netrc; \
+    chmod 600 /root/.netrc; \
+    poetry install --only main --no-root --no-interaction --no-ansi; \
+    rm -f /root/.netrc
 
 COPY src ./src
-RUN poetry install --only main --no-interaction --no-ansi
+RUN --mount=type=secret,id=baked_auth_client_git_token \
+    set -eu; \
+    TOKEN="$(cat /run/secrets/baked_auth_client_git_token)"; \
+    printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$TOKEN" > /root/.netrc; \
+    chmod 600 /root/.netrc; \
+    poetry install --only main --no-interaction --no-ansi; \
+    rm -f /root/.netrc
 
 EXPOSE 8030
 

@@ -1,6 +1,9 @@
 services:
   baked-superiorsix:
-    build: .
+    build:
+      context: .
+      secrets:
+        - baked_auth_client_git_token
     image: baked-superiorsix:dev
     container_name: baked-superiorsix
     ports:
@@ -17,6 +20,10 @@ services:
     volumes:
       - baked-superiorsix-data:/data
     restart: unless-stopped
+
+secrets:
+  baked_auth_client_git_token:
+    environment: BAKED_AUTH_CLIENT_GIT_TOKEN
 
 volumes:
   baked-superiorsix-data:
