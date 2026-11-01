@@ -9,6 +9,14 @@ from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.core.security import JwtKeySet, principal_from_token
 from baked.superiorsix.domain.exceptions import AuthenticationError
 from baked.superiorsix.domain.models import AuthPrincipal
+from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
+from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
+from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
+from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
+from baked.superiorsix.services.leagues import LeagueService
+from baked.superiorsix.services.matches import MatchService
+from baked.superiorsix.services.predictions import PredictionService
+from baked.superiorsix.services.rounds import RoundService
 
 
 def get_oauth2_scheme(settings: Settings) -> OAuth2PasswordBearer:
@@ -49,6 +57,33 @@ async def get_current_principal(
             detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+async def get_league_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> LeagueService:
+    return LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
+
+
+async def get_match_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    leagues: Annotated[LeagueService, Depends(get_league_service)],
+) -> MatchService:
+    return MatchService(SqlAlchemyMatchRepository(session), leagues)
+
+
+async def get_round_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> RoundService:
+    return RoundService(SqlAlchemyRoundRepository(session))
+
+
+async def get_prediction_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    rounds: Annotated[RoundService, Depends(get_round_service)],
+    matches: Annotated[MatchService, Depends(get_match_service)],
+) -> PredictionService:
+    return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
 
 
 def require_roles(*roles: str) -> Callable[..., AuthPrincipal]:
