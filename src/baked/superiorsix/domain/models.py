@@ -4,15 +4,6 @@ from enum import StrEnum
 from uuid import UUID
 
 
-@dataclass(frozen=True, slots=True)
-class AuthPrincipal:
-    """Identity taken from a verified baked-auth access token."""
-
-    auth_id: UUID
-    username: str | None = None
-    roles: tuple[str, ...] = ()
-
-
 class MatchStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
     POSTPONED = "POSTPONED"

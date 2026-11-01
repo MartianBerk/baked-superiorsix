@@ -1,14 +1,11 @@
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer
+from baked.client.auth import AuthPrincipal
+from baked.client.auth.fastapi import get_current_principal, get_key_set, require_roles
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from baked.superiorsix.core.config import Settings, get_settings
-from baked.superiorsix.core.security import JwtKeySet, principal_from_token
-from baked.superiorsix.domain.exceptions import AuthenticationError
-from baked.superiorsix.domain.models import AuthPrincipal
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
@@ -18,24 +15,26 @@ from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
 
-
-def get_oauth2_scheme(settings: Settings) -> OAuth2PasswordBearer:
-    return OAuth2PasswordBearer(tokenUrl=settings.auth_token_url)
-
-
-async def get_bearer_token(
-    request: Request,
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> str:
-    return await get_oauth2_scheme(settings)(request)
+__all__ = [
+    "RequireAdmin",
+    "RequireDetails",
+    "RequireEuroWizard",
+    "RequirePlayer",
+    "RequireQatarHero",
+    "get_current_principal",
+    "get_db_session",
+    "get_key_set",
+    "get_league_service",
+    "get_match_service",
+    "get_prediction_service",
+    "get_round_service",
+    "get_session_factory",
+    "require_roles",
+]
 
 
 def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
     return request.app.state.session_factory
-
-
-def get_key_set(request: Request) -> JwtKeySet:
-    return request.app.state.key_set
 
 
 async def get_db_session(
@@ -43,20 +42,6 @@ async def get_db_session(
 ) -> AsyncIterator[AsyncSession]:
     async with session_factory() as session:
         yield session
-
-
-async def get_current_principal(
-    token: Annotated[str, Depends(get_bearer_token)],
-    key_set: Annotated[JwtKeySet, Depends(get_key_set)],
-) -> AuthPrincipal:
-    try:
-        return principal_from_token(token, key_set)
-    except AuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
 
 
 async def get_league_service(
@@ -84,23 +69,6 @@ async def get_prediction_service(
     matches: Annotated[MatchService, Depends(get_match_service)],
 ) -> PredictionService:
     return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
-
-
-def require_roles(*roles: str) -> Callable[..., AuthPrincipal]:
-    """Require any of the given baked-auth roles on the current principal."""
-
-    async def dependency(
-        principal: Annotated[AuthPrincipal, Depends(get_current_principal)],
-    ) -> AuthPrincipal:
-        if not set(roles).intersection(principal.roles):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions.",
-            )
-        return principal
-
-    dependency.__name__ = f"require_roles_{'_'.join(roles) or 'any'}"
-    return dependency
 
 
 # Convenience aliases matching legacy supersix permission names → auth roles.

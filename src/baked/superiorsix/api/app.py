@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from baked.client.auth import JwtKeySet, load_key_set
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -15,7 +16,6 @@ from baked.superiorsix.api.routers import (
     worldcup_router,
 )
 from baked.superiorsix.core.config import Settings, get_settings
-from baked.superiorsix.core.security import JwtKeySet, load_key_set
 from baked.superiorsix.db.session import create_engine, create_session_factory, init_db
 
 
