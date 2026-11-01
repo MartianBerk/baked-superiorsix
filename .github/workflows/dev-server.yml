@@ -16,6 +16,9 @@ jobs:
 
       - name: Rebuild and start baked-superiorsix
         env:
+          DOCKER_BUILDKIT: "1"
+          COMPOSE_DOCKER_CLI_BUILD: "1"
+          BAKED_AUTH_CLIENT_GIT_TOKEN: ${{ secrets.BAKED_AUTH_CLIENT_GIT_TOKEN }}
           SUPERIORSIX_JWT_SECRET_KEY: ${{ secrets.AUTH_JWT_SECRET_KEY }}
           SUPERIORSIX_ENVIRONMENT: development
         run: |

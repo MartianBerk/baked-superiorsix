@@ -2,10 +2,6 @@ class SuperiorSixError(Exception):
     """Base error for the Superior Six game service."""
 
 
-class AuthenticationError(SuperiorSixError):
-    """Raised when a baked-auth access token is invalid."""
-
-
 class MatchNotFoundError(SuperiorSixError):
     """Raised when a match cannot be found."""
 

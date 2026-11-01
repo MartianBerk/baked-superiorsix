@@ -13,6 +13,7 @@ dependencies = [
     "pyjwt[crypto]>=2.10.0",
     "sqlalchemy[asyncio]>=2.0.40",
     "aiosqlite>=0.21.0",
+    "baked-auth-client",
 ]
 
 [project.scripts]
@@ -33,6 +34,9 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 packages = [{ include = "baked", from = "src" }]
+
+[tool.poetry.dependencies]
+baked-auth-client = { git = "https://github.com/MartianBerk/baked-auth-client.git", branch = "cursor/auth-client-library-b71a" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

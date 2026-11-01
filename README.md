@@ -29,6 +29,12 @@ cp .env.example .env
 poetry install
 ```
 
+`poetry install` (and `docker compose build`) need read access to the private
+[`baked-auth-client`](https://github.com/MartianBerk/baked-auth-client) git
+dependency. For local compose builds, export `BAKED_AUTH_CLIENT_GIT_TOKEN` (a
+GitHub PAT with repo read access) or put it in `.env`. The deploy-dev workflow
+reads the same name from GitHub Actions secrets.
+
 Set `SUPERIORSIX_JWT_SECRET_KEY` to the same value as `AUTH_JWT_SECRET_KEY` (and
 keep previous secrets in `SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS` during rotation).
 
