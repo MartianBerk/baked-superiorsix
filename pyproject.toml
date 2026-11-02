@@ -13,11 +13,14 @@ dependencies = [
     "pyjwt[crypto]>=2.10.0",
     "sqlalchemy[asyncio]>=2.0.40",
     "aiosqlite>=0.21.0",
+    "httpx>=0.28.0",
     "baked-auth-client",
 ]
 
 [project.scripts]
 baked-superiorsix = "baked.superiorsix.__main__:main"
+baked-superiorsix-league-extractor = "baked.superiorsix.process.extractors.cli:league_main"
+baked-superiorsix-match-extractor = "baked.superiorsix.process.extractors.cli:match_main"
 
 [dependency-groups]
 dev = [

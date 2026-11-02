@@ -13,9 +13,33 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT `PLAYER`, keyed by auth id; needs an open round + selected match; 10m cutoff)
 
-Fixture/score ingest is **process-driven** via `MatchIngestService` (not user
-REST). Admin can open rounds, list leagues/matches, and select slots with
-`POST /admin/addmatch`. Other legacy routes remain no-ops for now.
+Fixture/score ingest is **process-driven** via `MatchIngestService` and CLI
+extractors (not user REST). Admin can open rounds, list leagues/matches, and
+select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
+now.
+
+### Ingest extractors (SS-7 / SS-10)
+
+| CLI | Purpose |
+|-----|---------|
+| `poetry run baked-superiorsix-league-extractor` | Upsert league catalog + current matchday |
+| `poetry run baked-superiorsix-match-extractor -l PL -w 10` | Upsert fixtures for **one** league code and **one** match week |
+
+Connector factory (by league code):
+
+| Codes | Provider |
+|-------|----------|
+| `EL1`, `EL2` | API-Football (API-Sports) |
+| everything else (e.g. `PL`, `ELC`) | football-data.org |
+
+Env vars (also accept `SUPERIORSIX_` prefix):
+
+- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token`
+- `API_FOOTBALL_KEY` — API-Sports `x-apisports-key`
+
+No Flashscore / Selenium. Live auto-score polling is out of scope for this
+slice; match extract may still apply scores when the fixture payload already
+includes them.
 
 ## Requirements
 
