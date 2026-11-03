@@ -36,7 +36,7 @@ Providers:
 | Match fixtures `EL1` / `EL2` | [Goal API](https://goal-api.com/documentation) (`/fixtures/date/:date`, paginated) |
 | Match fixtures everything else (e.g. `PL`, `ELC`) | football-data.org v4 date range |
 | `--live` for EL1/EL2 | Goal API `/fixtures/live` |
-| `--live` for PL/ELC | football-data.org, forced to today's UTC date |
+| `--live` for PL/ELC | football-data.org `status=LIVE` (`IN_PLAY` + `PAUSED`) |
 
 Goal API has no date-range filter on the date endpoint, so a `--from`/`--to` window
 issues one request per calendar day (with `limit`/`offset` pagination).

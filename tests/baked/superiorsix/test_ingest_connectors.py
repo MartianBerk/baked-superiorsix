@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
@@ -213,29 +212,40 @@ def test_football_data_collect_matches_uses_inclusive_date_range() -> None:
     assert matches[0].external_id == "fd-55"
 
 
-def test_football_data_live_uses_today_only() -> None:
+def test_football_data_live_filters_status_live() -> None:
     http = FakeHttp(
         {
             (
                 "https://api.football-data.org/v4/competitions/PL/matches",
-                (("dateFrom", "2026-11-03"), ("dateTo", "2026-11-04")),
-            ): {"matches": []}
+                (("status", "LIVE"),),
+            ): {
+                "matches": [
+                    {
+                        "id": 99,
+                        "utcDate": "2026-11-03T15:00:00Z",
+                        "status": "IN_PLAY",
+                        "homeTeam": {"name": "Arsenal"},
+                        "awayTeam": {"name": "Chelsea"},
+                        "score": {"fullTime": {"home": 1, "away": 0}},
+                    }
+                ]
+            }
         }
     )
     connector = FootballDataConnector("token", http=http)
-    with patch("baked.superiorsix.process.extractors.connectors.football_data.datetime") as mocked:
-        mocked.now.return_value = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
-        matches = connector.collect_matches(
-            "PL",
-            date_from=date(2026, 1, 1),
-            date_to=date(2026, 1, 31),
-            live=True,
-        )
-    assert matches == []
+    matches = connector.collect_matches(
+        "PL",
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 1, 31),
+        live=True,
+    )
+    assert len(matches) == 1
+    assert matches[0].external_id == "fd-99"
+    assert matches[0].status == MatchStatus.IN_PLAY
     assert http.calls == [
         (
             "https://api.football-data.org/v4/competitions/PL/matches",
-            {"dateFrom": "2026-11-03", "dateTo": "2026-11-04"},
+            {"status": "LIVE"},
         )
     ]
 

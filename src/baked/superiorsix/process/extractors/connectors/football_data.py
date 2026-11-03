@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
@@ -16,6 +16,8 @@ FOOTBALL_DATA_LEAGUES_BASE_URL = "https://api.football-data.org/v2"
 FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
 # Superior Six English league codes.
 LEAGUE_CATALOG_CODES: frozenset[str] = frozenset({"PL", "ELC", "EL1", "EL2"})
+# Pseudo-status filter: IN_PLAY + PAUSED (see football-data match docs).
+FOOTBALL_DATA_LIVE_STATUS = "LIVE"
 
 
 def _parse_season_start_date(start_raw: str) -> date:
@@ -119,23 +121,22 @@ class FootballDataConnector:
         live: bool = False,
     ) -> list[MatchPayload]:
         del season_start
-        if live:
-            # football-data has no live feed; approximate with today's UTC fixtures.
-            today = datetime.now(UTC).date()
-            date_from = date_to = today
-        if date_to < date_from:
-            raise ValueError("date_to must be on or after date_from.")
         if not self._token:
             raise RuntimeError("FOOTBALL_DATA_API_TOKEN is required for match ingest.")
-        # football-data v4 treats dateTo as exclusive (end of previous UTC day).
-        exclusive_to = date_to + timedelta(days=1)
+        if live:
+            params: dict[str, str] = {"status": FOOTBALL_DATA_LIVE_STATUS}
+        else:
+            if date_to < date_from:
+                raise ValueError("date_to must be on or after date_from.")
+            # football-data v4 treats dateTo as exclusive (end of previous UTC day).
+            params = {
+                "dateFrom": date_from.isoformat(),
+                "dateTo": (date_to + timedelta(days=1)).isoformat(),
+            }
         payload = self._http.get_json(
             f"{self._base_url}/competitions/{league_code.upper()}/matches",
             headers=self._headers(),
-            params={
-                "dateFrom": date_from.isoformat(),
-                "dateTo": exclusive_to.isoformat(),
-            },
+            params=params,
         )
         matches: list[MatchPayload] = []
         for item in payload.get("matches") or []:

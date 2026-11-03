@@ -122,7 +122,7 @@ def match_main(argv: list[str] | None = None) -> None:
             "EL1/EL2 use Goal API (one request per date, with pagination); "
             "other codes use football-data.org. "
             "Pass --live for in-play fixtures (Goal API /fixtures/live; "
-            "football-data approximates with today's date)."
+            "football-data status=LIVE)."
         ),
     )
     parser.add_argument(
@@ -150,7 +150,7 @@ def match_main(argv: list[str] | None = None) -> None:
         action="store_true",
         help=(
             "Pull live/in-play fixtures. Goal API uses /fixtures/live; "
-            "football-data.org uses today's UTC date only."
+            "football-data.org uses status=LIVE (IN_PLAY + PAUSED)."
         ),
     )
     parser.add_argument("-v", "--verbose", action="store_true")
