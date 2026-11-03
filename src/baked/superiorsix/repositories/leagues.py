@@ -41,7 +41,6 @@ class SqlAlchemyLeagueRepository:
             name=league.name,
             code=league.code,
             start_date=league.start_date,
-            current_matchday=league.current_matchday,
         )
         if league.id is not None:
             record.id = league.id
@@ -59,7 +58,6 @@ class SqlAlchemyLeagueRepository:
         record.name = league.name
         record.code = league.code
         record.start_date = league.start_date
-        record.current_matchday = league.current_matchday
         await self._session.commit()
         await self._session.refresh(record)
         return _to_domain(record)
@@ -71,5 +69,4 @@ def _to_domain(record: LeagueRecord) -> League:
         name=record.name,
         code=record.code,
         start_date=record.start_date,
-        current_matchday=record.current_matchday,
     )

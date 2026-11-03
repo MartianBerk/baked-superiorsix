@@ -30,14 +30,12 @@ class League:
     code: str
     start_date: date
     id: int | None = None
-    current_matchday: int | None = None
 
 
 @dataclass(slots=True)
 class Match:
     external_id: str
     league_id: int
-    matchday: int
     match_date: datetime
     status: str
     home_team: str

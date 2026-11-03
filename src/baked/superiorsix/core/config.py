@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 INSECURE_DEVELOPMENT_SECRET = "insecure-development-secret-change-me"
@@ -24,6 +24,21 @@ class Settings(BaseSettings):
     jwt_jwks_path: Path | None = None
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     auth_token_url: str = "http://127.0.0.1:8010/v1/auth/token"
+    # Ingest API keys — prefer unprefixed deploy names; SUPERIORSIX_* aliases also work.
+    football_data_api_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FOOTBALL_DATA_API_TOKEN",
+            "SUPERIORSIX_FOOTBALL_DATA_API_TOKEN",
+        ),
+    )
+    goal_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GOAL_API_KEY",
+            "SUPERIORSIX_GOAL_API_KEY",
+        ),
+    )
 
     @field_validator("environment")
     @classmethod

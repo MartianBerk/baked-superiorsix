@@ -13,9 +13,41 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT `PLAYER`, keyed by auth id; needs an open round + selected match; 10m cutoff)
 
-Fixture/score ingest is **process-driven** via `MatchIngestService` (not user
-REST). Admin can open rounds, list leagues/matches, and select slots with
-`POST /admin/addmatch`. Other legacy routes remain no-ops for now.
+Fixture/score ingest is **process-driven** via `MatchIngestService` and CLI
+extractors (not user REST). Admin can open rounds, list leagues/matches, and
+select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
+now.
+
+### Ingest extractors (SS-7 / SS-10)
+
+| CLI | Purpose |
+|-----|---------|
+| `poetry run baked-superiorsix-league-extractor` | Upsert league catalog (name / code / start date) |
+| `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
+| `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
+| `poetry run baked-superiorsix-db leagues` | List leagues in the DB (TSV) |
+| `poetry run baked-superiorsix-db matches [-l PL] [-d 14-03-2026] …` | List matches with optional filters (TSV) |
+
+Providers:
+
+| Concern | Provider |
+|---------|----------|
+| League catalog (`league-extractor`) | football-data.org **v2** (England area; includes EL1/EL2) |
+| Match fixtures `EL1` / `EL2` | [Goal API](https://goal-api.com/documentation) (`/fixtures/date/:date`, paginated) |
+| Match fixtures everything else (e.g. `PL`, `ELC`) | football-data.org v4 date range |
+| `--live` for EL1/EL2 | Goal API `/fixtures/live` |
+| `--live` for PL/ELC | football-data.org `status=LIVE` (`IN_PLAY` + `PAUSED`) |
+
+Goal API has no date-range filter on the date endpoint, so a `--from`/`--to` window
+issues one request per calendar day (with `limit`/`offset` pagination).
+
+Env vars (also accept `SUPERIORSIX_` prefix):
+
+- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token` (optional for league list; required for PL/ELC match extract)
+- `GOAL_API_KEY` — Goal API bearer token (EL1/EL2 match extract)
+
+No Flashscore / Selenium. Match extract may still apply scores when the fixture
+payload already includes them (`--live` is the near-real-time path).
 
 ## Requirements
 

@@ -74,7 +74,6 @@ class LeagueResponse(BaseModel):
     name: str
     code: str
     start_date: date
-    current_matchday: int | None = None
 
     @classmethod
     def from_domain(cls, league: League) -> "LeagueResponse":
@@ -84,7 +83,6 @@ class LeagueResponse(BaseModel):
             name=league.name,
             code=league.code,
             start_date=league.start_date,
-            current_matchday=league.current_matchday,
         )
 
 
@@ -96,7 +94,6 @@ class MatchResponse(BaseModel):
     id: int
     external_id: str
     league_id: int
-    matchday: int
     match_date: datetime
     match_minute: int | None = None
     status: str
@@ -114,7 +111,6 @@ class MatchResponse(BaseModel):
             id=match.id,
             external_id=match.external_id,
             league_id=match.league_id,
-            matchday=match.matchday,
             match_date=match.match_date,
             match_minute=match.match_minute,
             status=match.status,

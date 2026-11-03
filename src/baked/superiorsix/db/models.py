@@ -25,7 +25,6 @@ class LeagueRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     start_date: Mapped[date] = mapped_column(Date)
-    current_matchday: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class MatchRecord(Base):
@@ -35,7 +34,6 @@ class MatchRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     external_id: Mapped[str] = mapped_column(String(255), index=True)
     league_id: Mapped[int] = mapped_column(ForeignKey("leagues.id"), index=True)
-    matchday: Mapped[int] = mapped_column(Integer)
     match_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     match_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(32))

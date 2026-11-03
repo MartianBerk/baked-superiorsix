@@ -88,9 +88,9 @@ pyjwt = {version = ">=2.10.0", extras = ["crypto"]}
 
 [package.source]
 type = "git"
-url = "https://github.com/MartianBerk/baked-auth-client.git"
+url = "ssh://git@github.com/MartianBerk/baked-auth-client.git"
 reference = "cursor/auth-client-library-b71a"
-resolved_reference = "a44e2fb29df77b589ac248cf5ff204c89561e227"
+resolved_reference = "a6aa1e31083cadad6c176bc474269e2ae79577b2"
 
 [[package]]
 name = "certifi"
@@ -2903,4 +2903,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.3,<3.13"
-content-hash = "ffa73b6375535f135d37e5fdb17eba5cbdcd6a7a87e73db6a8ab2d656fe89d36"
+content-hash = "56d81ad700a0c72bcc9ab7f99ad3ab1fdcf7d2e3a14ff6c80a7b0e7709b16d55"

@@ -31,7 +31,6 @@ async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Ma
                 name="Premier League",
                 code="PL",
                 start_date=date(2025, 8, 1),
-                current_matchday=10,
             )
         )
         assert league.id is not None
@@ -50,7 +49,6 @@ async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Ma
                 Match(
                     external_id=external_id,
                     league_id=league.id,
-                    matchday=1,
                     match_date=_kickoff(when),
                     status=MatchStatus.FINISHED,
                     home_team=home,
@@ -65,7 +63,6 @@ async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Ma
             Match(
                 external_id="pl-ars-che-2026",
                 league_id=league.id,
-                matchday=10,
                 match_date=_kickoff(day),
                 status=MatchStatus.SCHEDULED,
                 home_team="Arsenal",
@@ -76,7 +73,6 @@ async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Ma
             Match(
                 external_id="pl-liv-mci-2026",
                 league_id=league.id,
-                matchday=10,
                 match_date=_kickoff(day, hour=17),
                 status=MatchStatus.SCHEDULED,
                 home_team="Liverpool",

@@ -148,7 +148,6 @@ class SqlAlchemyMatchRepository:
         record = MatchRecord(
             external_id=match.external_id,
             league_id=match.league_id,
-            matchday=match.matchday,
             match_date=match.match_date,
             match_minute=match.match_minute,
             status=match.status,
@@ -172,7 +171,6 @@ class SqlAlchemyMatchRepository:
             return await self.add(match)
         record.external_id = match.external_id
         record.league_id = match.league_id
-        record.matchday = match.matchday
         record.match_date = match.match_date
         record.match_minute = match.match_minute
         record.status = match.status
@@ -192,7 +190,6 @@ def _to_domain(record: MatchRecord) -> Match:
         id=record.id,
         external_id=record.external_id,
         league_id=record.league_id,
-        matchday=record.matchday,
         match_date=record.match_date,
         match_minute=record.match_minute,
         status=record.status,
