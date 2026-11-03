@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from baked.superiorsix.domain.models import Match, MatchStatus
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class MatchExtractor:
-    """Pull fixtures for exactly one league code and one match week."""
+    """Pull fixtures for exactly one league code over an inclusive date range."""
 
     def __init__(
         self,
@@ -21,24 +22,28 @@ class MatchExtractor:
         leagues: LeagueService,
         *,
         league_code: str,
-        match_week: int,
+        date_from: date,
+        date_to: date,
         football_data_token: str | None,
-        api_football_key: str | None,
+        goal_api_key: str | None,
+        live: bool = False,
         http: JsonHttpClient | None = None,
     ) -> None:
         code = league_code.strip().upper()
         if not code:
             raise ValueError("league_code is required.")
-        if match_week < 1:
-            raise ValueError("match_week must be >= 1.")
+        if date_to < date_from:
+            raise ValueError("date_to must be on or after date_from.")
         self._ingest = ingest
         self._leagues = leagues
         self._league_code = code
-        self._match_week = match_week
+        self._date_from = date_from
+        self._date_to = date_to
+        self._live = live
         self._connector = connector_for_league(
             code,
             football_data_token=football_data_token,
-            api_football_key=api_football_key,
+            goal_api_key=goal_api_key,
             http=http,
         )
 
@@ -49,17 +54,24 @@ class MatchExtractor:
 
         payloads = self._connector.collect_matches(
             self._league_code,
-            self._match_week,
+            date_from=self._date_from,
+            date_to=self._date_to,
             season_start=league.start_date,
+            live=self._live,
         )
         upserted: list[Match] = []
         for payload in payloads:
             match = await self._upsert(league.id, payload)
             upserted.append(match)
+            window = (
+                "live"
+                if self._live
+                else f"{self._date_from.isoformat()}..{self._date_to.isoformat()}"
+            )
             logger.info(
-                "match upserted league=%s week=%s %s vs %s status=%s",
+                "match upserted league=%s %s %s vs %s status=%s",
                 self._league_code,
-                self._match_week,
+                window,
                 match.home_team,
                 match.away_team,
                 match.status,
@@ -71,7 +83,6 @@ class MatchExtractor:
             Match(
                 external_id=payload.external_id,
                 league_id=league_id,
-                matchday=payload.matchday,
                 match_date=payload.match_date,
                 status=payload.status,
                 home_team=payload.home_team,

@@ -9,13 +9,11 @@ class LeaguePayload:
     name: str
     code: str
     start_date: date
-    current_matchday: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class MatchPayload:
     external_id: str
-    matchday: int
     match_date: datetime
     status: str
     home_team: str

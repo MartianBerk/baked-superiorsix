@@ -32,11 +32,11 @@ class Settings(BaseSettings):
             "SUPERIORSIX_FOOTBALL_DATA_API_TOKEN",
         ),
     )
-    api_football_key: SecretStr | None = Field(
+    goal_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
-            "API_FOOTBALL_KEY",
-            "SUPERIORSIX_API_FOOTBALL_KEY",
+            "GOAL_API_KEY",
+            "SUPERIORSIX_GOAL_API_KEY",
         ),
     )
 

@@ -21,6 +21,7 @@ dependencies = [
 baked-superiorsix = "baked.superiorsix.__main__:main"
 baked-superiorsix-league-extractor = "baked.superiorsix.process.extractors.cli:league_main"
 baked-superiorsix-match-extractor = "baked.superiorsix.process.extractors.cli:match_main"
+baked-superiorsix-db = "baked.superiorsix.cli.db_view:main"
 
 [dependency-groups]
 dev = [

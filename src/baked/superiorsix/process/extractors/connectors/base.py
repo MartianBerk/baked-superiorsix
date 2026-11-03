@@ -26,7 +26,9 @@ class LeagueMatchConnector(Protocol):
     def collect_matches(
         self,
         league_code: str,
-        match_week: int,
         *,
+        date_from: date,
+        date_to: date,
         season_start: date | None = None,
+        live: bool = False,
     ) -> list[MatchPayload]: ...

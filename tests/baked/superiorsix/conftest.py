@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -9,8 +11,13 @@ from baked.superiorsix.db.session import create_engine, create_session_factory
 
 
 @pytest.fixture
-def settings() -> Settings:
+def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    # Keep tests hermetic even if the local shell has invalid SUPERIORSIX_* values.
+    for key in list(os.environ):
+        if key.startswith("SUPERIORSIX_"):
+            monkeypatch.delenv(key, raising=False)
     return Settings(
+        _env_file=None,
         environment="test",
         database_url="sqlite+aiosqlite:///:memory:",
         jwt_secret_key=SecretStr(TEST_SECRET),

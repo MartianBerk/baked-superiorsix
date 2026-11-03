@@ -25,26 +25,9 @@ class StubFootballData:
     def collect_leagues(self) -> list[LeaguePayload]:
         return list(self._leagues)
 
-    def collect_matches(self, league_code: str, match_week: int, *, season_start=None):
-        raise AssertionError("not used")
-
-
-class StubApiFootball:
-    provider = "api-football"
-
-    def __init__(
-        self,
-        *,
-        configured: bool = True,
-        leagues: list[LeaguePayload] | None = None,
-    ) -> None:
-        self.configured = configured
-        self._leagues = leagues or []
-
-    def collect_leagues(self) -> list[LeaguePayload]:
-        return list(self._leagues)
-
-    def collect_matches(self, league_code: str, match_week: int, *, season_start=None):
+    def collect_matches(
+        self, league_code: str, *, date_from, date_to, season_start=None, live=False
+    ):
         raise AssertionError("not used")
 
 
@@ -57,9 +40,13 @@ class StubMatchConnector:
     def collect_leagues(self):
         return []
 
-    def collect_matches(self, league_code: str, match_week: int, *, season_start=None):
+    def collect_matches(
+        self, league_code: str, *, date_from, date_to, season_start=None, live=False
+    ):
         assert league_code == "PL"
-        assert match_week == 10
+        assert date_from == date(2025, 11, 1)
+        assert date_to == date(2025, 11, 2)
+        assert live is False
         return list(self._matches)
 
 
@@ -70,7 +57,7 @@ def _services(session: AsyncSession) -> tuple[MatchIngestService, LeagueService]
 
 
 @pytest.mark.asyncio
-async def test_league_extractor_upserts_from_both_providers(
+async def test_league_extractor_upserts_from_football_data(
     client,
 ) -> None:
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
@@ -79,8 +66,6 @@ async def test_league_extractor_upserts_from_both_providers(
         extractor = LeagueExtractor(
             ingest,
             football_data_token="fd",
-            api_football_key="af",
-            include_api_football=True,
         )
         extractor._football_data = StubFootballData(  # noqa: SLF001
             [
@@ -88,18 +73,12 @@ async def test_league_extractor_upserts_from_both_providers(
                     name="Premier League",
                     code="PL",
                     start_date=date(2025, 8, 1),
-                    current_matchday=9,
-                )
-            ]
-        )
-        extractor._api_football = StubApiFootball(  # noqa: SLF001
-            leagues=[
+                ),
                 LeaguePayload(
                     name="League One",
                     code="EL1",
                     start_date=date(2025, 8, 1),
-                    current_matchday=4,
-                )
+                ),
             ]
         )
         leagues = await extractor.process()
@@ -109,11 +88,11 @@ async def test_league_extractor_upserts_from_both_providers(
     async with session_factory() as session:
         _, league_service = _services(session)
         el1 = await league_service.get_by_code("EL1")
-        assert el1.current_matchday == 4
+        assert el1.name == "League One"
 
 
 @pytest.mark.asyncio
-async def test_match_extractor_requires_exact_week_and_upserts(
+async def test_match_extractor_uses_date_range_and_upserts(
     client,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -125,7 +104,6 @@ async def test_match_extractor_requires_exact_week_and_upserts(
                 name="Premier League",
                 code="PL",
                 start_date=date(2025, 8, 1),
-                current_matchday=10,
             )
         )
         await session.commit()
@@ -134,7 +112,6 @@ async def test_match_extractor_requires_exact_week_and_upserts(
         [
             MatchPayload(
                 external_id="fd-1",
-                matchday=10,
                 match_date=datetime(2025, 11, 1, 15, 0, tzinfo=UTC),
                 status=MatchStatus.SCHEDULED,
                 home_team="Arsenal",
@@ -142,7 +119,6 @@ async def test_match_extractor_requires_exact_week_and_upserts(
             ),
             MatchPayload(
                 external_id="fd-2",
-                matchday=10,
                 match_date=datetime(2025, 11, 1, 17, 0, tzinfo=UTC),
                 status=MatchStatus.FINISHED,
                 home_team="Liverpool",
@@ -164,9 +140,10 @@ async def test_match_extractor_requires_exact_week_and_upserts(
             ingest,
             leagues,
             league_code="PL",
-            match_week=10,
+            date_from=date(2025, 11, 1),
+            date_to=date(2025, 11, 2),
             football_data_token="fd",
-            api_football_key=None,
+            goal_api_key=None,
         )
         matches = await extractor.process()
         await session.commit()
@@ -176,12 +153,13 @@ async def test_match_extractor_requires_exact_week_and_upserts(
     assert finished.home_score == 1
     assert finished.status == MatchStatus.FINISHED
 
-    with pytest.raises(ValueError, match="match_week"):
+    with pytest.raises(ValueError, match="date_to"):
         MatchExtractor(
             ingest,
             leagues,
             league_code="PL",
-            match_week=0,
+            date_from=date(2025, 11, 2),
+            date_to=date(2025, 11, 1),
             football_data_token="fd",
-            api_football_key=None,
+            goal_api_key=None,
         )

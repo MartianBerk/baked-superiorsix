@@ -33,7 +33,6 @@ async def _seed_selected_fixture(
             Match(
                 external_id="e2e-ars-che",
                 league_id=league.id,
-                matchday=1,
                 match_date=datetime(
                     kickoff_day.year, kickoff_day.month, kickoff_day.day, 15, 0, tzinfo=UTC
                 ),

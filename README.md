@@ -22,24 +22,32 @@ now.
 
 | CLI | Purpose |
 |-----|---------|
-| `poetry run baked-superiorsix-league-extractor` | Upsert league catalog + current matchday |
-| `poetry run baked-superiorsix-match-extractor -l PL -w 10` | Upsert fixtures for **one** league code and **one** match week |
+| `poetry run baked-superiorsix-league-extractor` | Upsert league catalog (name / code / start date) |
+| `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
+| `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
+| `poetry run baked-superiorsix-db leagues` | List leagues in the DB (TSV) |
+| `poetry run baked-superiorsix-db matches [-l PL] [-d 14-03-2026] …` | List matches with optional filters (TSV) |
 
-Connector factory (by league code):
+Providers:
 
-| Codes | Provider |
-|-------|----------|
-| `EL1`, `EL2` | API-Football (API-Sports) |
-| everything else (e.g. `PL`, `ELC`) | football-data.org |
+| Concern | Provider |
+|---------|----------|
+| League catalog (`league-extractor`) | football-data.org **v2** (England area; includes EL1/EL2) |
+| Match fixtures `EL1` / `EL2` | [Goal API](https://goal-api.com/documentation) (`/fixtures/date/:date`, paginated) |
+| Match fixtures everything else (e.g. `PL`, `ELC`) | football-data.org v4 date range |
+| `--live` for EL1/EL2 | Goal API `/fixtures/live` |
+| `--live` for PL/ELC | football-data.org, forced to today's UTC date |
+
+Goal API has no date-range filter on the date endpoint, so a `--from`/`--to` window
+issues one request per calendar day (with `limit`/`offset` pagination).
 
 Env vars (also accept `SUPERIORSIX_` prefix):
 
-- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token`
-- `API_FOOTBALL_KEY` — API-Sports `x-apisports-key`
+- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token` (optional for league list; required for PL/ELC match extract)
+- `GOAL_API_KEY` — Goal API bearer token (EL1/EL2 match extract)
 
-No Flashscore / Selenium. Live auto-score polling is out of scope for this
-slice; match extract may still apply scores when the fixture payload already
-includes them.
+No Flashscore / Selenium. Match extract may still apply scores when the fixture
+payload already includes them (`--live` is the near-real-time path).
 
 ## Requirements
 

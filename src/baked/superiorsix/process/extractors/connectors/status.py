@@ -16,25 +16,18 @@ _FOOTBALL_DATA_STATUS = {
     "CANCELLED": MatchStatus.POSTPONED,
 }
 
-_API_FOOTBALL_STATUS = {
-    "NS": MatchStatus.SCHEDULED,
-    "TBD": MatchStatus.SCHEDULED,
-    "1H": MatchStatus.IN_PLAY,
-    "HT": MatchStatus.IN_PLAY,
-    "2H": MatchStatus.IN_PLAY,
-    "ET": MatchStatus.IN_PLAY,
-    "BT": MatchStatus.IN_PLAY,
-    "P": MatchStatus.IN_PLAY,
+_GOAL_API_STATUS = {
+    "SCHEDULED": MatchStatus.SCHEDULED,
     "LIVE": MatchStatus.IN_PLAY,
-    "FT": MatchStatus.FINISHED,
-    "AET": MatchStatus.FINISHED,
-    "PEN": MatchStatus.FINISHED,
-    "AWD": MatchStatus.FINISHED,
-    "WO": MatchStatus.FINISHED,
-    "PST": MatchStatus.POSTPONED,
-    "SUSP": MatchStatus.POSTPONED,
-    "CANC": MatchStatus.POSTPONED,
-    "ABD": MatchStatus.POSTPONED,
+    "HALF_TIME": MatchStatus.IN_PLAY,
+    "FINISHED": MatchStatus.FINISHED,
+    "AFTER_ET": MatchStatus.FINISHED,
+    "AFTER_PEN": MatchStatus.FINISHED,
+    "AWARDED": MatchStatus.FINISHED,
+    "POSTPONED": MatchStatus.POSTPONED,
+    "CANCELLED": MatchStatus.POSTPONED,
+    "ABANDONED": MatchStatus.POSTPONED,
+    "SUSPENDED": MatchStatus.POSTPONED,
 }
 
 
@@ -44,7 +37,7 @@ def map_football_data_status(raw: str | None) -> str:
     return _FOOTBALL_DATA_STATUS.get(raw.upper(), MatchStatus.SCHEDULED)
 
 
-def map_api_football_status(raw: str | None) -> str:
+def map_goal_api_status(raw: str | None) -> str:
     if not raw:
         return MatchStatus.SCHEDULED
-    return _API_FOOTBALL_STATUS.get(raw.upper(), MatchStatus.SCHEDULED)
+    return _GOAL_API_STATUS.get(raw.upper(), MatchStatus.SCHEDULED)

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from datetime import UTC, date, datetime
 
 from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.db.session import (
@@ -38,6 +39,13 @@ def _secret(value) -> str | None:
     return text or None
 
 
+def _parse_iso_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid date {value!r}, expected YYYY-MM-DD") from exc
+
+
 def _build_services(session):
     leagues = LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
     matches = MatchService(SqlAlchemyMatchRepository(session), leagues)
@@ -54,7 +62,6 @@ async def _run_league(settings: Settings) -> int:
         extractor = LeagueExtractor(
             ingest,
             football_data_token=_secret(settings.football_data_api_token),
-            api_football_key=_secret(settings.api_football_key),
         )
         leagues = await extractor.process()
         await session.commit()
@@ -62,7 +69,14 @@ async def _run_league(settings: Settings) -> int:
     return 0
 
 
-async def _run_match(settings: Settings, *, league_code: str, match_week: int) -> int:
+async def _run_match(
+    settings: Settings,
+    *,
+    league_code: str,
+    date_from: date,
+    date_to: date,
+    live: bool,
+) -> int:
     engine = create_engine(settings.database_url)
     await init_db(engine)
     session_factory = create_session_factory(engine)
@@ -72,16 +86,20 @@ async def _run_match(settings: Settings, *, league_code: str, match_week: int) -
             ingest,
             leagues,
             league_code=league_code,
-            match_week=match_week,
+            date_from=date_from,
+            date_to=date_to,
             football_data_token=_secret(settings.football_data_api_token),
-            api_football_key=_secret(settings.api_football_key),
+            goal_api_key=_secret(settings.goal_api_key),
+            live=live,
         )
         matches = await extractor.process()
         await session.commit()
     logging.getLogger(__name__).info(
-        "match extractor finished league=%s week=%s count=%s",
+        "match extractor finished league=%s live=%s from=%s to=%s count=%s",
         league_code,
-        match_week,
+        live,
+        date_from.isoformat(),
+        date_to.isoformat(),
         len(matches),
     )
     return 0
@@ -89,7 +107,7 @@ async def _run_match(settings: Settings, *, league_code: str, match_week: int) -
 
 def league_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Extract / upsert league catalog (football-data.org + API-Football EL1/EL2).",
+        description="Extract / upsert league catalog from football-data.org v2.",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -100,8 +118,11 @@ def league_main(argv: list[str] | None = None) -> None:
 def match_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Extract / upsert fixtures for exactly one league code and one match week. "
-            "EL1/EL2 use API-Football; other codes use football-data.org."
+            "Extract / upsert fixtures for exactly one league code. "
+            "EL1/EL2 use Goal API (one request per date, with pagination); "
+            "other codes use football-data.org. "
+            "Pass --live for in-play fixtures (Goal API /fixtures/live; "
+            "football-data approximates with today's date)."
         ),
     )
     parser.add_argument(
@@ -111,22 +132,48 @@ def match_main(argv: list[str] | None = None) -> None:
         help="League code (e.g. PL, ELC, EL1, EL2)",
     )
     parser.add_argument(
-        "-w",
-        "--match-week",
-        type=int,
-        required=True,
-        dest="match_week",
-        help="Exact match week / matchday (not a relative lookahead window)",
+        "--from",
+        type=_parse_iso_date,
+        dest="date_from",
+        metavar="YYYY-MM-DD",
+        help="Inclusive start date (UTC). Required unless --live.",
+    )
+    parser.add_argument(
+        "--to",
+        type=_parse_iso_date,
+        dest="date_to",
+        metavar="YYYY-MM-DD",
+        help="Inclusive end date (UTC); defaults to --from",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help=(
+            "Pull live/in-play fixtures. Goal API uses /fixtures/live; "
+            "football-data.org uses today's UTC date only."
+        ),
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
+    if args.live:
+        today = datetime.now(UTC).date()
+        date_from = date_to = today
+    else:
+        if args.date_from is None:
+            parser.error("--from is required unless --live is set")
+        date_from = args.date_from
+        date_to = args.date_to or args.date_from
+        if date_to < date_from:
+            parser.error("--to must be on or after --from")
     _configure_logging(args.verbose)
     raise SystemExit(
         asyncio.run(
             _run_match(
                 get_settings(),
                 league_code=args.league,
-                match_week=args.match_week,
+                date_from=date_from,
+                date_to=date_to,
+                live=args.live,
             )
         )
     )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
@@ -8,9 +8,22 @@ from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload, M
 from baked.superiorsix.process.extractors.connectors.http import HttpxJsonClient
 from baked.superiorsix.process.extractors.connectors.status import map_football_data_status
 
-# England area id on football-data.org v4.
+# England area id on football-data.org.
 ENGLAND_AREA_ID = 2072
+# League catalog uses v2 so EL1/EL2 appear in the England competition list.
+FOOTBALL_DATA_LEAGUES_BASE_URL = "https://api.football-data.org/v2"
+# Match ingest for free-tier comps stays on v4.
 FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
+# Superior Six English league codes.
+LEAGUE_CATALOG_CODES: frozenset[str] = frozenset({"PL", "ELC", "EL1", "EL2"})
+
+
+def _parse_season_start_date(start_raw: str) -> date:
+    """Accept v2 datetimes (``2017-08-11T19:00:00Z``) and v4 date-only values."""
+    text = start_raw.strip()
+    if "T" in text:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    return date.fromisoformat(text)
 
 
 def parse_football_data_league(raw: dict[str, Any]) -> LeaguePayload | None:
@@ -20,17 +33,14 @@ def parse_football_data_league(raw: dict[str, Any]) -> LeaguePayload | None:
     start_raw = season.get("startDate")
     if not code or not name or not start_raw:
         return None
-    start_date = date.fromisoformat(start_raw)
-    matchday = season.get("currentMatchday")
     return LeaguePayload(
         name=name,
         code=code,
-        start_date=start_date,
-        current_matchday=int(matchday) if matchday is not None else None,
+        start_date=_parse_season_start_date(str(start_raw)),
     )
 
 
-def parse_football_data_match(raw: dict[str, Any], *, match_week: int) -> MatchPayload | None:
+def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
     match_id = raw.get("id")
     if match_id is None:
         return None
@@ -45,10 +55,8 @@ def parse_football_data_match(raw: dict[str, Any], *, match_week: int) -> MatchP
     score = (raw.get("score") or {}).get("fullTime") or {}
     home_score = score.get("home")
     away_score = score.get("away")
-    matchday = raw.get("matchday")
     return MatchPayload(
         external_id=f"fd-{match_id}",
-        matchday=int(matchday) if matchday is not None else match_week,
         match_date=match_date,
         status=map_football_data_status(raw.get("status")),
         home_team=home,
@@ -59,7 +67,11 @@ def parse_football_data_match(raw: dict[str, Any], *, match_week: int) -> MatchP
 
 
 class FootballDataConnector:
-    """football-data.org connector for free-tier competitions (PL, ELC, …)."""
+    """football-data.org connector for league catalog + free-tier fixtures.
+
+    League catalog uses the v2 England competitions list (includes EL1/EL2).
+    Match ingest uses v4 date ranges; EL1/EL2 fixtures are routed elsewhere.
+    """
 
     provider = "football-data.org"
 
@@ -69,10 +81,14 @@ class FootballDataConnector:
         *,
         http: JsonHttpClient | None = None,
         base_url: str = FOOTBALL_DATA_BASE_URL,
+        leagues_base_url: str = FOOTBALL_DATA_LEAGUES_BASE_URL,
+        league_codes: frozenset[str] | None = None,
     ) -> None:
         self._token = (api_token or "").strip() or None
         self._http = http or HttpxJsonClient()
         self._base_url = base_url.rstrip("/")
+        self._leagues_base_url = leagues_base_url.rstrip("/")
+        self._league_codes = league_codes or LEAGUE_CATALOG_CODES
 
     def _headers(self) -> dict[str, str]:
         if not self._token:
@@ -81,35 +97,49 @@ class FootballDataConnector:
 
     def collect_leagues(self) -> list[LeaguePayload]:
         payload = self._http.get_json(
-            f"{self._base_url}/competitions",
+            f"{self._leagues_base_url}/competitions",
             headers=self._headers() or None,
             params={"areas": ENGLAND_AREA_ID},
         )
         leagues: list[LeaguePayload] = []
         for item in payload.get("competitions") or []:
             parsed = parse_football_data_league(item)
-            if parsed is not None:
-                leagues.append(parsed)
+            if parsed is None or parsed.code not in self._league_codes:
+                continue
+            leagues.append(parsed)
         return leagues
 
     def collect_matches(
         self,
         league_code: str,
-        match_week: int,
         *,
+        date_from: date,
+        date_to: date,
         season_start: date | None = None,
+        live: bool = False,
     ) -> list[MatchPayload]:
-        del season_start  # football-data scopes by competition code + matchday
+        del season_start
+        if live:
+            # football-data has no live feed; approximate with today's UTC fixtures.
+            today = datetime.now(UTC).date()
+            date_from = date_to = today
+        if date_to < date_from:
+            raise ValueError("date_to must be on or after date_from.")
         if not self._token:
             raise RuntimeError("FOOTBALL_DATA_API_TOKEN is required for match ingest.")
+        # football-data v4 treats dateTo as exclusive (end of previous UTC day).
+        exclusive_to = date_to + timedelta(days=1)
         payload = self._http.get_json(
             f"{self._base_url}/competitions/{league_code.upper()}/matches",
             headers=self._headers(),
-            params={"matchday": match_week},
+            params={
+                "dateFrom": date_from.isoformat(),
+                "dateTo": exclusive_to.isoformat(),
+            },
         )
         matches: list[MatchPayload] = []
         for item in payload.get("matches") or []:
-            parsed = parse_football_data_match(item, match_week=match_week)
+            parsed = parse_football_data_match(item)
             if parsed is not None:
                 matches.append(parsed)
         return matches

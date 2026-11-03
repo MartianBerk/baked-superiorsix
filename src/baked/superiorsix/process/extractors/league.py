@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from baked.superiorsix.domain.models import League
-from baked.superiorsix.process.extractors.connectors.api_football import ApiFootballConnector
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
 from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload
 from baked.superiorsix.process.extractors.connectors.football_data import FootballDataConnector
@@ -13,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class LeagueExtractor:
-    """Refresh league catalog / current matchday from configured providers.
+    """Refresh league catalog from football-data.org v2.
 
-    - football-data.org: England free-tier competitions (PL, ELC, …)
-    - API-Football: EL1 / EL2 only (not on football-data free tier)
+    Match ingest is date-ranged. EL1/EL2 fixtures use Goal API via the match
+    extractor.
     """
 
     def __init__(
@@ -24,23 +23,13 @@ class LeagueExtractor:
         ingest: MatchIngestService,
         *,
         football_data_token: str | None,
-        api_football_key: str | None,
         http: JsonHttpClient | None = None,
-        include_api_football: bool = True,
     ) -> None:
         self._ingest = ingest
         self._football_data = FootballDataConnector(football_data_token, http=http)
-        self._api_football = (
-            ApiFootballConnector(api_football_key, http=http) if include_api_football else None
-        )
 
     async def process(self) -> list[League]:
         payloads = self._football_data.collect_leagues()
-        if self._api_football is not None and self._api_football.configured:
-            payloads.extend(self._api_football.collect_leagues())
-        elif self._api_football is not None:
-            logger.warning("API_FOOTBALL_KEY unset; skipping EL1/EL2 league catalog pull.")
-
         upserted: list[League] = []
         seen: set[str] = set()
         for payload in payloads:
@@ -50,10 +39,10 @@ class LeagueExtractor:
             league = await self._upsert(payload)
             upserted.append(league)
             logger.info(
-                "league upserted code=%s name=%s matchday=%s",
+                "league upserted code=%s name=%s start=%s",
                 league.code,
                 league.name,
-                league.current_matchday,
+                league.start_date,
             )
         return upserted
 
@@ -63,6 +52,5 @@ class LeagueExtractor:
                 name=payload.name,
                 code=payload.code,
                 start_date=payload.start_date,
-                current_matchday=payload.current_matchday,
             )
         )

@@ -1,19 +1,19 @@
-from baked.superiorsix.process.extractors.connectors.api_football import (
-    API_FOOTBALL_LEAGUE_IDS,
-    ApiFootballConnector,
-)
 from baked.superiorsix.process.extractors.connectors.factory import (
-    API_FOOTBALL_LEAGUE_CODES,
+    GOAL_API_LEAGUE_CODES,
     connector_for_league,
     provider_for_league,
 )
 from baked.superiorsix.process.extractors.connectors.football_data import FootballDataConnector
+from baked.superiorsix.process.extractors.connectors.goal_api import (
+    GOAL_API_LEAGUE_IDS,
+    GoalApiConnector,
+)
 
 __all__ = [
-    "API_FOOTBALL_LEAGUE_CODES",
-    "API_FOOTBALL_LEAGUE_IDS",
-    "ApiFootballConnector",
+    "GOAL_API_LEAGUE_CODES",
+    "GOAL_API_LEAGUE_IDS",
     "FootballDataConnector",
+    "GoalApiConnector",
     "connector_for_league",
     "provider_for_league",
 ]
