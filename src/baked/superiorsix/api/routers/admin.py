@@ -1,4 +1,7 @@
-"""Admin game-ops routes (legacy subdomain: admin). Roles: ADMIN."""
+"""Admin routes (legacy subdomain: admin).
+
+Match-day / round ops require ``game-master``; user setup requires ``admin``.
+"""
 
 from typing import Annotated, Any
 
@@ -7,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from baked.superiorsix.api.dates import parse_legacy_date
 from baked.superiorsix.api.deps import (
     RequireAdmin,
+    RequireAdminOrGameMaster,
+    RequireGameMaster,
     get_league_service,
     get_match_service,
     get_round_service,
@@ -37,7 +42,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("/listleagues", response_model=LeaguesResponse)
 async def list_leagues(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     league_service: Annotated[LeagueService, Depends(get_league_service)],
 ) -> LeaguesResponse:
     leagues = await league_service.list()
@@ -45,13 +50,13 @@ async def list_leagues(
 
 
 @router.get("/listplayers")
-async def list_players(_: RequireAdmin) -> dict[str, Any]:
+async def list_players(_: RequireAdminOrGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/listrounds")
 async def list_rounds(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     round_service: Annotated[RoundService, Depends(get_round_service)],
 ) -> dict[str, list[dict[str, Any]]]:
     rounds = await round_service.list()
@@ -62,7 +67,7 @@ async def list_rounds(
 
 @router.get("/currentround", response_model=CurrentRoundResponse)
 async def current_round(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     round_service: Annotated[RoundService, Depends(get_round_service)],
 ) -> CurrentRoundResponse:
     round_ = await round_service.current_or_none()
@@ -72,22 +77,22 @@ async def current_round(
 
 
 @router.get("/historicrounds")
-async def historic_rounds(_: RequireAdmin) -> dict[str, Any]:
+async def historic_rounds(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/listpredictions")
-async def list_predictions(_: RequireAdmin) -> dict[str, Any]:
+async def list_predictions(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/listpredictionsnew")
-async def list_predictions_new(_: RequireAdmin) -> dict[str, Any]:
+async def list_predictions_new(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/addprediction")
-async def add_prediction(_: RequireAdmin) -> dict[str, Any]:
+async def add_prediction(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
@@ -98,7 +103,7 @@ async def add_player(_: RequireAdmin) -> dict[str, Any]:
 
 @router.post("/addround", response_model=RoundResponse)
 async def add_round(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     payload: OpenRoundRequest,
     round_service: Annotated[RoundService, Depends(get_round_service)],
 ) -> RoundResponse:
@@ -114,7 +119,7 @@ async def add_round(
 
 @router.post("/endround", response_model=RoundResponse)
 async def end_round(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     round_service: Annotated[RoundService, Depends(get_round_service)],
     end_date: Annotated[str | None, Query(alias="endDate")] = None,
 ) -> RoundResponse:
@@ -132,13 +137,13 @@ async def end_round(
 
 
 @router.get("/getround")
-async def get_round(_: RequireAdmin) -> dict[str, Any]:
+async def get_round(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/listmatches", response_model=MatchesResponse)
 async def list_matches(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     match_service: Annotated[MatchService, Depends(get_match_service)],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
 ) -> MatchesResponse:
@@ -153,18 +158,18 @@ async def list_matches(
 
 
 @router.get("/listmatchesnew")
-async def list_matches_new(_: RequireAdmin) -> dict[str, Any]:
+async def list_matches_new(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/getmatch")
-async def get_match(_: RequireAdmin) -> dict[str, Any]:
+async def get_match(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/addmatch", response_model=MatchResponse)
 async def add_match(
-    _: RequireAdmin,
+    _: RequireGameMaster,
     payload: SelectMatchRequest,
     match_service: Annotated[MatchService, Depends(get_match_service)],
 ) -> MatchResponse:
@@ -178,37 +183,37 @@ async def add_match(
 
 
 @router.post("/addmatches")
-async def add_matches(_: RequireAdmin) -> dict[str, Any]:
+async def add_matches(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/dropmatch")
-async def drop_match(_: RequireAdmin) -> dict[str, Any]:
+async def drop_match(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/addpredictions")
-async def add_predictions(_: RequireAdmin) -> dict[str, Any]:
+async def add_predictions(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/dropprediction")
-async def drop_prediction(_: RequireAdmin) -> dict[str, Any]:
+async def drop_prediction(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/setspecialmessage")
-async def set_special_message(_: RequireAdmin) -> dict[str, Any]:
+async def set_special_message(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/getspecialmessage")
-async def get_special_message(_: RequireAdmin) -> dict[str, Any]:
+async def get_special_message(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
 @router.get("/endspecialmessage")
-async def end_special_message(_: RequireAdmin) -> dict[str, Any]:
+async def end_special_message(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 

@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from baked.superiorsix.api.deps import RequireEuroWizard
+from baked.superiorsix.api.deps import RequireEuros
 from baked.superiorsix.noop import noop
 
 router = APIRouter(tags=["euros"])
@@ -37,10 +37,10 @@ async def euros_get_predictions() -> dict[str, Any]:
 
 
 @router.get("/euros/getprediction")
-async def euros_get_prediction(_: RequireEuroWizard) -> dict[str, Any]:
+async def euros_get_prediction(_: RequireEuros) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/euros/addprediction")
-async def euros_add_prediction(_: RequireEuroWizard) -> dict[str, Any]:
+async def euros_add_prediction(_: RequireEuros) -> dict[str, Any]:
     return noop()

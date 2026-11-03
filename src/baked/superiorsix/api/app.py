@@ -36,6 +36,7 @@ def create_app(
         app.state.settings = settings
         app.state.session_factory = session_factory
         app.state.key_set = key_set
+        app.state.jwt_audience = settings.jwt_audience
         await init_db(engine)
         yield
         if owned_engine:
@@ -53,6 +54,7 @@ def create_app(
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.state.key_set = key_set
+    app.state.jwt_audience = settings.jwt_audience
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

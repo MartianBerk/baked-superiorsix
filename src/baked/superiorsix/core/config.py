@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     jwt_key_id: str | None = None
     jwt_previous_secret_keys: list[SecretStr] = Field(default_factory=list)
     jwt_jwks_path: Path | None = None
+    jwt_audience: str = "superiorsix"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     auth_token_url: str = "http://127.0.0.1:8010/v1/auth/token"
     # Ingest API keys — prefer unprefixed deploy names; SUPERIORSIX_* aliases also work.
@@ -67,6 +68,14 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return None
         return value
+
+    @field_validator("jwt_audience")
+    @classmethod
+    def normalize_jwt_audience(cls, value: str) -> str:
+        audience = value.strip().lower()
+        if not audience:
+            raise ValueError("SUPERIORSIX_JWT_AUDIENCE must be a non-empty application slug.")
+        return audience
 
     @property
     def is_production(self) -> bool:

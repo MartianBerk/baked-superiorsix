@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from baked.superiorsix.api.deps import RequireQatarHero
+from baked.superiorsix.api.deps import RequireWorldcup
 from baked.superiorsix.noop import noop
 
 router = APIRouter(tags=["worldcup"])
@@ -37,10 +37,10 @@ async def worldcup_get_predictions() -> dict[str, Any]:
 
 
 @router.get("/worldcup/getprediction")
-async def worldcup_get_prediction(_: RequireQatarHero) -> dict[str, Any]:
+async def worldcup_get_prediction(_: RequireWorldcup) -> dict[str, Any]:
     return noop()
 
 
 @router.post("/worldcup/addprediction")
-async def worldcup_add_prediction(_: RequireQatarHero) -> dict[str, Any]:
+async def worldcup_add_prediction(_: RequireWorldcup) -> dict[str, Any]:
     return noop()

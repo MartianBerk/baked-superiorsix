@@ -17,10 +17,12 @@ from baked.superiorsix.services.rounds import RoundService
 
 __all__ = [
     "RequireAdmin",
+    "RequireAdminOrGameMaster",
     "RequireDetails",
-    "RequireEuroWizard",
+    "RequireEuros",
+    "RequireGameMaster",
     "RequirePlayer",
-    "RequireQatarHero",
+    "RequireWorldcup",
     "get_current_principal",
     "get_db_session",
     "get_key_set",
@@ -71,9 +73,15 @@ async def get_prediction_service(
     return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
 
 
-# Convenience aliases matching legacy supersix permission names → auth roles.
-RequirePlayer = Annotated[AuthPrincipal, Depends(require_roles("PLAYER"))]
-RequireAdmin = Annotated[AuthPrincipal, Depends(require_roles("ADMIN"))]
-RequireDetails = Annotated[AuthPrincipal, Depends(require_roles("DETAILS"))]
-RequireEuroWizard = Annotated[AuthPrincipal, Depends(require_roles("EUROWIZARD"))]
-RequireQatarHero = Annotated[AuthPrincipal, Depends(require_roles("QATARHERO"))]
+# App-scoped Superior Six roles (JWT aud=superiorsix). Lowercase; hyphen for multi-word.
+RequirePlayer = Annotated[AuthPrincipal, Depends(require_roles("player"))]
+RequireAdmin = Annotated[AuthPrincipal, Depends(require_roles("admin"))]
+RequireGameMaster = Annotated[AuthPrincipal, Depends(require_roles("game-master"))]
+RequireDetails = Annotated[AuthPrincipal, Depends(require_roles("details"))]
+RequireEuros = Annotated[AuthPrincipal, Depends(require_roles("euros"))]
+RequireWorldcup = Annotated[AuthPrincipal, Depends(require_roles("worldcup"))]
+# Roster/list views used by both user-admin and match-day operators.
+RequireAdminOrGameMaster = Annotated[
+    AuthPrincipal,
+    Depends(require_roles("admin", "game-master")),
+]

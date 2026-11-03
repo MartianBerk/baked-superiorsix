@@ -49,7 +49,7 @@ def test_user_prediction_end_to_end(client: TestClient) -> None:
     fixture = anyio.run(_seed_selected_fixture, client.app.state.session_factory)
     assert fixture.id is not None
 
-    admin_token, _ = make_access_token(roles=["ADMIN"])
+    admin_token, _ = make_access_token(roles=["game-master"])
     admin = auth_header(admin_token)
 
     opened = client.post(
@@ -73,7 +73,7 @@ def test_user_prediction_end_to_end(client: TestClient) -> None:
     assert available.status_code == 200
     assert len(available.json()["matches"]) == 1
 
-    player_token, auth_id = make_access_token(roles=["PLAYER"])
+    player_token, auth_id = make_access_token(roles=["player"])
     player = auth_header(player_token)
 
     missing = client.get("/user/getprediction", headers=player, params={"gameId": fixture.id})

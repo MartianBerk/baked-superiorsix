@@ -73,7 +73,7 @@ trio = ["trio (>=0.32.0)"]
 
 [[package]]
 name = "baked-auth-client"
-version = "0.1.0"
+version = "0.1.1"
 description = "Shared JWT verification and FastAPI auth helpers for baked services."
 optional = false
 python-versions = ">=3.12.3,<3.13"
@@ -88,9 +88,9 @@ pyjwt = {version = ">=2.10.0", extras = ["crypto"]}
 
 [package.source]
 type = "git"
-url = "ssh://git@github.com/MartianBerk/baked-auth-client.git"
-reference = "cursor/auth-client-library-b71a"
-resolved_reference = "a6aa1e31083cadad6c176bc474269e2ae79577b2"
+url = "https://github.com/MartianBerk/baked-auth-client.git"
+reference = "cursor/app-scoped-roles-aud-f776"
+resolved_reference = "239458ec63d23522dab5b672596b624218d9a1d9"
 
 [[package]]
 name = "certifi"
@@ -2903,4 +2903,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.3,<3.13"
-content-hash = "56d81ad700a0c72bcc9ab7f99ad3ab1fdcf7d2e3a14ff6c80a7b0e7709b16d55"
+content-hash = "39e2d0c8f8729096c1f9e6402d946f8246f84abf5412bd1a6d1811d6f3db7917"
