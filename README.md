@@ -71,7 +71,7 @@ Set `SUPERIORSIX_JWT_SECRET_KEY` to the same value as `AUTH_JWT_SECRET_KEY` (and
 keep previous secrets in `SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS` during rotation).
 Set `SUPERIORSIX_JWT_AUDIENCE=superiorsix` so bearer tokens must carry matching
 JWT `aud`. Roles are app-scoped and lowercase: `player`, `admin`,
-`game-master`, `details`, `euros`, `worldcup`. Request tokens from baked-auth
+`game-master`, `user-profile`, `euros`, `worldcup`. Request tokens from baked-auth
 with `audience=superiorsix` after a membership has been granted.
 
 ## Run

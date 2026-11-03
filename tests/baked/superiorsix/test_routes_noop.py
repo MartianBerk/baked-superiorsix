@@ -28,7 +28,7 @@ IMPLEMENTED_PUBLIC = [
 ]
 
 PROTECTED_NOOP = [
-    ("POST", "/user/updatedetails", "details"),
+    ("POST", "/user/updatedetails", "user-profile"),
     ("GET", "/admin/listplayers", "admin"),
     ("GET", "/admin/historicrounds", "game-master"),
     ("GET", "/admin/listpredictions", "game-master"),

@@ -18,10 +18,10 @@ from baked.superiorsix.services.rounds import RoundService
 __all__ = [
     "RequireAdmin",
     "RequireAdminOrGameMaster",
-    "RequireDetails",
     "RequireEuros",
     "RequireGameMaster",
     "RequirePlayer",
+    "RequireUserProfile",
     "RequireWorldcup",
     "get_current_principal",
     "get_db_session",
@@ -77,7 +77,7 @@ async def get_prediction_service(
 RequirePlayer = Annotated[AuthPrincipal, Depends(require_roles("player"))]
 RequireAdmin = Annotated[AuthPrincipal, Depends(require_roles("admin"))]
 RequireGameMaster = Annotated[AuthPrincipal, Depends(require_roles("game-master"))]
-RequireDetails = Annotated[AuthPrincipal, Depends(require_roles("details"))]
+RequireUserProfile = Annotated[AuthPrincipal, Depends(require_roles("user-profile"))]
 RequireEuros = Annotated[AuthPrincipal, Depends(require_roles("euros"))]
 RequireWorldcup = Annotated[AuthPrincipal, Depends(require_roles("worldcup"))]
 # Roster/list views used by both user-admin and match-day operators.
