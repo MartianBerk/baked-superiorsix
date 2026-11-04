@@ -32,6 +32,7 @@ MATCH_HEADERS = (
     "away_score",
     "use_match",
     "external_id",
+    "last_updated",
 )
 
 
@@ -103,6 +104,7 @@ async def _fetch_matches(
                 record.away_score,
                 record.use_match,
                 record.external_id,
+                record.last_updated.isoformat(),
             )
             for record, league_code in result.all()
         ]

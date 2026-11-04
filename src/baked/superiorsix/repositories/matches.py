@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy import and_, or_, select
@@ -6,6 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from baked.superiorsix.db.models import MatchRecord
 from baked.superiorsix.domain.models import Match, MatchStatus
+
+
+def _stamp_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize DB datetimes to aware UTC (SQLite may drop tzinfo)."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class MatchRepository(Protocol):
@@ -145,6 +156,7 @@ class SqlAlchemyMatchRepository:
         return _to_domain(record) if record else None
 
     async def add(self, match: Match) -> Match:
+        now = _stamp_now()
         record = MatchRecord(
             external_id=match.external_id,
             league_id=match.league_id,
@@ -157,6 +169,7 @@ class SqlAlchemyMatchRepository:
             home_score=match.home_score,
             away_score=match.away_score,
             game_number=match.game_number,
+            last_updated=now,
         )
         self._session.add(record)
         await self._session.commit()
@@ -180,6 +193,7 @@ class SqlAlchemyMatchRepository:
         record.home_score = match.home_score
         record.away_score = match.away_score
         record.game_number = match.game_number
+        record.last_updated = _stamp_now()
         await self._session.commit()
         await self._session.refresh(record)
         return _to_domain(record)
@@ -190,7 +204,7 @@ def _to_domain(record: MatchRecord) -> Match:
         id=record.id,
         external_id=record.external_id,
         league_id=record.league_id,
-        match_date=record.match_date,
+        match_date=_as_utc(record.match_date),
         match_minute=record.match_minute,
         status=record.status,
         home_team=record.home_team,
@@ -199,4 +213,5 @@ def _to_domain(record: MatchRecord) -> Match:
         home_score=record.home_score,
         away_score=record.away_score,
         game_number=record.game_number,
+        last_updated=_as_utc(record.last_updated),
     )

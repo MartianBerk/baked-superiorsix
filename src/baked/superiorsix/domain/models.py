@@ -46,6 +46,7 @@ class Match:
     home_score: int | None = None
     away_score: int | None = None
     game_number: int | None = None
+    last_updated: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

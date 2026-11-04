@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 import anyio
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.baked.superiorsix.tokens import auth_header, make_access_token
@@ -146,6 +147,69 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     assert updated.home_score == 2
     assert updated.use_match is True
     assert updated.game_number == 1
+
+
+def test_match_writes_stamp_last_updated_utc(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from baked.superiorsix.repositories import matches as matches_repo
+
+    clock = {"value": datetime(2026, 3, 14, 12, 0, tzinfo=UTC)}
+
+    def fake_stamp() -> datetime:
+        return clock["value"]
+
+    monkeypatch.setattr(matches_repo, "_stamp_now", fake_stamp)
+
+    async def run() -> None:
+        async with client.app.state.session_factory() as session:
+            ingest = _ingest(session)
+            league = await ingest.upsert_league(
+                League(name="Premier League", code="PL", start_date=date(2025, 8, 1))
+            )
+            assert league.id is not None
+
+            created = await ingest.upsert_match(
+                Match(
+                    external_id="pl-freshness-1",
+                    league_id=league.id,
+                    match_date=_kickoff(date(2026, 3, 14)),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Arsenal",
+                    away_team="Chelsea",
+                )
+            )
+            assert created.last_updated == datetime(2026, 3, 14, 12, 0, tzinfo=UTC)
+            assert created.last_updated.tzinfo is not None
+
+            clock["value"] = datetime(2026, 3, 14, 12, 5, tzinfo=UTC)
+            scored = await ingest.update_score(
+                external_id="pl-freshness-1",
+                status=MatchStatus.IN_PLAY,
+                home_score=1,
+                away_score=0,
+                match_minute=12,
+            )
+            assert scored.last_updated == datetime(2026, 3, 14, 12, 5, tzinfo=UTC)
+
+            clock["value"] = datetime(2026, 3, 14, 12, 10, tzinfo=UTC)
+            matches = SqlAlchemyMatchRepository(session)
+            leagues = LeagueService(SqlAlchemyLeagueRepository(session), matches)
+            selected = await MatchService(matches, leagues).select_for_round(created.id, 1)
+            assert selected.last_updated == datetime(2026, 3, 14, 12, 10, tzinfo=UTC)
+
+    anyio.run(run)
+
+    token, _ = make_access_token(roles=["game-master"])
+    listed = client.get(
+        "/admin/listmatches",
+        headers=auth_header(token),
+        params={"matchDate": "14-03-2026"},
+    )
+    assert listed.status_code == 200
+    row = listed.json()["matches"][0]
+    assert row["last_updated"] == "2026-03-14T12:10:00Z"
 
 
 def test_livematches_requires_match_date(client: TestClient) -> None:
