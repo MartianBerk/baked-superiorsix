@@ -14,11 +14,20 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
     assert empty.status_code == 200
     assert empty.json() == {"players": []}
 
+    invited = client.post(
+        "/admin/inviteplayer",
+        headers=admin,
+        json={"username": "ada", "first_name": "Ada", "last_name": "Lovelace"},
+    )
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["status"] == "pending"
+
     created = client.post(
         "/admin/addplayer",
         headers=admin,
         json={
             "auth_id": str(auth_id),
+            "username": "ada",
             "first_name": "Ada",
             "last_name": "Lovelace",
             "nickname": "Ada",
@@ -56,12 +65,32 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
     assert reactivated.json()["active"] is True
 
 
+def test_addplayer_requires_invite(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    response = client.post(
+        "/admin/addplayer",
+        headers=auth_header(admin_token),
+        json={
+            "auth_id": str(uuid4()),
+            "username": "nobody",
+            "first_name": "A",
+            "last_name": "B",
+        },
+    )
+    assert response.status_code == 403
+
+
 def test_addplayer_requires_admin(client: TestClient) -> None:
     token, _ = make_access_token(roles=["player"])
     response = client.post(
         "/admin/addplayer",
         headers=auth_header(token),
-        json={"auth_id": str(uuid4()), "first_name": "A", "last_name": "B"},
+        json={
+            "auth_id": str(uuid4()),
+            "username": "xavier",
+            "first_name": "A",
+            "last_name": "B",
+        },
     )
     assert response.status_code == 403
 
@@ -69,10 +98,20 @@ def test_addplayer_requires_admin(client: TestClient) -> None:
 def test_game_master_can_list_players(client: TestClient) -> None:
     admin_token, _ = make_access_token(roles=["admin"])
     auth_id = uuid4()
+    client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={"username": "gmplayer"},
+    )
     created = client.post(
         "/admin/addplayer",
         headers=auth_header(admin_token),
-        json={"auth_id": str(auth_id), "first_name": "A", "last_name": "B"},
+        json={
+            "auth_id": str(auth_id),
+            "username": "gmplayer",
+            "first_name": "A",
+            "last_name": "B",
+        },
     )
     assert created.status_code == 201
     gm_token, _ = make_access_token(roles=["game-master"])

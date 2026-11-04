@@ -14,25 +14,34 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
 - Roster (proxied to baked-user by auth `sub`):
-  `GET /admin/listplayers`, `POST /admin/addplayer`,
+  `GET /admin/listplayers`, `POST /admin/inviteplayer`, `POST /admin/addplayer`,
   `GET /admin/dropplayer?authId=`, `GET /admin/reactivateplayer?authId=`,
   `POST /user/updatedetails`
+- Predictions require JWT `player` **and** an active baked-user roster profile
+  (invite accepted). Uninvited callers get 403 even with a valid token.
 
 Fixture/score ingest is **process-driven** via `MatchIngestService` and CLI
 extractors (not user REST). Admin can open rounds, list leagues/matches, and
 select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
 now.
 
-### Creating a player (auth → membership → profile)
+### Creating a player (invite → auth → membership → profile)
 
-1. Create the user in **baked-auth** (`POST /v1/auth/register`).
-2. Grant Superior Six membership roles
+Superior Six is **invite-only** at the roster layer (baked-user). baked-auth stays
+identity-only (register / password / JWT `aud` + roles).
+
+1. As superiorsix `admin`, invite a username:
+   `POST /admin/inviteplayer` `{"username":"martin","first_name":"…","last_name":"…"}`
+   (forwards to baked-user `POST /superiorsix/invites`).
+2. Person creates an auth account (`POST` baked-auth `/v1/auth/register`).
+3. Auth admin grants Superior Six membership roles
    (`PUT /v1/applications/superiorsix/memberships/{username}`), e.g.
-   `player` + `user-profile` (and `admin` / `game-master` as needed).
-3. Token with `audience=superiorsix`.
-4. As an `admin`, call `POST /admin/addplayer` with
-   `{"auth_id":"<sub>","first_name":"…","last_name":"…"}`
-   (forwards to baked-user `POST /superiorsix/users/by-auth/{sub}`).
+   `player` + `user-profile`.
+4. Token with `audience=superiorsix`.
+5. Accept invite / create roster profile — either the player
+   `POST` baked-user `/superiorsix/users`, or admin
+   `POST /admin/addplayer` with
+   `{"auth_id":"<sub>","username":"martin","first_name":"…","last_name":"…"}`.
 
 ### Ingest extractors (SS-7 / SS-10)
 

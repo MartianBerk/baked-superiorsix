@@ -32,3 +32,7 @@ class RosterError(SuperiorSixError):
 
 class RosterNotFoundError(RosterError):
     """Raised when a roster profile cannot be found in baked-user."""
+
+
+class NotOnRosterError(RosterError):
+    """Raised when the caller is not an active invited roster player."""

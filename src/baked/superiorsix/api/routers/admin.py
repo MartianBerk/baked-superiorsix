@@ -23,6 +23,8 @@ from baked.superiorsix.api.deps import (
 from baked.superiorsix.api.schemas import (
     AddPlayerRequest,
     CurrentRoundResponse,
+    InvitePlayerRequest,
+    InvitePlayerResponse,
     LeagueResponse,
     LeaguesResponse,
     MatchesResponse,
@@ -53,6 +55,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def _roster_http_error(exc: RosterError) -> HTTPException:
     if isinstance(exc, RosterNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    detail = str(exc).lower()
+    if "invite" in detail:
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
 
@@ -123,6 +128,39 @@ async def add_prediction(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
+@router.post(
+    "/inviteplayer",
+    response_model=InvitePlayerResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def invite_player(
+    _: RequireAdmin,
+    payload: InvitePlayerRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+) -> InvitePlayerResponse:
+    """Reserve a username on the Superior Six invite list (baked-user)."""
+    seed: dict[str, Any] = {}
+    if payload.first_name is not None:
+        seed["first_name"] = payload.first_name
+    if payload.last_name is not None:
+        seed["last_name"] = payload.last_name
+    if payload.nickname is not None:
+        seed["nickname"] = payload.nickname
+    if payload.avatar_url is not None:
+        seed["avatar_url"] = payload.avatar_url
+    try:
+        invite = await profiles.invite(token, payload.username, profile=seed or None)
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+    return InvitePlayerResponse(
+        username=invite.username,
+        status=invite.status,
+        auth_id=invite.auth_id,
+        profile=dict(invite.profile),
+    )
+
+
 @router.post("/addplayer", response_model=PlayerResponse, status_code=status.HTTP_201_CREATED)
 async def add_player(
     _: RequireAdmin,
@@ -130,6 +168,7 @@ async def add_player(
     token: Annotated[str, Depends(get_bearer_token)],
     profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
 ) -> PlayerResponse:
+    """Create roster profile for an auth subject that already has a pending invite."""
     profile_body: dict[str, Any] = {
         "first_name": payload.first_name,
         "last_name": payload.last_name,
@@ -139,7 +178,12 @@ async def add_player(
     if payload.avatar_url is not None:
         profile_body["avatar_url"] = payload.avatar_url
     try:
-        player = await profiles.create_for_auth_id(token, payload.auth_id, profile_body)
+        player = await profiles.create_for_auth_id(
+            token,
+            payload.auth_id,
+            profile_body,
+            username=payload.username,
+        )
     except RosterError as exc:
         if "already exists" in str(exc).lower():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

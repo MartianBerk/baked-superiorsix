@@ -60,6 +60,7 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/listmatches", "game-master"),
     ("POST", "/admin/addmatch", "game-master"),
     ("GET", "/admin/listplayers", "admin"),
+    ("POST", "/admin/inviteplayer", "admin"),
     ("POST", "/admin/addplayer", "admin"),
     ("GET", "/admin/dropplayer", "admin"),
     ("GET", "/admin/reactivateplayer", "admin"),

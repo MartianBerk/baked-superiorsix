@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import anyio
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from tests.baked.superiorsix.fakes import FakeUserProfileClient
 from tests.baked.superiorsix.tokens import auth_header, make_access_token
 
 from baked.superiorsix.domain.models import League, Match, MatchStatus
@@ -45,7 +46,10 @@ async def _seed_selected_fixture(
         return fixture
 
 
-def test_user_prediction_end_to_end(client: TestClient) -> None:
+def test_user_prediction_end_to_end(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+) -> None:
     fixture = anyio.run(_seed_selected_fixture, client.app.state.session_factory)
     assert fixture.id is not None
 
@@ -74,6 +78,7 @@ def test_user_prediction_end_to_end(client: TestClient) -> None:
     assert len(available.json()["matches"]) == 1
 
     player_token, auth_id = make_access_token(roles=["player"])
+    user_profiles.seed(auth_id, first_name="Test", last_name="Player")
     player = auth_header(player_token)
 
     missing = client.get("/user/getprediction", headers=player, params={"gameId": fixture.id})

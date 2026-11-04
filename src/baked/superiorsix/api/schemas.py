@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from baked.superiorsix.domain.models import (
     League,
@@ -183,14 +183,45 @@ class CurrentRoundResponse(BaseModel):
     current_round: RoundResponse | None
 
 
+class InvitePlayerRequest(BaseModel):
+    """Invite a username onto the Superior Six roster (baked-user invite list)."""
+
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    first_name: str | None = Field(default=None, min_length=1, max_length=80)
+    last_name: str | None = Field(default=None, min_length=1, max_length=80)
+    nickname: str | None = Field(default=None, min_length=1, max_length=80)
+    avatar_url: str | None = Field(default=None, max_length=512)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class InvitePlayerResponse(BaseModel):
+    username: str
+    status: str
+    auth_id: UUID | None = None
+    profile: dict[str, object] = Field(default_factory=dict)
+
+
 class AddPlayerRequest(BaseModel):
-    """Provision a baked-user roster profile for an existing auth subject."""
+    """Provision a baked-user roster profile for an existing auth subject.
+
+    ``username`` must match a pending invite on baked-user (invite_only roster).
+    """
 
     auth_id: UUID
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
     avatar_url: str | None = Field(default=None, max_length=512)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return value.strip().lower()
 
 
 class UpdateDetailsRequest(BaseModel):
