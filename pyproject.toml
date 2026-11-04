@@ -40,7 +40,7 @@ build-backend = "poetry.core.masonry.api"
 packages = [{ include = "baked", from = "src" }]
 
 [tool.poetry.dependencies]
-baked-auth-client = { git = "https://github.com/MartianBerk/baked-auth-client.git", branch = "cursor/app-scoped-roles-aud-f776" }
+baked-auth-client = { git = "https://github.com/MartianBerk/baked-auth-client.git", branch = "master" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

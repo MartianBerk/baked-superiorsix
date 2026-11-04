@@ -15,6 +15,7 @@ from baked.superiorsix.api.routers import (
     user_router,
     worldcup_router,
 )
+from baked.superiorsix.clients.user_profiles import UserProfileClient, UserProfileGateway
 from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.db.session import create_engine, create_session_factory, init_db
 
@@ -24,12 +25,17 @@ def create_app(
     session_factory: async_sessionmaker[AsyncSession] | None = None,
     engine: AsyncEngine | None = None,
     key_set: JwtKeySet | None = None,
+    user_profiles: UserProfileGateway | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     owned_engine = engine is None
     engine = engine or create_engine(settings.database_url)
     session_factory = session_factory or create_session_factory(engine)
     key_set = key_set or load_key_set(settings)
+    user_profiles = user_profiles or UserProfileClient(
+        settings.user_service_url,
+        app_name=settings.user_app_name,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -37,6 +43,7 @@ def create_app(
         app.state.session_factory = session_factory
         app.state.key_set = key_set
         app.state.jwt_audience = settings.jwt_audience
+        app.state.user_profiles = user_profiles
         await init_db(engine)
         yield
         if owned_engine:
@@ -55,6 +62,7 @@ def create_app(
     app.state.session_factory = session_factory
     app.state.key_set = key_set
     app.state.jwt_audience = settings.jwt_audience
+    app.state.user_profiles = user_profiles
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

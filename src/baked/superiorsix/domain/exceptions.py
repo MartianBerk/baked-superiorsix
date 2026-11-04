@@ -24,3 +24,11 @@ class RoundError(SuperiorSixError):
 
 class PredictionError(SuperiorSixError):
     """Raised when a prediction cannot be accepted."""
+
+
+class RosterError(SuperiorSixError):
+    """Raised when a baked-user roster call fails."""
+
+
+class RosterNotFoundError(RosterError):
+    """Raised when a roster profile cannot be found in baked-user."""

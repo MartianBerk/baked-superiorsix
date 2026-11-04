@@ -181,3 +181,39 @@ class RoundResponse(BaseModel):
 
 class CurrentRoundResponse(BaseModel):
     current_round: RoundResponse | None
+
+
+class AddPlayerRequest(BaseModel):
+    """Provision a baked-user roster profile for an existing auth subject."""
+
+    auth_id: UUID
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    nickname: str | None = Field(default=None, min_length=1, max_length=80)
+    avatar_url: str | None = Field(default=None, max_length=512)
+
+
+class UpdateDetailsRequest(BaseModel):
+    nickname: str | None = Field(default=None, min_length=1, max_length=80)
+    avatar_url: str | None = Field(default=None, max_length=512)
+    first_name: str | None = Field(default=None, min_length=1, max_length=80)
+    last_name: str | None = Field(default=None, min_length=1, max_length=80)
+
+
+class PlayerResponse(BaseModel):
+    auth_id: UUID
+    id: UUID
+    first_name: str
+    last_name: str
+    nickname: str | None = None
+    avatar_url: str | None = None
+    active: bool = True
+    retired: bool = False
+
+    @classmethod
+    def from_roster(cls, player: dict[str, object]) -> "PlayerResponse":
+        return cls.model_validate(player)
+
+
+class PlayersResponse(BaseModel):
+    players: list[PlayerResponse]
