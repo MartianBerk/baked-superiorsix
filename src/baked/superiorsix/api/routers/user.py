@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from baked.superiorsix.api.deps import RequireDetails, RequirePlayer, get_prediction_service
+from baked.superiorsix.api.deps import RequirePlayer, RequireUserProfile, get_prediction_service
 from baked.superiorsix.api.schemas import (
     AddPredictionRequest,
     GetPredictionResponse,
@@ -55,5 +55,5 @@ async def add_prediction(
 
 
 @router.post("/updatedetails")
-async def update_details(_: RequireDetails) -> dict[str, Any]:
+async def update_details(_: RequireUserProfile) -> dict[str, Any]:
     return noop()

@@ -87,7 +87,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
-    token, _ = make_access_token(roles=["ADMIN"])
+    token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
 
     select = client.post(

@@ -21,6 +21,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
         environment="test",
         database_url="sqlite+aiosqlite:///:memory:",
         jwt_secret_key=SecretStr(TEST_SECRET),
+        jwt_audience="superiorsix",
         cors_origins=["http://testserver"],
         auth_token_url="http://testserver/v1/auth/token",
     )

@@ -11,7 +11,7 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
-  (JWT `PLAYER`, keyed by auth id; needs an open round + selected match; 10m cutoff)
+  (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
 
 Fixture/score ingest is **process-driven** via `MatchIngestService` and CLI
 extractors (not user REST). Admin can open rounds, list leagues/matches, and
@@ -69,6 +69,10 @@ reads the same name from GitHub Actions secrets.
 
 Set `SUPERIORSIX_JWT_SECRET_KEY` to the same value as `AUTH_JWT_SECRET_KEY` (and
 keep previous secrets in `SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS` during rotation).
+Set `SUPERIORSIX_JWT_AUDIENCE=superiorsix` so bearer tokens must carry matching
+JWT `aud`. Roles are app-scoped and lowercase: `player`, `admin`,
+`game-master`, `user-profile`, `euros`, `worldcup`. Request tokens from baked-auth
+with `audience=superiorsix` after a membership has been granted.
 
 ## Run
 
