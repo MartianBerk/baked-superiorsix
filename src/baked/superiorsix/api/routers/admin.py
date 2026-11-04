@@ -1,9 +1,11 @@
 """Admin routes (legacy subdomain: admin).
 
 Match-day / round ops require ``game-master``; user setup requires ``admin``.
+Roster display resolves via baked-user by auth ``sub`` (no local permissions model).
 """
 
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -12,23 +14,31 @@ from baked.superiorsix.api.deps import (
     RequireAdmin,
     RequireAdminOrGameMaster,
     RequireGameMaster,
+    get_bearer_token,
     get_league_service,
     get_match_service,
     get_round_service,
+    get_user_profiles,
 )
 from baked.superiorsix.api.schemas import (
+    AddPlayerRequest,
     CurrentRoundResponse,
     LeagueResponse,
     LeaguesResponse,
     MatchesResponse,
     MatchResponse,
     OpenRoundRequest,
+    PlayerResponse,
+    PlayersResponse,
     RoundResponse,
     SelectMatchRequest,
 )
+from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import (
     MatchNotFoundError,
     MatchSelectionError,
+    RosterError,
+    RosterNotFoundError,
     RoundError,
     RoundNotFoundError,
 )
@@ -40,6 +50,12 @@ from baked.superiorsix.services.rounds import RoundService
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+def _roster_http_error(exc: RosterError) -> HTTPException:
+    if isinstance(exc, RosterNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
 @router.get("/listleagues", response_model=LeaguesResponse)
 async def list_leagues(
     _: RequireGameMaster,
@@ -49,9 +65,20 @@ async def list_leagues(
     return LeaguesResponse(leagues=[LeagueResponse.from_domain(league) for league in leagues])
 
 
-@router.get("/listplayers")
-async def list_players(_: RequireAdminOrGameMaster) -> dict[str, Any]:
-    return noop()
+@router.get("/listplayers", response_model=PlayersResponse)
+async def list_players(
+    _: RequireAdminOrGameMaster,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    active: Annotated[bool | None, Query()] = None,
+) -> PlayersResponse:
+    try:
+        roster = await profiles.list_profiles(token, active=active)
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+    return PlayersResponse(
+        players=[PlayerResponse.from_roster(item.to_player_dict()) for item in roster]
+    )
 
 
 @router.get("/listrounds")
@@ -96,9 +123,28 @@ async def add_prediction(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
-@router.post("/addplayer")
-async def add_player(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.post("/addplayer", response_model=PlayerResponse, status_code=status.HTTP_201_CREATED)
+async def add_player(
+    _: RequireAdmin,
+    payload: AddPlayerRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+) -> PlayerResponse:
+    profile_body: dict[str, Any] = {
+        "first_name": payload.first_name,
+        "last_name": payload.last_name,
+    }
+    if payload.nickname is not None:
+        profile_body["nickname"] = payload.nickname
+    if payload.avatar_url is not None:
+        profile_body["avatar_url"] = payload.avatar_url
+    try:
+        player = await profiles.create_for_auth_id(token, payload.auth_id, profile_body)
+    except RosterError as exc:
+        if "already exists" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise _roster_http_error(exc) from exc
+    return PlayerResponse.from_roster(player.to_player_dict())
 
 
 @router.post("/addround", response_model=RoundResponse)
@@ -217,11 +263,39 @@ async def end_special_message(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
 
 
-@router.get("/dropplayer")
-async def drop_player(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/dropplayer", response_model=PlayerResponse)
+async def drop_player(
+    _: RequireAdmin,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_id: Annotated[UUID | None, Query(alias="authId")] = None,
+) -> PlayerResponse:
+    if auth_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing mandatory value for authId.",
+        )
+    try:
+        player = await profiles.patch_by_auth_id(token, auth_id, {"active": False})
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+    return PlayerResponse.from_roster(player.to_player_dict())
 
 
-@router.get("/reactivateplayer")
-async def reactivate_player(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/reactivateplayer", response_model=PlayerResponse)
+async def reactivate_player(
+    _: RequireAdmin,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_id: Annotated[UUID | None, Query(alias="authId")] = None,
+) -> PlayerResponse:
+    if auth_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing mandatory value for authId.",
+        )
+    try:
+        player = await profiles.patch_by_auth_id(token, auth_id, {"active": True})
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+    return PlayerResponse.from_roster(player.to_player_dict())

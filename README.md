@@ -1,7 +1,8 @@
 # baked-superiorsix
 
 Superior Six game API. Identity (sign-in / JWT) lives in **baked-auth**; per-app
-profiles in **baked-user**. This service owns the game itself.
+profiles / roster in **baked-user**. This service owns the game itself and does
+**not** invent a second permissions model — roles come from JWT `aud` + `roles`.
 
 ## Status
 
@@ -12,11 +13,26 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
+- Roster (proxied to baked-user by auth `sub`):
+  `GET /admin/listplayers`, `POST /admin/addplayer`,
+  `GET /admin/dropplayer?authId=`, `GET /admin/reactivateplayer?authId=`,
+  `POST /user/updatedetails`
 
 Fixture/score ingest is **process-driven** via `MatchIngestService` and CLI
 extractors (not user REST). Admin can open rounds, list leagues/matches, and
 select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
 now.
+
+### Creating a player (auth → membership → profile)
+
+1. Create the user in **baked-auth** (`POST /v1/auth/register`).
+2. Grant Superior Six membership roles
+   (`PUT /v1/applications/superiorsix/memberships/{username}`), e.g.
+   `player` + `user-profile` (and `admin` / `game-master` as needed).
+3. Token with `audience=superiorsix`.
+4. As an `admin`, call `POST /admin/addplayer` with
+   `{"auth_id":"<sub>","first_name":"…","last_name":"…"}`
+   (forwards to baked-user `POST /superiorsix/users/by-auth/{sub}`).
 
 ### Ingest extractors (SS-7 / SS-10)
 
@@ -73,6 +89,9 @@ Set `SUPERIORSIX_JWT_AUDIENCE=superiorsix` so bearer tokens must carry matching
 JWT `aud`. Roles are app-scoped and lowercase: `player`, `admin`,
 `game-master`, `user-profile`, `euros`, `worldcup`. Request tokens from baked-auth
 with `audience=superiorsix` after a membership has been granted.
+
+Point `SUPERIORSIX_USER_SERVICE_URL` at baked-user (default `http://127.0.0.1:8001`)
+so roster / display-name calls resolve profiles by auth `sub`.
 
 ## Run
 

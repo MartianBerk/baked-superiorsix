@@ -89,8 +89,8 @@ pyjwt = {version = ">=2.10.0", extras = ["crypto"]}
 [package.source]
 type = "git"
 url = "https://github.com/MartianBerk/baked-auth-client.git"
-reference = "cursor/app-scoped-roles-aud-f776"
-resolved_reference = "239458ec63d23522dab5b672596b624218d9a1d9"
+reference = "master"
+resolved_reference = "175b55a764428a4d5ee297ec4ee202c3720c888b"
 
 [[package]]
 name = "certifi"
@@ -2903,4 +2903,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12.3,<3.13"
-content-hash = "39e2d0c8f8729096c1f9e6402d946f8246f84abf5412bd1a6d1811d6f3db7917"
+content-hash = "9bfc4bcdf254543e82e9e9546920502beac80c9cd742c58a95d571fd3cd1fadc"

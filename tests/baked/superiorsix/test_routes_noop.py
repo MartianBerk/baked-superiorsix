@@ -28,13 +28,10 @@ IMPLEMENTED_PUBLIC = [
 ]
 
 PROTECTED_NOOP = [
-    ("POST", "/user/updatedetails", "user-profile"),
-    ("GET", "/admin/listplayers", "admin"),
     ("GET", "/admin/historicrounds", "game-master"),
     ("GET", "/admin/listpredictions", "game-master"),
     ("GET", "/admin/listpredictionsnew", "game-master"),
     ("POST", "/admin/addprediction", "game-master"),
-    ("POST", "/admin/addplayer", "admin"),
     ("GET", "/admin/getround", "game-master"),
     ("GET", "/admin/listmatchesnew", "game-master"),
     ("GET", "/admin/getmatch", "game-master"),
@@ -45,8 +42,6 @@ PROTECTED_NOOP = [
     ("POST", "/admin/setspecialmessage", "game-master"),
     ("GET", "/admin/getspecialmessage", "game-master"),
     ("GET", "/admin/endspecialmessage", "game-master"),
-    ("GET", "/admin/dropplayer", "admin"),
-    ("GET", "/admin/reactivateplayer", "admin"),
     ("GET", "/euros/getprediction", "euros"),
     ("POST", "/euros/addprediction", "euros"),
     ("GET", "/worldcup/getprediction", "worldcup"),
@@ -56,6 +51,7 @@ PROTECTED_NOOP = [
 PROTECTED_IMPLEMENTED = [
     ("GET", "/user/getprediction", "player"),
     ("POST", "/user/addprediction", "player"),
+    ("POST", "/user/updatedetails", "user-profile"),
     ("GET", "/admin/listleagues", "game-master"),
     ("GET", "/admin/listrounds", "game-master"),
     ("GET", "/admin/currentround", "game-master"),
@@ -63,6 +59,10 @@ PROTECTED_IMPLEMENTED = [
     ("POST", "/admin/endround", "game-master"),
     ("GET", "/admin/listmatches", "game-master"),
     ("POST", "/admin/addmatch", "game-master"),
+    ("GET", "/admin/listplayers", "admin"),
+    ("POST", "/admin/addplayer", "admin"),
+    ("GET", "/admin/dropplayer", "admin"),
+    ("GET", "/admin/reactivateplayer", "admin"),
 ]
 
 

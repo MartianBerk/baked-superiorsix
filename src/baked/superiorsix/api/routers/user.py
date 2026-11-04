@@ -4,14 +4,22 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from baked.superiorsix.api.deps import RequirePlayer, RequireUserProfile, get_prediction_service
+from baked.superiorsix.api.deps import (
+    RequirePlayer,
+    RequireUserProfile,
+    get_bearer_token,
+    get_prediction_service,
+    get_user_profiles,
+)
 from baked.superiorsix.api.schemas import (
     AddPredictionRequest,
     GetPredictionResponse,
+    PlayerResponse,
     PredictionResponse,
+    UpdateDetailsRequest,
 )
-from baked.superiorsix.domain.exceptions import MatchNotFoundError, PredictionError
-from baked.superiorsix.noop import noop
+from baked.superiorsix.clients.user_profiles import UserProfileGateway
+from baked.superiorsix.domain.exceptions import MatchNotFoundError, PredictionError, RosterError
 from baked.superiorsix.services.predictions import PredictionService
 
 router = APIRouter(prefix="/user", tags=["user"])
@@ -54,6 +62,21 @@ async def add_prediction(
     return PredictionResponse.from_domain(prediction)
 
 
-@router.post("/updatedetails")
-async def update_details(_: RequireUserProfile) -> dict[str, Any]:
-    return noop()
+@router.post("/updatedetails", response_model=PlayerResponse)
+async def update_details(
+    _: RequireUserProfile,
+    payload: UpdateDetailsRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+) -> PlayerResponse:
+    patch: dict[str, Any] = payload.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide at least one of nickname, avatar_url, first_name, last_name.",
+        )
+    try:
+        player = await profiles.patch_me(token, patch)
+    except RosterError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return PlayerResponse.from_roster(player.to_player_dict())

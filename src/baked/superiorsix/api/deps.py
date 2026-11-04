@@ -3,9 +3,10 @@ from typing import Annotated
 
 from baked.client.auth import AuthPrincipal
 from baked.client.auth.fastapi import get_current_principal, get_key_set, require_roles
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
@@ -23,6 +24,7 @@ __all__ = [
     "RequirePlayer",
     "RequireUserProfile",
     "RequireWorldcup",
+    "get_bearer_token",
     "get_current_principal",
     "get_db_session",
     "get_key_set",
@@ -31,6 +33,7 @@ __all__ = [
     "get_prediction_service",
     "get_round_service",
     "get_session_factory",
+    "get_user_profiles",
     "require_roles",
 ]
 
@@ -71,6 +74,21 @@ async def get_prediction_service(
     matches: Annotated[MatchService, Depends(get_match_service)],
 ) -> PredictionService:
     return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
+
+
+def get_user_profiles(request: Request) -> UserProfileGateway:
+    return request.app.state.user_profiles
+
+
+def get_bearer_token(request: Request) -> str:
+    header = request.headers.get("Authorization")
+    if not header or not header.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return header.split(" ", 1)[1].strip()
 
 
 # App-scoped Superior Six roles (JWT aud=superiorsix). Lowercase; hyphen for multi-word.

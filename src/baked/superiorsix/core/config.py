@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     jwt_audience: str = "superiorsix"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     auth_token_url: str = "http://127.0.0.1:8010/v1/auth/token"
+    # baked-user base URL for roster / display-name resolution by auth sub.
+    user_service_url: str = "http://127.0.0.1:8001"
+    user_app_name: str = "superiorsix"
     # Ingest API keys — prefer unprefixed deploy names; SUPERIORSIX_* aliases also work.
     football_data_api_token: SecretStr | None = Field(
         default=None,
