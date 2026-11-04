@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from baked.superiorsix.api.deps import (
-    RequirePlayer,
+    RequireActivePlayer,
     RequireUserProfile,
     get_bearer_token,
     get_prediction_service,
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/user", tags=["user"])
 
 @router.get("/getprediction", response_model=GetPredictionResponse)
 async def get_prediction(
-    principal: RequirePlayer,
+    principal: RequireActivePlayer,
     prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
     game_id: Annotated[int | None, Query(alias="gameId")] = None,
 ) -> GetPredictionResponse:
@@ -45,7 +45,7 @@ async def get_prediction(
 
 @router.post("/addprediction", response_model=PredictionResponse)
 async def add_prediction(
-    principal: RequirePlayer,
+    principal: RequireActivePlayer,
     payload: AddPredictionRequest,
     prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
 ) -> PredictionResponse:

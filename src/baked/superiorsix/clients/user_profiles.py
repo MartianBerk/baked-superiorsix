@@ -1,7 +1,7 @@
 """HTTP client for Superior Six roster profiles in baked-user.
 
 Identity and roles stay in baked-auth JWTs; this client only resolves display /
-roster documents keyed by auth ``sub``.
+roster documents and invites keyed by username / auth ``sub``.
 """
 
 from __future__ import annotations
@@ -54,6 +54,26 @@ class RosterProfile:
         }
 
 
+@dataclass(slots=True, frozen=True)
+class RosterInvite:
+    id: UUID
+    username: str
+    status: str
+    auth_id: UUID | None
+    profile: dict[str, Any]
+
+    @classmethod
+    def from_api(cls, payload: dict[str, Any]) -> RosterInvite:
+        auth_raw = payload.get("auth_id")
+        return cls(
+            id=UUID(str(payload["id"])),
+            username=str(payload["username"]),
+            status=str(payload.get("status") or "pending"),
+            auth_id=UUID(str(auth_raw)) if auth_raw else None,
+            profile=dict(payload.get("profile") or {}),
+        )
+
+
 class UserProfileGateway(Protocol):
     async def list_profiles(
         self,
@@ -69,6 +89,8 @@ class UserProfileGateway(Protocol):
         bearer_token: str,
         auth_id: UUID,
         profile: dict[str, Any],
+        *,
+        username: str | None = None,
     ) -> RosterProfile: ...
 
     async def patch_by_auth_id(
@@ -79,6 +101,16 @@ class UserProfileGateway(Protocol):
     ) -> RosterProfile: ...
 
     async def patch_me(self, bearer_token: str, patch: dict[str, Any]) -> RosterProfile: ...
+
+    async def invite(
+        self,
+        bearer_token: str,
+        username: str,
+        *,
+        profile: dict[str, Any] | None = None,
+    ) -> RosterInvite: ...
+
+    async def list_invites(self, bearer_token: str) -> list[RosterInvite]: ...
 
 
 class UserProfileClient:
@@ -131,12 +163,17 @@ class UserProfileClient:
         bearer_token: str,
         auth_id: UUID,
         profile: dict[str, Any],
+        *,
+        username: str | None = None,
     ) -> RosterProfile:
+        body: dict[str, Any] = {"profile": profile}
+        if username is not None:
+            body["username"] = username
         payload = await self._request(
             "POST",
             f"/{self._app_name}/users/by-auth/{auth_id}",
             bearer_token,
-            json={"profile": profile},
+            json=body,
         )
         assert isinstance(payload, dict)
         return RosterProfile.from_api(payload)
@@ -165,6 +202,31 @@ class UserProfileClient:
         )
         assert isinstance(payload, dict)
         return RosterProfile.from_api(payload)
+
+    async def invite(
+        self,
+        bearer_token: str,
+        username: str,
+        *,
+        profile: dict[str, Any] | None = None,
+    ) -> RosterInvite:
+        payload = await self._request(
+            "POST",
+            f"/{self._app_name}/invites",
+            bearer_token,
+            json={"username": username, "profile": profile or {}},
+        )
+        assert isinstance(payload, dict)
+        return RosterInvite.from_api(payload)
+
+    async def list_invites(self, bearer_token: str) -> list[RosterInvite]:
+        payload = await self._request(
+            "GET",
+            f"/{self._app_name}/invites",
+            bearer_token,
+        )
+        assert isinstance(payload, dict)
+        return [RosterInvite.from_api(item) for item in payload.get("invites", [])]
 
     async def _request(
         self,
@@ -195,6 +257,9 @@ class UserProfileClient:
 
         if response.status_code == 404:
             raise RosterNotFoundError("Player profile not found.")
+        if response.status_code == 403:
+            detail = _error_detail(response)
+            raise RosterError(detail)
         if response.status_code == 409:
             raise RosterError("A profile already exists for this auth id.")
         if response.status_code >= 400:
