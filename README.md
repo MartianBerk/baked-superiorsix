@@ -163,9 +163,23 @@ so roster / display-name calls resolve profiles by auth `sub`.
 poetry run baked-superiorsix
 ```
 
-OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs).
+OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs) for poetry, or `:8030` when using Docker.
 
 - Health: `GET /health`
+
+### Full backend stack (local Mac / Linux)
+
+Entry point for auth + user + superiorsix together (shared JWT, SQLite volumes,
+bootstrap + invite notes):
+
+```bash
+cd local-dev
+cp .env.example .env   # set BAKED_AUTH_CLIENT_GIT_TOKEN
+docker compose up --build
+```
+
+See [`local-dev/README.md`](./local-dev/README.md). Host ports: **8010** / **8020** / **8030**.
+Front end: sibling [`baked-superiorsix-app`](https://github.com/MartianBerk/baked-superiorsix-app) (host Expo).
 
 ## Tests
 

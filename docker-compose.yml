@@ -14,9 +14,19 @@ services:
       SUPERIORSIX_JWT_ALGORITHM: ${SUPERIORSIX_JWT_ALGORITHM:-HS256}
       SUPERIORSIX_JWT_KEY_ID: ${SUPERIORSIX_JWT_KEY_ID:-}
       SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS: ${SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS:-[]}
-      SUPERIORSIX_CORS_ORIGINS: ${SUPERIORSIX_CORS_ORIGINS:-["http://localhost:3000"]}
+      SUPERIORSIX_JWT_AUDIENCE: ${SUPERIORSIX_JWT_AUDIENCE:-superiorsix}
+      SUPERIORSIX_CORS_ORIGINS: ${SUPERIORSIX_CORS_ORIGINS:-["http://localhost:8081","http://127.0.0.1:8081","http://localhost:19006","http://127.0.0.1:19006","http://localhost:8040","http://127.0.0.1:8040","http://localhost:3000"]}
       SUPERIORSIX_DATABASE_URL: sqlite+aiosqlite:////data/baked_superiorsix.db
-      SUPERIORSIX_AUTH_TOKEN_URL: ${SUPERIORSIX_AUTH_TOKEN_URL:-http://127.0.0.1:8010/v1/auth/token}
+      # When APIs share a compose network, prefer http://baked-auth:8000 and
+      # http://baked-user:8000 (see local-dev/). Host-published defaults for
+      # standalone:
+      SUPERIORSIX_AUTH_TOKEN_URL: ${SUPERIORSIX_AUTH_TOKEN_URL:-http://host.docker.internal:8010/v1/auth/token}
+      SUPERIORSIX_USER_SERVICE_URL: ${SUPERIORSIX_USER_SERVICE_URL:-http://host.docker.internal:8020}
+      SUPERIORSIX_USER_APP_NAME: ${SUPERIORSIX_USER_APP_NAME:-superiorsix}
+      FOOTBALL_DATA_API_TOKEN: ${FOOTBALL_DATA_API_TOKEN:-}
+      GOAL_API_KEY: ${GOAL_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - baked-superiorsix-data:/data
     restart: unless-stopped
