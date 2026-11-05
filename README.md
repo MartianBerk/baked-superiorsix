@@ -167,8 +167,19 @@ OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs) for
 
 - Health: `GET /health`
 
-For the full Superior Six stack on Docker (shared JWT, SQLite volumes, invite
-bootstrap notes), see [`baked-devops/local-dev`](https://github.com/MartianBerk/baked-devops/tree/master/local-dev).
+### Full backend stack (local Mac / Linux)
+
+Entry point for auth + user + superiorsix together (shared JWT, SQLite volumes,
+bootstrap + invite notes):
+
+```bash
+cd local-dev
+cp .env.example .env   # set BAKED_AUTH_CLIENT_GIT_TOKEN
+docker compose up --build
+```
+
+See [`local-dev/README.md`](./local-dev/README.md). Host ports: **8010** / **8020** / **8030**.
+Front end: sibling [`baked-superiorsix-app`](https://github.com/MartianBerk/baked-superiorsix-app) (host Expo).
 
 ## Tests
 
