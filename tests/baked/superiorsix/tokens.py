@@ -22,7 +22,7 @@ def make_access_token(
     now = datetime.now(UTC)
     payload = {
         "sub": str(subject),
-        "username": "martin",
+        "email": "martin@example.com",
         "roles": roles if roles is not None else ["player"],
         "aud": audience,
         "iat": int(now.timestamp()),

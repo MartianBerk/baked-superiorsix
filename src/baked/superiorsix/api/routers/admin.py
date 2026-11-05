@@ -156,7 +156,7 @@ async def invite_player(
     roles = with_always_grant_invite_roles(list(payload.roles))
     try:
         created = await auth_admin.create_invite_ready_user(
-            username=payload.username,
+            email=payload.email,
             roles=roles,
             application=settings.jwt_audience,
         )
@@ -164,10 +164,10 @@ async def invite_player(
             roles = with_always_grant_invite_roles(list(created.memberships[0].roles))
     except AuthAdminError as exc:
         detail = str(exc)
-        if detail.startswith("USERNAME_EXISTS:"):
+        if detail.startswith("EMAIL_EXISTS:"):
             try:
                 membership = await auth_admin.set_membership(
-                    username=payload.username,
+                    email=payload.email,
                     roles=roles,
                     application=settings.jwt_audience,
                 )
@@ -182,7 +182,7 @@ async def invite_player(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
                     "Invite auth provisioning is not configured: set "
-                    "SUPERIORSIX_AUTH_ADMIN_USERNAME / SUPERIORSIX_AUTH_ADMIN_PASSWORD "
+                    "SUPERIORSIX_AUTH_ADMIN_EMAIL / SUPERIORSIX_AUTH_ADMIN_PASSWORD "
                     "(local-dev may reuse AUTH_BOOTSTRAP_*). Required for aud=auth "
                     "POST /v1/users (SS-66)."
                 ),
@@ -205,14 +205,14 @@ async def invite_player(
     try:
         invite = await profiles.invite(
             token,
-            payload.username,
+            payload.email,
             profile=seed or None,
             roles=roles,
         )
     except RosterError as exc:
         raise _roster_http_error(exc) from exc
     return InvitePlayerResponse(
-        username=invite.username,
+        email=invite.email,
         status=invite.status,
         auth_id=invite.auth_id,
         profile=dict(invite.profile),
@@ -242,7 +242,7 @@ async def add_player(
             token,
             payload.auth_id,
             profile_body,
-            username=payload.username,
+            email=payload.email,
         )
     except RosterError as exc:
         if "already exists" in str(exc).lower():

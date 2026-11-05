@@ -26,7 +26,7 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
         cors_origins=["http://testserver"],
         auth_token_url="http://testserver/v1/auth/token",
         user_service_url="http://testserver-user",
-        auth_admin_username="ops",
+        auth_admin_email="ops@example.com",
         auth_admin_password=SecretStr("local-dev-change-me"),
     )
 
@@ -39,8 +39,8 @@ def user_profiles() -> FakeUserProfileClient:
 @pytest.fixture
 def auth_admin() -> FakeAuthAdminClient:
     fake = FakeAuthAdminClient()
-    fake.register("ops", "local-dev-change-me")
-    fake.memberships["ops"] = ["admin", "game-master", "user-profile"]
+    fake.register("ops@example.com", "local-dev-change-me")
+    fake.memberships["ops@example.com"] = ["admin", "game-master", "user-profile"]
     return fake
 
 

@@ -117,7 +117,7 @@ async def accept_invite(
 
     try:
         invitee_token = await auth_admin.login_user(
-            username=payload.username,
+            email=payload.email,
             password=payload.password,
             audience=settings.jwt_audience,
         )
@@ -130,8 +130,9 @@ async def accept_invite(
     profile_body: dict[str, Any] = {
         key: value
         for key, value in payload.model_dump(exclude_none=True).items()
-        if key not in {"username", "password"}
+        if key not in {"email", "password"}
     }
+    profile_body.setdefault("email", payload.email)
     try:
         player, consumed_roles = await profiles.create_me(invitee_token, profile_body)
     except RosterError as exc:

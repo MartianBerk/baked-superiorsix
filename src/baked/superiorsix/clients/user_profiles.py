@@ -1,13 +1,14 @@
 """HTTP client for Superior Six roster profiles in baked-user.
 
 Identity and roles stay in baked-auth JWTs; this client only resolves display /
-roster documents and invites keyed by username / auth ``sub``.
+roster documents and invites keyed by email / auth ``sub``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+from urllib.parse import quote
 from uuid import UUID
 
 import httpx
@@ -60,7 +61,7 @@ class RosterProfile:
 @dataclass(slots=True, frozen=True)
 class RosterInvite:
     id: UUID
-    username: str
+    email: str
     status: str
     auth_id: UUID | None
     profile: dict[str, Any]
@@ -73,7 +74,7 @@ class RosterInvite:
         roles = [str(role).strip().lower() for role in roles_raw if str(role).strip()]
         return cls(
             id=UUID(str(payload["id"])),
-            username=str(payload["username"]),
+            email=str(payload["email"]),
             status=str(payload.get("status") or "pending"),
             auth_id=UUID(str(auth_raw)) if auth_raw else None,
             profile=dict(payload.get("profile") or {}),
@@ -97,7 +98,7 @@ class UserProfileGateway(Protocol):
         auth_id: UUID,
         profile: dict[str, Any],
         *,
-        username: str | None = None,
+        email: str | None = None,
     ) -> RosterProfile: ...
 
     async def patch_by_auth_id(
@@ -112,7 +113,7 @@ class UserProfileGateway(Protocol):
     async def invite(
         self,
         bearer_token: str,
-        username: str,
+        email: str,
         *,
         profile: dict[str, Any] | None = None,
         roles: list[str] | None = None,
@@ -120,7 +121,7 @@ class UserProfileGateway(Protocol):
 
     async def list_invites(self, bearer_token: str) -> list[RosterInvite]: ...
 
-    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite: ...
+    async def get_invite(self, bearer_token: str, email: str) -> RosterInvite: ...
 
     async def create_me(
         self,
@@ -180,11 +181,11 @@ class UserProfileClient:
         auth_id: UUID,
         profile: dict[str, Any],
         *,
-        username: str | None = None,
+        email: str | None = None,
     ) -> RosterProfile:
         body: dict[str, Any] = {"profile": profile}
-        if username is not None:
-            body["username"] = username
+        if email is not None:
+            body["email"] = email
         payload = await self._request(
             "POST",
             f"/{self._app_name}/users/by-auth/{auth_id}",
@@ -222,7 +223,7 @@ class UserProfileClient:
     async def invite(
         self,
         bearer_token: str,
-        username: str,
+        email: str,
         *,
         profile: dict[str, Any] | None = None,
         roles: list[str] | None = None,
@@ -232,7 +233,7 @@ class UserProfileClient:
             f"/{self._app_name}/invites",
             bearer_token,
             json={
-                "username": username,
+                "email": email,
                 "profile": profile or {},
                 "roles": list(roles or []),
             },
@@ -249,10 +250,10 @@ class UserProfileClient:
         assert isinstance(payload, dict)
         return [RosterInvite.from_api(item) for item in payload.get("invites", [])]
 
-    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite:
+    async def get_invite(self, bearer_token: str, email: str) -> RosterInvite:
         payload = await self._request(
             "GET",
-            f"/{self._app_name}/invites/{username.strip().lower()}",
+            f"/{self._app_name}/invites/{quote(email.strip().lower(), safe='')}",
             bearer_token,
         )
         assert isinstance(payload, dict)

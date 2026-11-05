@@ -29,13 +29,13 @@ class Settings(BaseSettings):
     # baked-user base URL for roster / display-name resolution by auth sub.
     user_service_url: str = "http://127.0.0.1:8001"
     user_app_name: str = "superiorsix"
-    # Server-side auth-admin credentials for membership grants on invite accept.
-    # Local-dev typically reuses AUTH_BOOTSTRAP_* (ops) with audience=auth.
-    auth_admin_username: str | None = Field(
+    # Server-side auth-admin credentials for inviteplayer → POST /v1/users (aud=auth).
+    # Local-dev typically reuses AUTH_BOOTSTRAP_* with audience=auth.
+    auth_admin_email: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
-            "SUPERIORSIX_AUTH_ADMIN_USERNAME",
-            "AUTH_BOOTSTRAP_USERNAME",
+            "SUPERIORSIX_AUTH_ADMIN_EMAIL",
+            "AUTH_BOOTSTRAP_EMAIL",
         ),
     )
     auth_admin_password: SecretStr | None = Field(

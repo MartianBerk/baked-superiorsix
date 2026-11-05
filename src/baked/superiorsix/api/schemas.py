@@ -204,19 +204,18 @@ def with_always_grant_invite_roles(roles: list[str]) -> list[str]:
 
 
 class InvitePlayerRequest(BaseModel):
-    """Invite a username onto the Superior Six roster (baked-user invite list)."""
+    """Invite an email onto the Superior Six roster (baked-user invite list)."""
 
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    email: str = Field(min_length=3, max_length=254)
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
-    email: str = Field(min_length=3, max_length=254)
     avatar_url: str | None = Field(default=None, max_length=512)
     roles: list[str] = Field(default_factory=list)
 
-    @field_validator("username")
+    @field_validator("email")
     @classmethod
-    def normalize_username(cls, value: str) -> str:
+    def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
 
     @field_validator("roles")
@@ -248,7 +247,7 @@ class InvitePlayerRequest(BaseModel):
 
 
 class InvitePlayerResponse(BaseModel):
-    username: str
+    email: str
     status: str
     auth_id: UUID | None = None
     profile: dict[str, object] = Field(default_factory=dict)
@@ -258,22 +257,21 @@ class InvitePlayerResponse(BaseModel):
 class AcceptInviteRequest(BaseModel):
     """Invitee accepts a pending roster invite after set-password claim.
 
-    ``username`` + ``password`` prove identity (password set via baked-auth
+    ``email`` + ``password`` prove identity (password set via baked-auth
     ``POST /v1/auth/set-password``). Membership was granted at invite time;
     this only logs the invitee in and creates the roster profile.
     """
 
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=8, max_length=128)
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
-    email: str | None = Field(default=None, min_length=3, max_length=254)
     avatar_url: str | None = Field(default=None, max_length=512)
 
-    @field_validator("username")
+    @field_validator("email")
     @classmethod
-    def normalize_username(cls, value: str) -> str:
+    def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
 
 
@@ -288,22 +286,20 @@ class AcceptInviteResponse(BaseModel):
 class AddPlayerRequest(BaseModel):
     """Provision a baked-user roster profile for an existing auth subject.
 
-    ``username`` must match a pending invite on baked-user (invite_only roster).
+    ``email`` must match a pending invite on baked-user (invite_only roster).
     """
 
     auth_id: UUID
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    email: str = Field(min_length=3, max_length=254)
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
-    email: str = Field(min_length=3, max_length=254)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
     avatar_url: str | None = Field(default=None, max_length=512)
 
-    @field_validator("username")
+    @field_validator("email")
     @classmethod
-    def normalize_username(cls, value: str) -> str:
+    def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
-
 
 class UpdateDetailsRequest(BaseModel):
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
