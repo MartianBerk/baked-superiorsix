@@ -116,9 +116,10 @@ services:
       SUPERIORSIX_AUTH_TOKEN_URL: http://baked-auth:8000/v1/auth/token
       SUPERIORSIX_USER_SERVICE_URL: http://baked-user:8000
       SUPERIORSIX_USER_APP_NAME: superiorsix
-      # Server-side auth-admin for accept-invite membership grants (reuse bootstrap ops).
-      SUPERIORSIX_AUTH_ADMIN_USERNAME: ${SUPERIORSIX_AUTH_ADMIN_USERNAME:-ops}
-      SUPERIORSIX_AUTH_ADMIN_PASSWORD: ${SUPERIORSIX_AUTH_ADMIN_PASSWORD:-local-dev-change-me}
+      # Server-side auth-admin for inviteplayer → POST /v1/users (aud=auth).
+      # Nested default: SUPERIORSIX_AUTH_ADMIN_* → AUTH_BOOTSTRAP_* → local-dev default.
+      SUPERIORSIX_AUTH_ADMIN_USERNAME: ${SUPERIORSIX_AUTH_ADMIN_USERNAME:-${AUTH_BOOTSTRAP_USERNAME:-ops}}
+      SUPERIORSIX_AUTH_ADMIN_PASSWORD: ${SUPERIORSIX_AUTH_ADMIN_PASSWORD:-${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}}
       AUTH_BOOTSTRAP_USERNAME: ${AUTH_BOOTSTRAP_USERNAME:-ops}
       AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}
       FOOTBALL_DATA_API_TOKEN: ${FOOTBALL_DATA_API_TOKEN:-}

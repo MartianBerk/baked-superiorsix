@@ -62,8 +62,8 @@ curl -s http://127.0.0.1:8030/health
 | `BAKED_AUTH_CLIENT_GIT_TOKEN` | BuildKit secret for private `baked-auth-client` git dep |
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
-| `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for accept-invite membership grants (`aud=auth`) |
-| `SUPERIORSIX_AUTH_ADMIN_USERNAME` / `PASSWORD` | Optional override for accept-invite auth-admin (defaults to bootstrap ops) |
+| `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for inviteplayer → `POST /v1/users` (`aud=auth`) |
+| `SUPERIORSIX_AUTH_ADMIN_USERNAME` / `PASSWORD` | Optional override for invite auth-admin (defaults nest to `AUTH_BOOTSTRAP_*`) |
 | `CORS_ORIGINS` | Expo web + optional `:8040` origins — **quote as JSON**: `CORS_ORIGINS='["http://localhost:8081",…]'` (unquoted `[…]` is mangled by Compose and crashes auth) |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional match ingest |
 
@@ -98,28 +98,29 @@ curl -s -X POST http://127.0.0.1:8010/v1/auth/token \
 
 ## Invite flow (Superior Six)
 
-Superior Six roster is **invite-only** (baked-user). baked-auth is identity only.
-Roles are chosen **at invite**; the invitee sets their own password on register.
-Admin does **not** set a password or call membership PUT / addplayer.
+Superior Six roster is **invite-only** (baked-user). baked-auth provides
+invite-ready users + set-password claim (SS-66 / baked-auth#14). Roles and
+membership are applied **at invite**; acceptinvite only creates the roster.
 
 1. **Bootstrap** (above) — ops already has superiorsix `admin` / `game-master` /
    `user-profile`. The same bootstrap credentials are passed to superiorsix as
-   `SUPERIORSIX_AUTH_ADMIN_*` so accept-invite can grant membership server-side
-   (`aud=auth`).
-2. **Invite** the username + roles (superiorsix `admin` token,
-   `audience=superiorsix`):
+   `SUPERIORSIX_AUTH_ADMIN_*` so **inviteplayer** can call baked-auth
+   `POST /v1/users` with `aud=auth` (passwordless create + membership).
+2. **Invite** (superiorsix `admin` token, `audience=superiorsix`):
    `POST http://127.0.0.1:8030/admin/inviteplayer`
-   `{"username":"martin","first_name":"…","last_name":"…","roles":["player"]}`
+   `{"username":"martin","email":"…","first_name":"…","last_name":"…","roles":["player"]}`
    Selectable roles: `player`, `worldcup`, `euros`.
    `user-profile` is always merged server-side (not selectable).
-3. **Register** (invitee chooses password):
-   `POST http://127.0.0.1:8010/v1/auth/register` `{"username":"martin","password":"…"}`.
+3. **Set password** (invitee claim):
+   `POST http://127.0.0.1:8010/v1/auth/set-password`
+   `{"username":"martin","password":"…"}`.
+   `/token` returns **403** until the password is set.
 4. **Accept** (invitee):
    `POST http://127.0.0.1:8030/user/acceptinvite`
    `{"username":"martin","password":"…"}`
-   BFF: grants invite.roles (+ always `user-profile`) via auth-admin → logs invitee
-   in (`audience=superiorsix`) → creates roster profile with that JWT (consumes
-   invite). Returns player + `access_token` + roles.
+   BFF: login invitee (`audience=superiorsix`) → create roster profile (consumes
+   invite). No service bootstrap password on accept. Returns player +
+   `access_token` + roles.
 
 ## Point the Expo app at this stack
 

@@ -25,27 +25,28 @@ extractors (not user REST). Admin can open rounds, list leagues/matches, and
 select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
 now.
 
-### Creating a player (invite + roles → register → accept)
+### Creating a player (invite → set-password claim → accept)
 
-Superior Six is **invite-only** at the roster layer (baked-user). baked-auth stays
-identity-only (register / password / JWT `aud` + roles). Roles are chosen at
-invite; the invitee sets their own password; accept grants membership server-side.
+Superior Six is **invite-only** at the roster layer (baked-user). baked-auth
+provides invite-ready (passwordless) users + set-password claim (SS-66). Roles
+are chosen and membership is granted **at invite**; the invitee claims a
+password, then accepts the roster invite.
 
 1. As superiorsix `admin`, invite a username + roles:
    `POST /admin/inviteplayer`
-   `{"username":"martin","first_name":"…","last_name":"…","roles":["player"]}`
+   `{"username":"martin","email":"…","first_name":"…","last_name":"…","roles":["player"]}`
    Selectable: `player`, `worldcup`, `euros`.
-   `user-profile` is **always granted** server-side on invite and accept (not a
-   selectable chip) so every player can edit their profile via baked-user.
-2. Invitee registers (`POST` baked-auth `/v1/auth/register`) with their password.
-3. Invitee accepts: `POST /user/acceptinvite` `{"username":"martin","password":"…"}`.
-   The BFF grants invite.roles (plus always-granted `user-profile`) via auth-admin
-   credentials (`SUPERIORSIX_AUTH_ADMIN_*` / bootstrap ops, `aud=auth`), obtains
-   the invitee's superiorsix JWT, and creates the roster profile with that JWT.
+   `user-profile` is **always granted** server-side (not a selectable chip).
+   BFF (server-side `SUPERIORSIX_AUTH_ADMIN_*`, `aud=auth`):
+   `POST` baked-auth `/v1/users` with membership → then baked-user roster invite.
+2. Invitee claims password: `POST` baked-auth `/v1/auth/set-password`
+   `{"username":"martin","password":"…"}` (no token returned). `/token` is **403**
+   until this succeeds.
+3. Invitee accepts roster: `POST /user/acceptinvite`
+   `{"username":"martin","password":"…"}`.
+   BFF logs the invitee in (`audience=superiorsix`) and creates the roster
+   profile (consumes invite). **No** service bootstrap password on this path.
 4. Play with the returned `access_token` (or login again with `audience=superiorsix`).
-   `POST /user/updatedetails` requires an active roster player (not the
-   `user-profile` JWT role gate); baked-user `patch_me` still needs `user-profile`
-   on the JWT, which accept always grants.
 
 `POST /admin/addplayer` remains for admin-provisioned roster create when a pending
 invite already exists.

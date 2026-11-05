@@ -210,7 +210,30 @@ def test_addplayer_requires_email(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_accept_invite_grants_roles_and_creates_roster(
+def test_inviteplayer_creates_auth_user_and_membership(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    invited = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "martin",
+            "first_name": "Martin",
+            "last_name": "Berk",
+            "email": "martin@example.com",
+            "roles": ["player", "euros"],
+        },
+    )
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["roles"] == ["player", "euros", "user-profile"]
+    assert "martin" in auth_admin.created_invite_ready
+    assert auth_admin.passwords["martin"] is None
+    assert auth_admin.memberships["martin"] == ["player", "euros", "user-profile"]
+
+
+def test_accept_invite_after_set_password_creates_roster(
     client: TestClient,
     user_profiles: FakeUserProfileClient,
     auth_admin: FakeAuthAdminClient,
@@ -228,9 +251,8 @@ def test_accept_invite_grants_roles_and_creates_roster(
         },
     )
     assert invited.status_code == 201, invited.text
-    assert invited.json()["roles"] == ["player", "euros", "user-profile"]
 
-    auth_admin.register("martin", "password123")
+    auth_admin.set_password("martin", "password123")
     auth_id = uuid4()
     user_profiles.bind_username("martin", auth_id)
 
@@ -250,11 +272,13 @@ def test_accept_invite_grants_roles_and_creates_roster(
     assert body["player"]["nickname"] == "Marty"
     assert body["player"]["email"] == "martin@example.com"
     assert body["access_token"].startswith("token:martin:superiorsix")
-    assert auth_admin.memberships["martin"] == ["player", "euros", "user-profile"]
     assert user_profiles._invites["martin"].status == "accepted"
 
 
-def test_inviteplayer_always_grants_user_profile(client: TestClient) -> None:
+def test_inviteplayer_always_grants_user_profile(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
     admin_token, _ = make_access_token(roles=["admin"])
     invited = client.post(
         "/admin/inviteplayer",
@@ -267,14 +291,19 @@ def test_inviteplayer_always_grants_user_profile(client: TestClient) -> None:
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["roles"] == ["player", "worldcup", "user-profile"]
+    assert auth_admin.memberships["noprofilechip"] == [
+        "player",
+        "worldcup",
+        "user-profile",
+    ]
 
 
-def test_accept_invite_always_grants_user_profile(
+def test_accept_invite_merges_user_profile_from_consumed_roles(
     client: TestClient,
     user_profiles: FakeUserProfileClient,
     auth_admin: FakeAuthAdminClient,
 ) -> None:
-    """Even a legacy invite missing user-profile gets it on accept."""
+    """Even a legacy invite missing user-profile gets it on accept response."""
     admin_token, _ = make_access_token(roles=["admin"])
     client.post(
         "/admin/inviteplayer",
@@ -298,7 +327,7 @@ def test_accept_invite_always_grants_user_profile(
         roles=["player"],
     )
 
-    auth_admin.register("legacy", "password123")
+    auth_admin.set_password("legacy", "password123")
     auth_id = uuid4()
     user_profiles.bind_username("legacy", auth_id)
 
@@ -308,7 +337,6 @@ def test_accept_invite_always_grants_user_profile(
     )
     assert accepted.status_code == 201, accepted.text
     assert accepted.json()["roles"] == ["player", "user-profile"]
-    assert auth_admin.memberships["legacy"] == ["player", "user-profile"]
 
 
 def test_accept_invite_rejects_bad_password(
@@ -327,7 +355,7 @@ def test_accept_invite_rejects_bad_password(
             "email": "martin@example.com",
         },
     )
-    auth_admin.register("martin", "password123")
+    auth_admin.set_password("martin", "password123")
 
     denied = client.post(
         "/user/acceptinvite",
@@ -336,7 +364,35 @@ def test_accept_invite_rejects_bad_password(
     assert denied.status_code == 401
 
 
-def test_accept_invite_requires_pending_invite(client: TestClient) -> None:
+def test_accept_invite_rejects_before_set_password(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "martin",
+            "roles": ["player"],
+            "email": "martin@example.com",
+        },
+    )
+    assert auth_admin.passwords["martin"] is None
+
+    denied = client.post(
+        "/user/acceptinvite",
+        json={"username": "martin", "password": "password123"},
+    )
+    assert denied.status_code == 401
+
+
+def test_accept_invite_requires_pending_invite(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    auth_admin.register("nobody", "password123")
+    auth_admin.memberships["nobody"] = ["player", "user-profile"]
     response = client.post(
         "/user/acceptinvite",
         json={"username": "nobody", "password": "password123"},

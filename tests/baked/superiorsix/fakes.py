@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID, uuid4
 
-from baked.superiorsix.clients.auth_admin import MembershipResult
+from baked.superiorsix.clients.auth_admin import InviteReadyUserResult, MembershipResult
 from baked.superiorsix.clients.user_profiles import RosterInvite, RosterProfile
 from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError, RosterNotFoundError
 
@@ -195,16 +195,45 @@ class FakeUserProfileClient:
 
 
 class FakeAuthAdminClient:
-    """In-memory baked-auth admin stand-in for accept-invite tests."""
+    """In-memory baked-auth admin stand-in for invite / accept-invite tests."""
 
     def __init__(self) -> None:
         self.memberships: dict[str, list[str]] = {}
-        self.passwords: dict[str, str] = {}
+        self.passwords: dict[str, str | None] = {}
         self.tokens_issued: list[tuple[str, str]] = []
         self.fail_login_for: set[str] = set()
+        self.created_invite_ready: list[str] = []
 
     def register(self, username: str, password: str) -> None:
         self.passwords[username.lower()] = password
+
+    def set_password(self, username: str, password: str) -> None:
+        key = username.lower()
+        if key not in self.passwords:
+            raise AuthAdminError("User not found.")
+        if self.passwords[key] is not None:
+            raise AuthAdminError("Password already set; use login instead of set-password.")
+        self.passwords[key] = password
+
+    async def create_invite_ready_user(
+        self,
+        *,
+        username: str,
+        roles: list[str],
+        application: str = "superiorsix",
+    ) -> InviteReadyUserResult:
+        key = username.strip().lower()
+        if key in self.passwords:
+            raise AuthAdminError("USERNAME_EXISTS:Username is already registered.")
+        self.passwords[key] = None
+        self.memberships[key] = list(roles)
+        self.created_invite_ready.append(key)
+        return InviteReadyUserResult(
+            id=uuid4(),
+            username=key,
+            must_set_password=True,
+            memberships=[MembershipResult(application=application, roles=list(roles))],
+        )
 
     async def set_membership(
         self,
@@ -221,7 +250,14 @@ class FakeAuthAdminClient:
         key = username.strip().lower()
         if key in self.fail_login_for:
             raise AuthAdminError("Incorrect username or password.")
-        if key in self.passwords and self.passwords[key] != password:
+        if key not in self.passwords:
+            raise AuthAdminError("Incorrect username or password.")
+        stored = self.passwords[key]
+        if stored is None:
+            raise AuthAdminError(
+                "Password not set; complete set-password before login."
+            )
+        if stored != password:
             raise AuthAdminError("Incorrect username or password.")
         if audience == "superiorsix" and key not in self.memberships and key != "ops":
             raise AuthAdminError(f"User is not a member of application '{audience}'.")

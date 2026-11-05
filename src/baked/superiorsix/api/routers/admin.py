@@ -7,13 +7,14 @@ Roster display resolves via baked-user by auth ``sub`` (no local permissions mod
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from baked.superiorsix.api.dates import parse_legacy_date
 from baked.superiorsix.api.deps import (
     RequireAdmin,
     RequireAdminOrGameMaster,
     RequireGameMaster,
+    get_auth_admin,
     get_bearer_token,
     get_league_service,
     get_match_service,
@@ -34,9 +35,12 @@ from baked.superiorsix.api.schemas import (
     PlayersResponse,
     RoundResponse,
     SelectMatchRequest,
+    with_always_grant_invite_roles,
 )
+from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import (
+    AuthAdminError,
     MatchNotFoundError,
     MatchSelectionError,
     RosterError,
@@ -134,12 +138,61 @@ async def add_prediction(_: RequireGameMaster) -> dict[str, Any]:
     status_code=status.HTTP_201_CREATED,
 )
 async def invite_player(
+    request: Request,
     _: RequireAdmin,
     payload: InvitePlayerRequest,
     token: Annotated[str, Depends(get_bearer_token)],
     profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
 ) -> InvitePlayerResponse:
-    """Reserve a username on the Superior Six invite list (baked-user)."""
+    """Create passwordless auth user + membership, then roster invite.
+
+    Authorized by the caller's superiorsix ``admin`` bearer (roster invite).
+    Auth ``POST /v1/users`` + membership require ``aud=auth`` admin, so the BFF
+    uses server-side ``SUPERIORSIX_AUTH_ADMIN_*`` for those calls (SS-66).
+    Invitee claims via ``POST /v1/auth/set-password``, then acceptinvite.
+    """
+    settings = request.app.state.settings
+    roles = with_always_grant_invite_roles(list(payload.roles))
+    try:
+        created = await auth_admin.create_invite_ready_user(
+            username=payload.username,
+            roles=roles,
+            application=settings.jwt_audience,
+        )
+        if created.memberships:
+            roles = with_always_grant_invite_roles(list(created.memberships[0].roles))
+    except AuthAdminError as exc:
+        detail = str(exc)
+        if detail.startswith("USERNAME_EXISTS:"):
+            try:
+                membership = await auth_admin.set_membership(
+                    username=payload.username,
+                    roles=roles,
+                    application=settings.jwt_audience,
+                )
+                roles = with_always_grant_invite_roles(list(membership.roles))
+            except AuthAdminError as membership_exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=str(membership_exc),
+                ) from membership_exc
+        elif "not configured" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Invite auth provisioning is not configured: set "
+                    "SUPERIORSIX_AUTH_ADMIN_USERNAME / SUPERIORSIX_AUTH_ADMIN_PASSWORD "
+                    "(local-dev may reuse AUTH_BOOTSTRAP_*). Required for aud=auth "
+                    "POST /v1/users (SS-66)."
+                ),
+            ) from exc
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=detail,
+            ) from exc
+
     seed: dict[str, Any] = {"email": payload.email}
     if payload.first_name is not None:
         seed["first_name"] = payload.first_name
@@ -154,7 +207,7 @@ async def invite_player(
             token,
             payload.username,
             profile=seed or None,
-            roles=payload.roles,
+            roles=roles,
         )
     except RosterError as exc:
         raise _roster_http_error(exc) from exc
@@ -163,7 +216,7 @@ async def invite_player(
         status=invite.status,
         auth_id=invite.auth_id,
         profile=dict(invite.profile),
-        roles=list(invite.roles),
+        roles=list(invite.roles) or roles,
     )
 
 
