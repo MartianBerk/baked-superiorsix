@@ -140,15 +140,13 @@ async def invite_player(
     profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
 ) -> InvitePlayerResponse:
     """Reserve a username on the Superior Six invite list (baked-user)."""
-    seed: dict[str, Any] = {}
+    seed: dict[str, Any] = {"email": payload.email}
     if payload.first_name is not None:
         seed["first_name"] = payload.first_name
     if payload.last_name is not None:
         seed["last_name"] = payload.last_name
     if payload.nickname is not None:
         seed["nickname"] = payload.nickname
-    if payload.email is not None:
-        seed["email"] = payload.email
     if payload.avatar_url is not None:
         seed["avatar_url"] = payload.avatar_url
     try:
@@ -180,11 +178,10 @@ async def add_player(
     profile_body: dict[str, Any] = {
         "first_name": payload.first_name,
         "last_name": payload.last_name,
+        "email": payload.email,
     }
     if payload.nickname is not None:
         profile_body["nickname"] = payload.nickname
-    if payload.email is not None:
-        profile_body["email"] = payload.email
     if payload.avatar_url is not None:
         profile_body["avatar_url"] = payload.avatar_url
     try:

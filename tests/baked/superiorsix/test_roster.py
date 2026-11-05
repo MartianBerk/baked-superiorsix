@@ -21,12 +21,14 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
             "username": "ada",
             "first_name": "Ada",
             "last_name": "Lovelace",
+            "email": "ada@example.com",
             "roles": ["player", "user-profile"],
         },
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["status"] == "pending"
     assert invited.json()["roles"] == ["player", "user-profile"]
+    assert invited.json()["profile"]["email"] == "ada@example.com"
 
     created = client.post(
         "/admin/addplayer",
@@ -37,6 +39,7 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
             "first_name": "Ada",
             "last_name": "Lovelace",
             "nickname": "Ada",
+            "email": "ada@example.com",
         },
     )
     assert created.status_code == 201
@@ -81,6 +84,7 @@ def test_addplayer_requires_invite(client: TestClient) -> None:
             "username": "nobody",
             "first_name": "A",
             "last_name": "B",
+            "email": "nobody@example.com",
         },
     )
     assert response.status_code == 403
@@ -96,6 +100,7 @@ def test_addplayer_requires_admin(client: TestClient) -> None:
             "username": "xavier",
             "first_name": "A",
             "last_name": "B",
+            "email": "xavier@example.com",
         },
     )
     assert response.status_code == 403
@@ -107,7 +112,7 @@ def test_game_master_can_list_players(client: TestClient) -> None:
     client.post(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
-        json={"username": "gmplayer"},
+        json={"username": "gmplayer", "email": "gm@example.com"},
     )
     created = client.post(
         "/admin/addplayer",
@@ -117,6 +122,7 @@ def test_game_master_can_list_players(client: TestClient) -> None:
             "username": "gmplayer",
             "first_name": "A",
             "last_name": "B",
+            "email": "gm@example.com",
         },
     )
     assert created.status_code == 201
@@ -155,7 +161,47 @@ def test_inviteplayer_rejects_unknown_roles(client: TestClient) -> None:
     response = client.post(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
-        json={"username": "badroles", "roles": ["player", "admin"]},
+        json={
+            "username": "badroles",
+            "email": "bad@example.com",
+            "roles": ["player", "admin"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_inviteplayer_requires_email(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    response = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "noemail",
+            "first_name": "No",
+            "last_name": "Email",
+            "roles": ["player"],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_addplayer_requires_email(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    admin = auth_header(admin_token)
+    client.post(
+        "/admin/inviteplayer",
+        headers=admin,
+        json={"username": "needsmail", "email": "seed@example.com"},
+    )
+    response = client.post(
+        "/admin/addplayer",
+        headers=admin,
+        json={
+            "auth_id": str(uuid4()),
+            "username": "needsmail",
+            "first_name": "Needs",
+            "last_name": "Mail",
+        },
     )
     assert response.status_code == 422
 
@@ -173,6 +219,7 @@ def test_accept_invite_grants_roles_and_creates_roster(
             "username": "martin",
             "first_name": "Martin",
             "last_name": "Berk",
+            "email": "martin@example.com",
             "roles": ["player", "user-profile", "euros"],
         },
     )
@@ -196,6 +243,7 @@ def test_accept_invite_grants_roles_and_creates_roster(
     assert body["player"]["auth_id"] == str(auth_id)
     assert body["player"]["first_name"] == "Martin"
     assert body["player"]["nickname"] == "Marty"
+    assert body["player"]["email"] == "martin@example.com"
     assert body["access_token"].startswith("token:martin:superiorsix")
     assert auth_admin.memberships["martin"] == ["player", "user-profile", "euros"]
     assert user_profiles._invites["martin"].status == "accepted"
@@ -209,7 +257,13 @@ def test_accept_invite_rejects_bad_password(
     client.post(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
-        json={"username": "martin", "roles": ["player"], "first_name": "M", "last_name": "B"},
+        json={
+            "username": "martin",
+            "roles": ["player"],
+            "first_name": "M",
+            "last_name": "B",
+            "email": "martin@example.com",
+        },
     )
     auth_admin.register("martin", "password123")
 

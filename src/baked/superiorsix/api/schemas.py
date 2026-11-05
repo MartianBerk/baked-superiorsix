@@ -195,7 +195,7 @@ class InvitePlayerRequest(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
-    email: str | None = Field(default=None, min_length=3, max_length=254)
+    email: str = Field(min_length=3, max_length=254)
     avatar_url: str | None = Field(default=None, max_length=512)
     roles: list[str] = Field(default_factory=list)
 
@@ -276,8 +276,8 @@ class AddPlayerRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
+    email: str = Field(min_length=3, max_length=254)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
-    email: str | None = Field(default=None, min_length=3, max_length=254)
     avatar_url: str | None = Field(default=None, max_length=512)
 
     @field_validator("username")
