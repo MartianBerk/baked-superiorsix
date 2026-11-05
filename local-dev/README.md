@@ -68,7 +68,7 @@ curl -s http://127.0.0.1:8030/health
 
 SQLite files live in named volumes `baked-*-data` under `/data` in each container.
 
-## Bootstrap the auth admin
+## Bootstrap the auth admin (+ superiorsix ops membership)
 
 There is **no** HTTP bootstrap route. After the stack is up:
 
@@ -77,28 +77,39 @@ docker compose exec baked-auth baked-auth-bootstrap
 ```
 
 Credentials come from `AUTH_BOOTSTRAP_*` in `.env` (default `ops` /
-`local-dev-change-me`). Idempotent — skips if an auth-audience `admin` already
-exists. **Never** pass the password on argv.
+`local-dev-change-me`). **Never** pass the password on argv.
 
-Get an auth-admin token (`audience=auth`):
+The CLI:
+
+1. Creates the auth-audience `admin` user (skips if one already exists).
+2. Grants that user an active `superiorsix` AppMembership with
+   `admin`, `game-master`, and `user-profile` (creates/merges if missing;
+   no-ops when already present).
+
+Safe to re-run on an existing volume where `ops` already exists — the
+superiorsix membership grant still applies. After bootstrap, ops can log in
+with `audience=superiorsix` as well as `audience=auth`.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8010/v1/auth/token \
-  -d 'username=ops&password=local-dev-change-me&audience=auth'
+  -d 'username=ops&password=local-dev-change-me&audience=superiorsix'
 ```
 
 ## Invite flow (Superior Six)
 
 Superior Six roster is **invite-only** (baked-user). baked-auth is identity only.
 
-1. **Bootstrap** auth admin (above).
-2. **Register** the player (or yourself):
+1. **Bootstrap** (above) — ops already has superiorsix `admin` / `game-master` /
+   `user-profile`.
+2. **Register** the player:
    `POST http://127.0.0.1:8010/v1/auth/register` `{"username":"martin","password":"…"}`.
-3. **Grant Superior Six membership** (auth admin token):
+3. **Grant Superior Six membership** for the player (auth admin token,
+   `audience=auth`):
    `PUT http://127.0.0.1:8010/v1/applications/superiorsix/memberships/martin`
-   `{"roles":["player","user-profile","admin"]}` — include `admin` / `game-master`
-   as needed.
-4. **Invite** the username onto the roster (superiorsix `admin` token, `audience=superiorsix`):
+   `{"roles":["player","user-profile"]}` — add `admin` / `game-master` only if
+   that person should run ops too.
+4. **Invite** the username onto the roster (superiorsix `admin` token,
+   `audience=superiorsix`):
    - via game API: `POST http://127.0.0.1:8030/admin/inviteplayer`
      `{"username":"martin","first_name":"…","last_name":"…"}`
    - or baked-user: `POST http://127.0.0.1:8020/superiorsix/invites` …
