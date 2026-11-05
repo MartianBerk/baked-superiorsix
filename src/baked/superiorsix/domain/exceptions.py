@@ -36,3 +36,7 @@ class RosterNotFoundError(RosterError):
 
 class NotOnRosterError(RosterError):
     """Raised when the caller is not an active invited roster player."""
+
+
+class AuthAdminError(SuperiorSixError):
+    """Raised when a server-side baked-auth admin call fails."""

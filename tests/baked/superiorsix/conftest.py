@@ -3,7 +3,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from tests.baked.superiorsix.fakes import FakeUserProfileClient
+from tests.baked.superiorsix.fakes import FakeAuthAdminClient, FakeUserProfileClient
 from tests.baked.superiorsix.tokens import TEST_SECRET
 
 from baked.superiorsix.api.app import create_app
@@ -15,7 +15,7 @@ from baked.superiorsix.db.session import create_engine, create_session_factory
 def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     # Keep tests hermetic even if the local shell has invalid SUPERIORSIX_* values.
     for key in list(os.environ):
-        if key.startswith("SUPERIORSIX_"):
+        if key.startswith("SUPERIORSIX_") or key.startswith("AUTH_BOOTSTRAP_"):
             monkeypatch.delenv(key, raising=False)
     return Settings(
         _env_file=None,
@@ -26,6 +26,8 @@ def settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
         cors_origins=["http://testserver"],
         auth_token_url="http://testserver/v1/auth/token",
         user_service_url="http://testserver-user",
+        auth_admin_username="ops",
+        auth_admin_password=SecretStr("local-dev-change-me"),
     )
 
 
@@ -35,7 +37,19 @@ def user_profiles() -> FakeUserProfileClient:
 
 
 @pytest.fixture
-def client(settings: Settings, user_profiles: FakeUserProfileClient) -> TestClient:
+def auth_admin() -> FakeAuthAdminClient:
+    fake = FakeAuthAdminClient()
+    fake.register("ops", "local-dev-change-me")
+    fake.memberships["ops"] = ["admin", "game-master", "user-profile"]
+    return fake
+
+
+@pytest.fixture
+def client(
+    settings: Settings,
+    user_profiles: FakeUserProfileClient,
+    auth_admin: FakeAuthAdminClient,
+) -> TestClient:
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     app = create_app(
@@ -43,6 +57,7 @@ def client(settings: Settings, user_profiles: FakeUserProfileClient) -> TestClie
         session_factory=session_factory,
         engine=engine,
         user_profiles=user_profiles,
+        auth_admin=auth_admin,
     )
     with TestClient(app) as test_client:
         yield test_client

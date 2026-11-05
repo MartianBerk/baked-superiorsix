@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         env_prefix="SUPERIORSIX_",
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_name: str = "baked-superiorsix"
@@ -28,6 +29,22 @@ class Settings(BaseSettings):
     # baked-user base URL for roster / display-name resolution by auth sub.
     user_service_url: str = "http://127.0.0.1:8001"
     user_app_name: str = "superiorsix"
+    # Server-side auth-admin credentials for membership grants on invite accept.
+    # Local-dev typically reuses AUTH_BOOTSTRAP_* (ops) with audience=auth.
+    auth_admin_username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SUPERIORSIX_AUTH_ADMIN_USERNAME",
+            "AUTH_BOOTSTRAP_USERNAME",
+        ),
+    )
+    auth_admin_password: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "SUPERIORSIX_AUTH_ADMIN_PASSWORD",
+            "AUTH_BOOTSTRAP_PASSWORD",
+        ),
+    )
     # Ingest API keys — prefer unprefixed deploy names; SUPERIORSIX_* aliases also work.
     football_data_api_token: SecretStr | None = Field(
         default=None,
