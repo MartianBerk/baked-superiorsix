@@ -22,11 +22,12 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
             "first_name": "Ada",
             "last_name": "Lovelace",
             "email": "ada@example.com",
-            "roles": ["player", "user-profile"],
+            "roles": ["player"],
         },
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["status"] == "pending"
+    # user-profile is always granted even when not selected.
     assert invited.json()["roles"] == ["player", "user-profile"]
     assert invited.json()["profile"]["email"] == "ada@example.com"
 
@@ -138,7 +139,10 @@ def test_update_details_patches_profile(
 ) -> None:
     auth_id = uuid4()
     user_profiles.seed(auth_id, first_name="Grace", last_name="Hopper")
-    token, subject = make_access_token(auth_id=auth_id, roles=["user-profile"])
+    # BFF gates on active roster player; JWT still carries user-profile for baked-user.
+    token, subject = make_access_token(
+        auth_id=auth_id, roles=["player", "user-profile"]
+    )
     assert subject == auth_id
     response = client.post(
         "/user/updatedetails",
@@ -220,10 +224,11 @@ def test_accept_invite_grants_roles_and_creates_roster(
             "first_name": "Martin",
             "last_name": "Berk",
             "email": "martin@example.com",
-            "roles": ["player", "user-profile", "euros"],
+            "roles": ["player", "euros"],
         },
     )
     assert invited.status_code == 201, invited.text
+    assert invited.json()["roles"] == ["player", "euros", "user-profile"]
 
     auth_admin.register("martin", "password123")
     auth_id = uuid4()
@@ -239,14 +244,71 @@ def test_accept_invite_grants_roles_and_creates_roster(
     )
     assert accepted.status_code == 201, accepted.text
     body = accepted.json()
-    assert body["roles"] == ["player", "user-profile", "euros"]
+    assert body["roles"] == ["player", "euros", "user-profile"]
     assert body["player"]["auth_id"] == str(auth_id)
     assert body["player"]["first_name"] == "Martin"
     assert body["player"]["nickname"] == "Marty"
     assert body["player"]["email"] == "martin@example.com"
     assert body["access_token"].startswith("token:martin:superiorsix")
-    assert auth_admin.memberships["martin"] == ["player", "user-profile", "euros"]
+    assert auth_admin.memberships["martin"] == ["player", "euros", "user-profile"]
     assert user_profiles._invites["martin"].status == "accepted"
+
+
+def test_inviteplayer_always_grants_user_profile(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    invited = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "noprofilechip",
+            "email": "np@example.com",
+            "roles": ["player", "worldcup"],
+        },
+    )
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["roles"] == ["player", "worldcup", "user-profile"]
+
+
+def test_accept_invite_always_grants_user_profile(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    """Even a legacy invite missing user-profile gets it on accept."""
+    admin_token, _ = make_access_token(roles=["admin"])
+    client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "legacy",
+            "first_name": "Leg",
+            "last_name": "Acy",
+            "email": "legacy@example.com",
+            "roles": ["player"],
+        },
+    )
+    # Simulate a pre-always-grant invite stored without user-profile.
+    stored = user_profiles._invites["legacy"]
+    user_profiles._invites["legacy"] = type(stored)(
+        id=stored.id,
+        username=stored.username,
+        status=stored.status,
+        auth_id=stored.auth_id,
+        profile=dict(stored.profile),
+        roles=["player"],
+    )
+
+    auth_admin.register("legacy", "password123")
+    auth_id = uuid4()
+    user_profiles.bind_username("legacy", auth_id)
+
+    accepted = client.post(
+        "/user/acceptinvite",
+        json={"username": "legacy", "password": "password123"},
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["roles"] == ["player", "user-profile"]
+    assert auth_admin.memberships["legacy"] == ["player", "user-profile"]
 
 
 def test_accept_invite_rejects_bad_password(

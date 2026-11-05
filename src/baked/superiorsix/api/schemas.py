@@ -185,7 +185,22 @@ class CurrentRoundResponse(BaseModel):
     current_round: RoundResponse | None
 
 
-INVITE_ALLOWED_ROLES = frozenset({"player", "user-profile", "worldcup", "euros"})
+# Selectable invite permission chips (admin UX). `user-profile` is always granted.
+INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros"})
+ALWAYS_GRANT_INVITE_ROLES: tuple[str, ...] = ("user-profile",)
+# Tolerate legacy clients that still send always-grant roles in the request body.
+_INVITE_ROLE_INPUT_ALLOWED = INVITE_ALLOWED_ROLES | frozenset(ALWAYS_GRANT_INVITE_ROLES)
+
+
+def with_always_grant_invite_roles(roles: list[str]) -> list[str]:
+    """Merge always-granted membership roles (e.g. ``user-profile``) into *roles*."""
+    seen = {role.strip().lower() for role in roles if role and role.strip()}
+    out = [role for role in roles if role and role.strip()]
+    for role in ALWAYS_GRANT_INVITE_ROLES:
+        if role not in seen:
+            out.append(role)
+            seen.add(role)
+    return out
 
 
 class InvitePlayerRequest(BaseModel):
@@ -214,8 +229,11 @@ class InvitePlayerRequest(BaseModel):
             normalized = role.strip().lower()
             if not normalized or normalized in seen:
                 continue
-            if normalized not in INVITE_ALLOWED_ROLES:
+            if normalized not in _INVITE_ROLE_INPUT_ALLOWED:
                 unknown.append(normalized)
+                continue
+            # Only persist selectable roles from input; always-grant merged below.
+            if normalized not in INVITE_ALLOWED_ROLES:
                 continue
             seen.add(normalized)
             out.append(normalized)
@@ -223,9 +241,10 @@ class InvitePlayerRequest(BaseModel):
             allowed = ", ".join(sorted(INVITE_ALLOWED_ROLES))
             raise ValueError(
                 f"Unsupported invite roles: {', '.join(sorted(set(unknown)))}. "
-                f"Allowed: {allowed}."
+                f"Allowed: {allowed} "
+                f"(plus always-granted: {', '.join(ALWAYS_GRANT_INVITE_ROLES)})."
             )
-        return out
+        return with_always_grant_invite_roles(out)
 
 
 class InvitePlayerResponse(BaseModel):

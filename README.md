@@ -33,14 +33,19 @@ invite; the invitee sets their own password; accept grants membership server-sid
 
 1. As superiorsix `admin`, invite a username + roles:
    `POST /admin/inviteplayer`
-   `{"username":"martin","first_name":"…","last_name":"…","roles":["player","user-profile"]}`
-   Allowed: `player`, `user-profile`, `worldcup`, `euros`.
+   `{"username":"martin","first_name":"…","last_name":"…","roles":["player"]}`
+   Selectable: `player`, `worldcup`, `euros`.
+   `user-profile` is **always granted** server-side on invite and accept (not a
+   selectable chip) so every player can edit their profile via baked-user.
 2. Invitee registers (`POST` baked-auth `/v1/auth/register`) with their password.
 3. Invitee accepts: `POST /user/acceptinvite` `{"username":"martin","password":"…"}`.
-   The BFF grants invite.roles via auth-admin credentials
-   (`SUPERIORSIX_AUTH_ADMIN_*` / bootstrap ops, `aud=auth`), obtains the invitee's
-   superiorsix JWT, and creates the roster profile with that JWT.
+   The BFF grants invite.roles (plus always-granted `user-profile`) via auth-admin
+   credentials (`SUPERIORSIX_AUTH_ADMIN_*` / bootstrap ops, `aud=auth`), obtains
+   the invitee's superiorsix JWT, and creates the roster profile with that JWT.
 4. Play with the returned `access_token` (or login again with `audience=superiorsix`).
+   `POST /user/updatedetails` requires an active roster player (not the
+   `user-profile` JWT role gate); baked-user `patch_me` still needs `user-profile`
+   on the JWT, which accept always grants.
 
 `POST /admin/addplayer` remains for admin-provisioned roster create when a pending
 invite already exists.
