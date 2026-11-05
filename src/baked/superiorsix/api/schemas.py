@@ -103,6 +103,7 @@ class MatchResponse(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     game_number: int | None = None
+    last_updated: datetime | None = None
 
     @classmethod
     def from_domain(cls, match: Match) -> "MatchResponse":
@@ -120,6 +121,7 @@ class MatchResponse(BaseModel):
             home_score=match.home_score,
             away_score=match.away_score,
             game_number=match.game_number,
+            last_updated=match.last_updated,
         )
 
 
