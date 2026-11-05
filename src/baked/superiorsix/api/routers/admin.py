@@ -147,6 +147,8 @@ async def invite_player(
         seed["last_name"] = payload.last_name
     if payload.nickname is not None:
         seed["nickname"] = payload.nickname
+    if payload.email is not None:
+        seed["email"] = payload.email
     if payload.avatar_url is not None:
         seed["avatar_url"] = payload.avatar_url
     try:
@@ -181,6 +183,8 @@ async def add_player(
     }
     if payload.nickname is not None:
         profile_body["nickname"] = payload.nickname
+    if payload.email is not None:
+        profile_body["email"] = payload.email
     if payload.avatar_url is not None:
         profile_body["avatar_url"] = payload.avatar_url
     try:

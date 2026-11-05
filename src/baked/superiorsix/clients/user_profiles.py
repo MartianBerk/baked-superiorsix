@@ -22,6 +22,7 @@ class RosterProfile:
     first_name: str
     last_name: str
     nickname: str | None
+    email: str | None
     avatar_url: str | None
     active: bool
     profile: dict[str, Any]
@@ -35,6 +36,7 @@ class RosterProfile:
             first_name=str(data.get("first_name") or ""),
             last_name=str(data.get("last_name") or ""),
             nickname=data.get("nickname"),
+            email=data.get("email"),
             avatar_url=data.get("avatar_url"),
             active=bool(data.get("active", True)),
             profile=dict(data),
@@ -48,6 +50,7 @@ class RosterProfile:
             "first_name": self.first_name,
             "last_name": self.last_name,
             "nickname": self.nickname,
+            "email": self.email,
             "avatar_url": self.avatar_url,
             "retired": not self.active,
             "active": self.active,
