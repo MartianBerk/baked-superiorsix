@@ -62,8 +62,8 @@ curl -s http://127.0.0.1:8030/health
 | `BAKED_AUTH_CLIENT_GIT_TOKEN` | BuildKit secret for private `baked-auth-client` git dep |
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
-| `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for accept-invite membership grants (`aud=auth`) |
-| `SUPERIORSIX_AUTH_ADMIN_USERNAME` / `PASSWORD` | Optional override for accept-invite auth-admin (defaults to bootstrap ops) |
+| `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); compose also feeds these into superiorsix accept-invite |
+| `SUPERIORSIX_AUTH_ADMIN_USERNAME` / `PASSWORD` | Optional override for accept-invite; when unset, compose nests to `AUTH_BOOTSTRAP_*` (must match the bootstrap user password) |
 | `CORS_ORIGINS` | Expo web + optional `:8040` origins — **quote as JSON**: `CORS_ORIGINS='["http://localhost:8081",…]'` (unquoted `[…]` is mangled by Compose and crashes auth) |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional match ingest |
 

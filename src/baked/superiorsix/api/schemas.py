@@ -206,7 +206,7 @@ def with_always_grant_invite_roles(roles: list[str]) -> list[str]:
 class InvitePlayerRequest(BaseModel):
     """Invite a username onto the Superior Six roster (baked-user invite list)."""
 
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
@@ -263,7 +263,7 @@ class AcceptInviteRequest(BaseModel):
     superiorsix JWT, then creates the roster profile with that JWT.
     """
 
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(min_length=8, max_length=128)
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
@@ -292,7 +292,7 @@ class AddPlayerRequest(BaseModel):
     """
 
     auth_id: UUID
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_-]+$")
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     email: str = Field(min_length=3, max_length=254)
