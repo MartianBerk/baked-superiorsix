@@ -42,6 +42,7 @@ cd baked-superiorsix/local-dev
 cp .env.example .env
 # set BAKED_AUTH_CLIENT_GIT_TOKEN (PAT, Contents: Read on baked-auth-client)
 export BAKED_AUTH_CLIENT_GIT_TOKEN=…   # or leave it in .env for Compose
+# Keep CORS_ORIGINS / JWT_PREVIOUS_SECRET_KEYS single-quoted JSON strings in .env
 
 docker compose up --build
 ```
@@ -62,7 +63,7 @@ curl -s http://127.0.0.1:8030/health
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
 | `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI only) |
-| `CORS_ORIGINS` | Expo web + optional `:8040` origins |
+| `CORS_ORIGINS` | Expo web + optional `:8040` origins — **quote as JSON**: `CORS_ORIGINS='["http://localhost:8081",…]'` (unquoted `[…]` is mangled by Compose and crashes auth) |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional match ingest |
 
 SQLite files live in named volumes `baked-*-data` under `/data` in each container.
