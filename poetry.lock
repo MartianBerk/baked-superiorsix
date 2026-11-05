@@ -90,7 +90,7 @@ pyjwt = {version = ">=2.10.0", extras = ["crypto"]}
 type = "git"
 url = "https://github.com/MartianBerk/baked-auth-client.git"
 reference = "master"
-resolved_reference = "175b55a764428a4d5ee297ec4ee202c3720c888b"
+resolved_reference = "83ad4699be671890f213ab3ae22b921322629520"
 
 [[package]]
 name = "certifi"
