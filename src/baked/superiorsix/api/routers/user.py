@@ -82,7 +82,10 @@ async def update_details(
     if not patch:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Provide at least one of nickname, avatar_url, first_name, last_name.",
+            detail=(
+                "Provide at least one of nickname, email, avatar_url, "
+                "first_name, last_name."
+            ),
         )
     try:
         player = await profiles.patch_me(token, patch)
