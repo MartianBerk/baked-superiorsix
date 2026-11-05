@@ -15,6 +15,7 @@ from baked.superiorsix.api.routers import (
     user_router,
     worldcup_router,
 )
+from baked.superiorsix.clients.auth_admin import AuthAdminClient, AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileClient, UserProfileGateway
 from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.db.session import create_engine, create_session_factory, init_db
@@ -26,6 +27,7 @@ def create_app(
     engine: AsyncEngine | None = None,
     key_set: JwtKeySet | None = None,
     user_profiles: UserProfileGateway | None = None,
+    auth_admin: AuthAdminGateway | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     owned_engine = engine is None
@@ -36,6 +38,15 @@ def create_app(
         settings.user_service_url,
         app_name=settings.user_app_name,
     )
+    auth_admin = auth_admin or AuthAdminClient(
+        token_url=settings.auth_token_url,
+        username=settings.auth_admin_username or "",
+        password=(
+            settings.auth_admin_password.get_secret_value()
+            if settings.auth_admin_password is not None
+            else ""
+        ),
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -44,6 +55,7 @@ def create_app(
         app.state.key_set = key_set
         app.state.jwt_audience = settings.jwt_audience
         app.state.user_profiles = user_profiles
+        app.state.auth_admin = auth_admin
         await init_db(engine)
         yield
         if owned_engine:
@@ -63,6 +75,7 @@ def create_app(
     app.state.key_set = key_set
     app.state.jwt_audience = settings.jwt_audience
     app.state.user_profiles = user_profiles
+    app.state.auth_admin = auth_admin
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

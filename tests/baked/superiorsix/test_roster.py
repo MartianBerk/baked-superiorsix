@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from tests.baked.superiorsix.fakes import FakeUserProfileClient
+from tests.baked.superiorsix.fakes import FakeAuthAdminClient, FakeUserProfileClient
 from tests.baked.superiorsix.tokens import auth_header, make_access_token
 
 
@@ -17,10 +17,16 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
     invited = client.post(
         "/admin/inviteplayer",
         headers=admin,
-        json={"username": "ada", "first_name": "Ada", "last_name": "Lovelace"},
+        json={
+            "username": "ada",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "roles": ["player", "user-profile"],
+        },
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["status"] == "pending"
+    assert invited.json()["roles"] == ["player", "user-profile"]
 
     created = client.post(
         "/admin/addplayer",
@@ -142,3 +148,81 @@ def test_dropplayer_requires_auth_id(client: TestClient) -> None:
     token, _ = make_access_token(roles=["admin"])
     response = client.get("/admin/dropplayer", headers=auth_header(token))
     assert response.status_code == 400
+
+
+def test_inviteplayer_rejects_unknown_roles(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    response = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={"username": "badroles", "roles": ["player", "admin"]},
+    )
+    assert response.status_code == 422
+
+
+def test_accept_invite_grants_roles_and_creates_roster(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    invited = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "username": "martin",
+            "first_name": "Martin",
+            "last_name": "Berk",
+            "roles": ["player", "user-profile", "euros"],
+        },
+    )
+    assert invited.status_code == 201, invited.text
+
+    auth_admin.register("martin", "password123")
+    auth_id = uuid4()
+    user_profiles.bind_username("martin", auth_id)
+
+    accepted = client.post(
+        "/user/acceptinvite",
+        json={
+            "username": "martin",
+            "password": "password123",
+            "nickname": "Marty",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    body = accepted.json()
+    assert body["roles"] == ["player", "user-profile", "euros"]
+    assert body["player"]["auth_id"] == str(auth_id)
+    assert body["player"]["first_name"] == "Martin"
+    assert body["player"]["nickname"] == "Marty"
+    assert body["access_token"].startswith("token:martin:superiorsix")
+    assert auth_admin.memberships["martin"] == ["player", "user-profile", "euros"]
+    assert user_profiles._invites["martin"].status == "accepted"
+
+
+def test_accept_invite_rejects_bad_password(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={"username": "martin", "roles": ["player"], "first_name": "M", "last_name": "B"},
+    )
+    auth_admin.register("martin", "password123")
+
+    denied = client.post(
+        "/user/acceptinvite",
+        json={"username": "martin", "password": "wrong-password"},
+    )
+    assert denied.status_code == 401
+
+
+def test_accept_invite_requires_pending_invite(client: TestClient) -> None:
+    response = client.post(
+        "/user/acceptinvite",
+        json={"username": "nobody", "password": "password123"},
+    )
+    assert response.status_code == 403

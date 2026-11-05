@@ -25,23 +25,25 @@ extractors (not user REST). Admin can open rounds, list leagues/matches, and
 select slots with `POST /admin/addmatch`. Other legacy routes remain no-ops for
 now.
 
-### Creating a player (invite → auth → membership → profile)
+### Creating a player (invite + roles → register → accept)
 
 Superior Six is **invite-only** at the roster layer (baked-user). baked-auth stays
-identity-only (register / password / JWT `aud` + roles).
+identity-only (register / password / JWT `aud` + roles). Roles are chosen at
+invite; the invitee sets their own password; accept grants membership server-side.
 
-1. As superiorsix `admin`, invite a username:
-   `POST /admin/inviteplayer` `{"username":"martin","first_name":"…","last_name":"…"}`
-   (forwards to baked-user `POST /superiorsix/invites`).
-2. Person creates an auth account (`POST` baked-auth `/v1/auth/register`).
-3. Auth admin grants Superior Six membership roles
-   (`PUT /v1/applications/superiorsix/memberships/{username}`), e.g.
-   `player` + `user-profile`.
-4. Token with `audience=superiorsix`.
-5. Accept invite / create roster profile — either the player
-   `POST` baked-user `/superiorsix/users`, or admin
-   `POST /admin/addplayer` with
-   `{"auth_id":"<sub>","username":"martin","first_name":"…","last_name":"…"}`.
+1. As superiorsix `admin`, invite a username + roles:
+   `POST /admin/inviteplayer`
+   `{"username":"martin","first_name":"…","last_name":"…","roles":["player","user-profile"]}`
+   Allowed: `player`, `user-profile`, `worldcup`, `euros`.
+2. Invitee registers (`POST` baked-auth `/v1/auth/register`) with their password.
+3. Invitee accepts: `POST /user/acceptinvite` `{"username":"martin","password":"…"}`.
+   The BFF grants invite.roles via auth-admin credentials
+   (`SUPERIORSIX_AUTH_ADMIN_*` / bootstrap ops, `aud=auth`), obtains the invitee's
+   superiorsix JWT, and creates the roster profile with that JWT.
+4. Play with the returned `access_token` (or login again with `audience=superiorsix`).
+
+`POST /admin/addplayer` remains for admin-provisioned roster create when a pending
+invite already exists.
 
 ### Ingest extractors (SS-7 / SS-10 / SS-11)
 

@@ -6,6 +6,7 @@ from baked.client.auth.fastapi import get_current_principal, get_key_set, requir
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import RosterNotFoundError
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
@@ -26,6 +27,7 @@ __all__ = [
     "RequirePlayer",
     "RequireUserProfile",
     "RequireWorldcup",
+    "get_auth_admin",
     "get_bearer_token",
     "get_current_principal",
     "get_db_session",
@@ -81,6 +83,10 @@ async def get_prediction_service(
 
 def get_user_profiles(request: Request) -> UserProfileGateway:
     return request.app.state.user_profiles
+
+
+def get_auth_admin(request: Request) -> AuthAdminGateway:
+    return request.app.state.auth_admin
 
 
 def get_bearer_token(request: Request) -> str:

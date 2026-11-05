@@ -150,7 +150,12 @@ async def invite_player(
     if payload.avatar_url is not None:
         seed["avatar_url"] = payload.avatar_url
     try:
-        invite = await profiles.invite(token, payload.username, profile=seed or None)
+        invite = await profiles.invite(
+            token,
+            payload.username,
+            profile=seed or None,
+            roles=payload.roles,
+        )
     except RosterError as exc:
         raise _roster_http_error(exc) from exc
     return InvitePlayerResponse(
@@ -158,6 +163,7 @@ async def invite_player(
         status=invite.status,
         auth_id=invite.auth_id,
         profile=dict(invite.profile),
+        roles=list(invite.roles),
     )
 
 

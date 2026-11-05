@@ -61,16 +61,20 @@ class RosterInvite:
     status: str
     auth_id: UUID | None
     profile: dict[str, Any]
+    roles: list[str]
 
     @classmethod
     def from_api(cls, payload: dict[str, Any]) -> RosterInvite:
         auth_raw = payload.get("auth_id")
+        roles_raw = payload.get("roles") or []
+        roles = [str(role).strip().lower() for role in roles_raw if str(role).strip()]
         return cls(
             id=UUID(str(payload["id"])),
             username=str(payload["username"]),
             status=str(payload.get("status") or "pending"),
             auth_id=UUID(str(auth_raw)) if auth_raw else None,
             profile=dict(payload.get("profile") or {}),
+            roles=roles,
         )
 
 
@@ -108,9 +112,18 @@ class UserProfileGateway(Protocol):
         username: str,
         *,
         profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
     ) -> RosterInvite: ...
 
     async def list_invites(self, bearer_token: str) -> list[RosterInvite]: ...
+
+    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite: ...
+
+    async def create_me(
+        self,
+        bearer_token: str,
+        profile: dict[str, Any],
+    ) -> tuple[RosterProfile, list[str] | None]: ...
 
 
 class UserProfileClient:
@@ -209,12 +222,17 @@ class UserProfileClient:
         username: str,
         *,
         profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
     ) -> RosterInvite:
         payload = await self._request(
             "POST",
             f"/{self._app_name}/invites",
             bearer_token,
-            json={"username": username, "profile": profile or {}},
+            json={
+                "username": username,
+                "profile": profile or {},
+                "roles": list(roles or []),
+            },
         )
         assert isinstance(payload, dict)
         return RosterInvite.from_api(payload)
@@ -227,6 +245,35 @@ class UserProfileClient:
         )
         assert isinstance(payload, dict)
         return [RosterInvite.from_api(item) for item in payload.get("invites", [])]
+
+    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite:
+        payload = await self._request(
+            "GET",
+            f"/{self._app_name}/invites/{username.strip().lower()}",
+            bearer_token,
+        )
+        assert isinstance(payload, dict)
+        return RosterInvite.from_api(payload)
+
+    async def create_me(
+        self,
+        bearer_token: str,
+        profile: dict[str, Any],
+    ) -> tuple[RosterProfile, list[str] | None]:
+        payload = await self._request(
+            "POST",
+            f"/{self._app_name}/users",
+            bearer_token,
+            json=profile,
+        )
+        assert isinstance(payload, dict)
+        roles_raw = payload.get("roles")
+        roles = (
+            [str(role).strip().lower() for role in roles_raw if str(role).strip()]
+            if isinstance(roles_raw, list)
+            else None
+        )
+        return RosterProfile.from_api(payload), roles
 
     async def _request(
         self,

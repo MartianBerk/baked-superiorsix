@@ -185,10 +185,66 @@ class CurrentRoundResponse(BaseModel):
     current_round: RoundResponse | None
 
 
+INVITE_ALLOWED_ROLES = frozenset({"player", "user-profile", "worldcup", "euros"})
+
+
 class InvitePlayerRequest(BaseModel):
     """Invite a username onto the Superior Six roster (baked-user invite list)."""
 
     username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    first_name: str | None = Field(default=None, min_length=1, max_length=80)
+    last_name: str | None = Field(default=None, min_length=1, max_length=80)
+    nickname: str | None = Field(default=None, min_length=1, max_length=80)
+    avatar_url: str | None = Field(default=None, max_length=512)
+    roles: list[str] = Field(default_factory=list)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("roles")
+    @classmethod
+    def normalize_and_validate_roles(cls, value: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        unknown: list[str] = []
+        for role in value:
+            normalized = role.strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            if normalized not in INVITE_ALLOWED_ROLES:
+                unknown.append(normalized)
+                continue
+            seen.add(normalized)
+            out.append(normalized)
+        if unknown:
+            allowed = ", ".join(sorted(INVITE_ALLOWED_ROLES))
+            raise ValueError(
+                f"Unsupported invite roles: {', '.join(sorted(set(unknown)))}. "
+                f"Allowed: {allowed}."
+            )
+        return out
+
+
+class InvitePlayerResponse(BaseModel):
+    username: str
+    status: str
+    auth_id: UUID | None = None
+    profile: dict[str, object] = Field(default_factory=dict)
+    roles: list[str] = Field(default_factory=list)
+
+
+class AcceptInviteRequest(BaseModel):
+    """Invitee accepts a pending roster invite after registering their password.
+
+    ``username`` + ``password`` prove identity (password chosen at register).
+    The BFF grants invite.roles via auth-admin, obtains the invitee's
+    superiorsix JWT, then creates the roster profile with that JWT.
+    """
+
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
+    password: str = Field(min_length=8, max_length=128)
     first_name: str | None = Field(default=None, min_length=1, max_length=80)
     last_name: str | None = Field(default=None, min_length=1, max_length=80)
     nickname: str | None = Field(default=None, min_length=1, max_length=80)
@@ -200,11 +256,12 @@ class InvitePlayerRequest(BaseModel):
         return value.strip().lower()
 
 
-class InvitePlayerResponse(BaseModel):
-    username: str
-    status: str
-    auth_id: UUID | None = None
-    profile: dict[str, object] = Field(default_factory=dict)
+class AcceptInviteResponse(BaseModel):
+    player: "PlayerResponse"
+    roles: list[str] = Field(default_factory=list)
+    access_token: str
+    token_type: str = "bearer"
+    audience: str = "superiorsix"
 
 
 class AddPlayerRequest(BaseModel):

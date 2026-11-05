@@ -1,8 +1,9 @@
 from typing import Any
 from uuid import UUID, uuid4
 
+from baked.superiorsix.clients.auth_admin import MembershipResult
 from baked.superiorsix.clients.user_profiles import RosterInvite, RosterProfile
-from baked.superiorsix.domain.exceptions import RosterError, RosterNotFoundError
+from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError, RosterNotFoundError
 
 
 class FakeUserProfileClient:
@@ -11,6 +12,7 @@ class FakeUserProfileClient:
     def __init__(self) -> None:
         self._by_auth: dict[UUID, RosterProfile] = {}
         self._invites: dict[str, RosterInvite] = {}
+        self._auth_id_by_username: dict[str, UUID] = {}
 
     def seed(
         self,
@@ -38,6 +40,9 @@ class FakeUserProfileClient:
         )
         self._by_auth[auth_id] = created
         return created
+
+    def bind_username(self, username: str, auth_id: UUID) -> None:
+        self._auth_id_by_username[username.lower()] = auth_id
 
     async def list_profiles(
         self,
@@ -94,8 +99,29 @@ class FakeUserProfileClient:
             status="accepted",
             auth_id=auth_id,
             profile=dict(invite.profile),
+            roles=list(invite.roles),
         )
         return created
+
+    async def create_me(
+        self,
+        bearer_token: str,
+        profile: dict[str, Any],
+    ) -> tuple[RosterProfile, list[str] | None]:
+        # Tests pass a token shaped like "user:<username>" or use bind_username.
+        username = _username_from_token(bearer_token)
+        auth_id = self._auth_id_by_username.get(username)
+        if auth_id is None:
+            auth_id = uuid4()
+            self._auth_id_by_username[username] = auth_id
+        created = await self.create_for_auth_id(
+            bearer_token,
+            auth_id,
+            profile,
+            username=username,
+        )
+        invite = self._invites[username]
+        return created, list(invite.roles)
 
     async def patch_by_auth_id(
         self,
@@ -135,6 +161,7 @@ class FakeUserProfileClient:
         username: str,
         *,
         profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
     ) -> RosterInvite:
         del bearer_token
         key = username.lower()
@@ -147,6 +174,7 @@ class FakeUserProfileClient:
             status="pending",
             auth_id=None,
             profile=dict(profile or {}),
+            roles=list(roles or []),
         )
         self._invites[key] = created
         return created
@@ -154,3 +182,56 @@ class FakeUserProfileClient:
     async def list_invites(self, bearer_token: str) -> list[RosterInvite]:
         del bearer_token
         return list(self._invites.values())
+
+    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite:
+        del bearer_token
+        invite = self._invites.get(username.lower())
+        if invite is None:
+            raise RosterError(f"No invite for username '{username}' on 'superiorsix'.")
+        return invite
+
+
+class FakeAuthAdminClient:
+    """In-memory baked-auth admin stand-in for accept-invite tests."""
+
+    def __init__(self) -> None:
+        self.memberships: dict[str, list[str]] = {}
+        self.passwords: dict[str, str] = {}
+        self.tokens_issued: list[tuple[str, str]] = []
+        self.fail_login_for: set[str] = set()
+
+    def register(self, username: str, password: str) -> None:
+        self.passwords[username.lower()] = password
+
+    async def set_membership(
+        self,
+        *,
+        username: str,
+        roles: list[str],
+        application: str = "superiorsix",
+    ) -> MembershipResult:
+        key = username.strip().lower()
+        self.memberships[key] = list(roles)
+        return MembershipResult(application=application, roles=list(roles))
+
+    async def login_user(self, *, username: str, password: str, audience: str) -> str:
+        key = username.strip().lower()
+        if key in self.fail_login_for:
+            raise AuthAdminError("Incorrect username or password.")
+        if key in self.passwords and self.passwords[key] != password:
+            raise AuthAdminError("Incorrect username or password.")
+        if audience == "superiorsix" and key not in self.memberships and key != "ops":
+            raise AuthAdminError(f"User is not a member of application '{audience}'.")
+        self.tokens_issued.append((key, audience))
+        return f"token:{key}:{audience}"
+
+
+def _username_from_token(bearer_token: str) -> str:
+    token = bearer_token.removeprefix("Bearer ").strip()
+    if token.startswith("token:"):
+        parts = token.split(":")
+        if len(parts) >= 2:
+            return parts[1]
+    if token.startswith("user:"):
+        return token.split(":", 1)[1]
+    return "unknown"
