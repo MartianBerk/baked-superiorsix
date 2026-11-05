@@ -40,7 +40,7 @@ def create_app(
     )
     auth_admin = auth_admin or AuthAdminClient(
         token_url=settings.auth_token_url,
-        username=settings.auth_admin_username or "",
+        email=settings.auth_admin_email or "",
         password=(
             settings.auth_admin_password.get_secret_value()
             if settings.auth_admin_password is not None
