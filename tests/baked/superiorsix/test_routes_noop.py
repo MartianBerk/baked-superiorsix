@@ -51,7 +51,7 @@ PROTECTED_NOOP = [
 PROTECTED_IMPLEMENTED = [
     ("GET", "/user/getprediction", "player"),
     ("POST", "/user/addprediction", "player"),
-    ("POST", "/user/updatedetails", "user-profile"),
+    ("POST", "/user/updatedetails", "player"),
     ("GET", "/admin/listleagues", "game-master"),
     ("GET", "/admin/listrounds", "game-master"),
     ("GET", "/admin/currentround", "game-master"),

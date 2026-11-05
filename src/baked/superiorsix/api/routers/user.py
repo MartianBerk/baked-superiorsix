@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from baked.superiorsix.api.deps import (
     RequireActivePlayer,
-    RequireUserProfile,
     get_auth_admin,
     get_bearer_token,
     get_prediction_service,
@@ -20,6 +19,7 @@ from baked.superiorsix.api.schemas import (
     PlayerResponse,
     PredictionResponse,
     UpdateDetailsRequest,
+    with_always_grant_invite_roles,
 )
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
@@ -73,7 +73,7 @@ async def add_prediction(
 
 @router.post("/updatedetails", response_model=PlayerResponse)
 async def update_details(
-    _: RequireUserProfile,
+    _: RequireActivePlayer,
     payload: UpdateDetailsRequest,
     token: Annotated[str, Depends(get_bearer_token)],
     profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
@@ -108,7 +108,8 @@ async def accept_invite(
     """Accept a pending roster invite after the invitee has registered.
 
     1. Load pending invite (roles + profile seed) via service superiorsix-admin.
-    2. Grant ``invite.roles`` on baked-auth with **server-side** auth-admin creds.
+    2. Grant invite.roles (+ always ``user-profile``) on baked-auth with
+       **server-side** auth-admin creds.
     3. Login as the invitee (``audience=superiorsix``) → invitee JWT.
     4. Create roster profile with that JWT (consumes the invite).
 
@@ -152,14 +153,15 @@ async def accept_invite(
             detail=f"Invite for '{payload.username}' is not pending.",
         )
 
-    roles = list(invite.roles)
+    # Always include user-profile so baked-user patch_me works for every player.
+    roles = with_always_grant_invite_roles(list(invite.roles))
     try:
         membership = await auth_admin.set_membership(
             username=payload.username,
             roles=roles,
             application=settings.jwt_audience,
         )
-        roles = list(membership.roles)
+        roles = with_always_grant_invite_roles(list(membership.roles))
     except AuthAdminError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
@@ -191,7 +193,7 @@ async def accept_invite(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     if consumed_roles is not None:
-        roles = list(consumed_roles)
+        roles = with_always_grant_invite_roles(list(consumed_roles))
 
     return AcceptInviteResponse(
         player=PlayerResponse.from_roster(player.to_player_dict()),

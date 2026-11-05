@@ -109,16 +109,17 @@ Admin does **not** set a password or call membership PUT / addplayer.
 2. **Invite** the username + roles (superiorsix `admin` token,
    `audience=superiorsix`):
    `POST http://127.0.0.1:8030/admin/inviteplayer`
-   `{"username":"martin","first_name":"…","last_name":"…","roles":["player","user-profile"]}`
-   Allowed roles: `player`, `user-profile`, `worldcup`, `euros`.
+   `{"username":"martin","first_name":"…","last_name":"…","roles":["player"]}`
+   Selectable roles: `player`, `worldcup`, `euros`.
+   `user-profile` is always merged server-side (not selectable).
 3. **Register** (invitee chooses password):
    `POST http://127.0.0.1:8010/v1/auth/register` `{"username":"martin","password":"…"}`.
 4. **Accept** (invitee):
    `POST http://127.0.0.1:8030/user/acceptinvite`
    `{"username":"martin","password":"…"}`
-   BFF: grants invite.roles via auth-admin → logs invitee in (`audience=superiorsix`)
-   → creates roster profile with that JWT (consumes invite). Returns player +
-   `access_token` + roles.
+   BFF: grants invite.roles (+ always `user-profile`) via auth-admin → logs invitee
+   in (`audience=superiorsix`) → creates roster profile with that JWT (consumes
+   invite). Returns player + `access_token` + roles.
 
 ## Point the Expo app at this stack
 
