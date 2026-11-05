@@ -93,9 +93,11 @@ class MatchExtractor:
             )
         )
         # Apply scores when the feed already has them (no separate live poller here).
-        if payload.status in {MatchStatus.IN_PLAY, MatchStatus.FINISHED} and (
-            payload.home_score is not None or payload.away_score is not None
-        ):
+        if payload.status in {
+            MatchStatus.IN_PLAY,
+            MatchStatus.HALF_TIME,
+            MatchStatus.FINISHED,
+        } and (payload.home_score is not None or payload.away_score is not None):
             match = await self._ingest.update_score(
                 external_id=payload.external_id,
                 status=payload.status,

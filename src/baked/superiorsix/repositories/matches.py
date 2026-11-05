@@ -32,6 +32,15 @@ class MatchRepository(Protocol):
         use_match: bool | None = None,
     ) -> list[Match]: ...
 
+    async def list_score_candidates(
+        self,
+        start: datetime,
+        end: datetime,
+        *,
+        use_match: bool | None = None,
+        statuses: frozenset[str] | None = None,
+    ) -> list[Match]: ...
+
     async def list_by_league(self, league_id: int) -> list[Match]: ...
 
     async def list_finished_for_team_before(self, team: str, before: datetime) -> list[Match]: ...
@@ -88,6 +97,29 @@ class SqlAlchemyMatchRepository:
             select(MatchRecord)
             .where(and_(*clauses))
             .order_by(MatchRecord.game_number.nulls_last(), MatchRecord.match_date)
+        )
+        return [_to_domain(record) for record in result.scalars().all()]
+
+    async def list_score_candidates(
+        self,
+        start: datetime,
+        end: datetime,
+        *,
+        use_match: bool | None = None,
+        statuses: frozenset[str] | None = None,
+    ) -> list[Match]:
+        clauses = [
+            MatchRecord.match_date >= start,
+            MatchRecord.match_date < end,
+        ]
+        if use_match is not None:
+            clauses.append(MatchRecord.use_match.is_(use_match))
+        if statuses is not None:
+            clauses.append(MatchRecord.status.in_(tuple(statuses)))
+        result = await self._session.execute(
+            select(MatchRecord)
+            .where(and_(*clauses))
+            .order_by(MatchRecord.match_date, MatchRecord.id)
         )
         return [_to_domain(record) for record in result.scalars().all()]
 

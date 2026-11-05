@@ -10,12 +10,19 @@ from baked.superiorsix.process.extractors.connectors.status import map_football_
 
 # England area id on football-data.org.
 ENGLAND_AREA_ID = 2072
+# World area — European Championship / World Cup live here, not under England.
+WORLD_AREA_ID = 2267
 # League catalog uses v2 so EL1/EL2 appear in the England competition list.
 FOOTBALL_DATA_LEAGUES_BASE_URL = "https://api.football-data.org/v2"
 # Match ingest for free-tier comps stays on v4.
 FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
 # Superior Six English league codes.
 LEAGUE_CATALOG_CODES: frozenset[str] = frozenset({"PL", "ELC", "EL1", "EL2"})
+# Cup / international tournament codes (football-data free tier; not Flashscore).
+# FAC comes from the England area list; EC / WC from the World area.
+TOURNAMENT_CATALOG_CODES: frozenset[str] = frozenset({"FAC", "EC", "WC"})
+ENGLAND_TOURNAMENT_CODES: frozenset[str] = frozenset({"FAC"})
+WORLD_TOURNAMENT_CODES: frozenset[str] = frozenset({"EC", "WC"})
 # Pseudo-status filter: IN_PLAY + PAUSED (see football-data match docs).
 FOOTBALL_DATA_LIVE_STATUS = "LIVE"
 
@@ -98,15 +105,57 @@ class FootballDataConnector:
         return {"X-Auth-Token": self._token}
 
     def collect_leagues(self) -> list[LeaguePayload]:
+        return self._collect_area_leagues(ENGLAND_AREA_ID, self._league_codes)
+
+    def collect_tournaments(
+        self,
+        codes: frozenset[str] | None = None,
+    ) -> list[LeaguePayload]:
+        """Upsert cup / international tournament competitions.
+
+        England cups (FAC) come from the England area list. EC / WC are loaded
+        from the World area (legacy ``collect_euros`` / ``collect_world_cup``).
+        """
+        wanted = frozenset(code.strip().upper() for code in (codes or TOURNAMENT_CATALOG_CODES))
+        if not wanted:
+            return []
+        england_codes = wanted & ENGLAND_TOURNAMENT_CODES
+        world_codes = wanted & WORLD_TOURNAMENT_CODES
+        unknown = wanted - ENGLAND_TOURNAMENT_CODES - WORLD_TOURNAMENT_CODES
+        if unknown:
+            raise ValueError(
+                "Unsupported tournament codes: "
+                + ", ".join(sorted(unknown))
+                + f" (supported: {', '.join(sorted(TOURNAMENT_CATALOG_CODES))})"
+            )
+        leagues: list[LeaguePayload] = []
+        seen: set[str] = set()
+        if england_codes:
+            for payload in self._collect_area_leagues(ENGLAND_AREA_ID, england_codes):
+                if payload.code not in seen:
+                    seen.add(payload.code)
+                    leagues.append(payload)
+        if world_codes:
+            for payload in self._collect_area_leagues(WORLD_AREA_ID, world_codes):
+                if payload.code not in seen:
+                    seen.add(payload.code)
+                    leagues.append(payload)
+        return leagues
+
+    def _collect_area_leagues(
+        self,
+        area_id: int,
+        codes: frozenset[str],
+    ) -> list[LeaguePayload]:
         payload = self._http.get_json(
             f"{self._leagues_base_url}/competitions",
             headers=self._headers() or None,
-            params={"areas": ENGLAND_AREA_ID},
+            params={"areas": area_id},
         )
         leagues: list[LeaguePayload] = []
         for item in payload.get("competitions") or []:
             parsed = parse_football_data_league(item)
-            if parsed is None or parsed.code not in self._league_codes:
+            if parsed is None or parsed.code not in codes:
                 continue
             leagues.append(parsed)
         return leagues

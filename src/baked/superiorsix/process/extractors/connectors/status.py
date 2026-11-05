@@ -6,7 +6,8 @@ _FOOTBALL_DATA_STATUS = {
     "SCHEDULED": MatchStatus.SCHEDULED,
     "TIMED": MatchStatus.SCHEDULED,
     "IN_PLAY": MatchStatus.IN_PLAY,
-    "PAUSED": MatchStatus.IN_PLAY,
+    # football-data PAUSED is the concrete half-time signal for 90-minute matches.
+    "PAUSED": MatchStatus.HALF_TIME,
     "EXTRA_TIME": MatchStatus.IN_PLAY,
     "PENALTY_SHOOTOUT": MatchStatus.IN_PLAY,
     "FINISHED": MatchStatus.FINISHED,
@@ -19,7 +20,7 @@ _FOOTBALL_DATA_STATUS = {
 _GOAL_API_STATUS = {
     "SCHEDULED": MatchStatus.SCHEDULED,
     "LIVE": MatchStatus.IN_PLAY,
-    "HALF_TIME": MatchStatus.IN_PLAY,
+    "HALF_TIME": MatchStatus.HALF_TIME,
     "FINISHED": MatchStatus.FINISHED,
     "AFTER_ET": MatchStatus.FINISHED,
     "AFTER_PEN": MatchStatus.FINISHED,
