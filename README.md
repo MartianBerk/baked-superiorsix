@@ -97,7 +97,8 @@ Standalone process — **do not** put cron/K8s in this repo; schedule externally
    now; default: Super Six selections with `use_match`; pass `--all-fixtures`
    for everything).
 2. Skips API work when:
-   - **before active** — `now < match_date + 2 minutes` (no pulls at/before kickoff)
+   - **before active** — `now < match_date + active_offset` (default
+     `DEFAULT_ACTIVE_OFFSET = +2 minutes`; positive = after kickoff, negative = before)
    - **half-time pause (15 min)** — concrete HT from the provider, or inferred at
      `match_date + 48 minutes` (45 + 3 added time)
    - **recheck wait** — `now < last_updated + 2 minutes` while live

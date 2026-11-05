@@ -14,8 +14,9 @@ from baked.superiorsix.services.matches import MatchService
 
 logger = logging.getLogger(__name__)
 
-# Start actively pulling this far *after* registered kickoff (no pulls before).
-DEFAULT_ACTIVE_AFTER_KICKOFF = timedelta(minutes=2)
+# Signed offset from ``match_date`` when pulls may begin (positive = after kickoff,
+# negative = before). Default +2 minutes — no pulls at or before registered kickoff.
+DEFAULT_ACTIVE_OFFSET = timedelta(minutes=2)
 # While live / in the active window, re-pull at most this often.
 DEFAULT_RECHECK = timedelta(minutes=2)
 # Half-time pause once HT is known (concrete API status or inferred).
@@ -51,14 +52,15 @@ def decide_pull(
     recheck: timedelta = DEFAULT_RECHECK,
     ht_pause: timedelta = DEFAULT_HT_PAUSE,
     ht_infer_after: timedelta = DEFAULT_HT_INFER_AFTER,
-    active_after_kickoff: timedelta = DEFAULT_ACTIVE_AFTER_KICKOFF,
+    active_offset: timedelta = DEFAULT_ACTIVE_OFFSET,
 ) -> PullDecision:
     """Decide whether a fixture should trigger a live score API request.
 
     Rules (UTC-aware ``match_date`` / ``last_updated``):
     - Finished / postponed → skip.
-    - Before ``match_date + active_after_kickoff`` → skip (default: 2 minutes
-      after registered kickoff; no pulls at or before kickoff).
+    - Before ``match_date + active_offset`` → skip. ``active_offset`` is signed
+      relative to kickoff (positive = after, negative = before); default
+      ``+2 minutes``.
     - Concrete half-time (``HALF TIME``): pause ``ht_pause`` from ``last_updated``.
     - Else infer HT at ``match_date + ht_infer_after`` and pause ``ht_pause`` from that.
     - Otherwise recheck at most every ``recheck`` since ``last_updated``.
@@ -70,7 +72,7 @@ def decide_pull(
     if status in {MatchStatus.FINISHED, MatchStatus.POSTPONED}:
         return PullDecision(False, "terminal")
 
-    if now < kickoff + active_after_kickoff:
+    if now < kickoff + active_offset:
         return PullDecision(False, "before_active")
 
     if status == MatchStatus.HALF_TIME:
@@ -113,7 +115,7 @@ class AutoScoreExtractor:
         recheck: timedelta = DEFAULT_RECHECK,
         ht_pause: timedelta = DEFAULT_HT_PAUSE,
         ht_infer_after: timedelta = DEFAULT_HT_INFER_AFTER,
-        active_after_kickoff: timedelta = DEFAULT_ACTIVE_AFTER_KICKOFF,
+        active_offset: timedelta = DEFAULT_ACTIVE_OFFSET,
         lookback: timedelta = DEFAULT_LOOKBACK,
         lookahead: timedelta = DEFAULT_LOOKAHEAD,
         max_run_seconds: int = 0,
@@ -130,7 +132,7 @@ class AutoScoreExtractor:
         self._recheck = recheck
         self._ht_pause = ht_pause
         self._ht_infer_after = ht_infer_after
-        self._active_after_kickoff = active_after_kickoff
+        self._active_offset = active_offset
         self._lookback = lookback
         self._lookahead = lookahead
         self._max_run_seconds = max(0, int(max_run_seconds))
@@ -188,7 +190,7 @@ class AutoScoreExtractor:
                 recheck=self._recheck,
                 ht_pause=self._ht_pause,
                 ht_infer_after=self._ht_infer_after,
-                active_after_kickoff=self._active_after_kickoff,
+                active_offset=self._active_offset,
             )
             if not decision.should_pull:
                 skipped += 1

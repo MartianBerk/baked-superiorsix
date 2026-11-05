@@ -28,7 +28,7 @@ def test_decide_pull_before_kickoff() -> None:
     assert decision.reason == "before_active"
 
 
-def test_decide_pull_still_inactive_one_minute_after_kickoff() -> None:
+def test_decide_pull_still_inactive_before_default_active_offset() -> None:
     decision = decide_pull(
         now=KICKOFF + timedelta(minutes=1),
         match_date=KICKOFF,
@@ -39,12 +39,24 @@ def test_decide_pull_still_inactive_one_minute_after_kickoff() -> None:
     assert decision.reason == "before_active"
 
 
-def test_decide_pull_active_two_minutes_after_kickoff() -> None:
+def test_decide_pull_active_at_default_active_offset() -> None:
     decision = decide_pull(
         now=KICKOFF + timedelta(minutes=2),
         match_date=KICKOFF,
         last_updated=None,
         status=MatchStatus.SCHEDULED,
+    )
+    assert decision.should_pull is True
+    assert decision.reason == "pull"
+
+
+def test_decide_pull_respects_negative_active_offset() -> None:
+    decision = decide_pull(
+        now=KICKOFF - timedelta(minutes=1),
+        match_date=KICKOFF,
+        last_updated=None,
+        status=MatchStatus.SCHEDULED,
+        active_offset=timedelta(minutes=-2),
     )
     assert decision.should_pull is True
     assert decision.reason == "pull"
