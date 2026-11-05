@@ -8,6 +8,7 @@ class MatchStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
     POSTPONED = "POSTPONED"
     IN_PLAY = "IN PLAY"
+    HALF_TIME = "HALF TIME"
     FINISHED = "FINISHED"
 
 

@@ -73,10 +73,11 @@ def test_factory_routes_other_codes_to_football_data() -> None:
 def test_status_mapping() -> None:
     assert map_football_data_status("TIMED") == MatchStatus.SCHEDULED
     assert map_football_data_status("IN_PLAY") == MatchStatus.IN_PLAY
+    assert map_football_data_status("PAUSED") == MatchStatus.HALF_TIME
     assert map_football_data_status("FINISHED") == MatchStatus.FINISHED
     assert map_goal_api_status("SCHEDULED") == MatchStatus.SCHEDULED
     assert map_goal_api_status("LIVE") == MatchStatus.IN_PLAY
-    assert map_goal_api_status("HALF_TIME") == MatchStatus.IN_PLAY
+    assert map_goal_api_status("HALF_TIME") == MatchStatus.HALF_TIME
     assert map_goal_api_status("FINISHED") == MatchStatus.FINISHED
     assert map_goal_api_status("POSTPONED") == MatchStatus.POSTPONED
 

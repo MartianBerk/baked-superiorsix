@@ -43,13 +43,16 @@ identity-only (register / password / JWT `aud` + roles).
    `POST /admin/addplayer` with
    `{"auth_id":"<sub>","username":"martin","first_name":"…","last_name":"…"}`.
 
-### Ingest extractors (SS-7 / SS-10)
+### Ingest extractors (SS-7 / SS-10 / SS-11)
 
 | CLI | Purpose |
 |-----|---------|
 | `poetry run baked-superiorsix-league-extractor` | Upsert league catalog (name / code / start date) |
 | `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
 | `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
+| `poetry run baked-superiorsix-tournament-extractor` | Upsert tournament catalog (`FAC`, `EC`, `WC`) from football-data |
+| `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert fixtures for one tournament code |
+| `poetry run baked-superiorsix-auto-score` | Smart live-score pass (selected fixtures by default) |
 | `poetry run baked-superiorsix-db leagues` | List leagues in the DB (TSV) |
 | `poetry run baked-superiorsix-db matches [-l PL] [-d 14-03-2026] …` | List matches with optional filters (TSV) |
 
@@ -58,21 +61,70 @@ Providers:
 | Concern | Provider |
 |---------|----------|
 | League catalog (`league-extractor`) | football-data.org **v2** (England area; includes EL1/EL2) |
+| Tournament catalog / fixtures (`FAC`, `EC`, `WC`) | football-data.org (England area for FAC; World area for EC/WC) |
 | Match fixtures `EL1` / `EL2` | [Goal API](https://goal-api.com/documentation) (`/fixtures/date/:date`, paginated) |
 | Match fixtures everything else (e.g. `PL`, `ELC`) | football-data.org v4 date range |
 | `--live` for EL1/EL2 | Goal API `/fixtures/live` |
-| `--live` for PL/ELC | football-data.org `status=LIVE` (`IN_PLAY` + `PAUSED`) |
+| `--live` for PL/ELC/tournaments | football-data.org `status=LIVE` (`IN_PLAY` + `PAUSED`) |
+| Auto-score pulls | Reuses `MatchExtractor --live` per due league (factory by league code) |
 
 Goal API has no date-range filter on the date endpoint, so a `--from`/`--to` window
 issues one request per calendar day (with `limit`/`offset` pagination).
 
+#### Tournament CLI
+
+```bash
+# Catalog only (default codes FAC EC WC; override with -c)
+poetry run baked-superiorsix-tournament-extractor
+poetry run baked-superiorsix-tournament-extractor -c FAC EC
+
+# Fixtures for one tournament (league row must already exist — run catalog first)
+poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 --to 2026-01-12
+poetry run baked-superiorsix-tournament-extractor -l EC --live
+```
+
+Side-game World Cup / Euros prediction tables and Flashscore agents are **not**
+ported here (SS-19 / SS-20). Tournament ingest writes into the shared
+`leagues` / `matches` tables via football-data only.
+
+#### Auto-score (SS-11)
+
+Standalone process — **do not** put cron/K8s in this repo; schedule externally
+(~every 15 minutes is fine). Each run:
+
+1. Loads scoreable fixtures in a lookback/lookahead window (default: Super Six
+   selections with `use_match`; pass `--all-fixtures` for everything).
+2. Skips API work when:
+   - **before kickoff** — `now < match_date - 1 minute`
+   - **half-time pause (15 min)** — concrete HT from the provider, or inferred at
+     `match_date + 48 minutes` (45 + 3 added time)
+   - **recheck wait** — `now < last_updated + 2 minutes` while live
+3. For leagues that still have due fixtures, pulls once via
+   `MatchExtractor(..., live=True)` (stamps `last_updated` on writes).
+
+Half-time detection by provider:
+
+| Provider | Concrete HT signal | Domain status |
+|----------|--------------------|---------------|
+| Goal API (EL1/EL2) | `matchStatus=HALF_TIME` | `HALF TIME` |
+| football-data.org | `status=PAUSED` | `HALF TIME` |
+
+If the feed has not reported HT yet, auto-score still pauses from
+`kickoff + 48m` for 15 minutes so EL1/EL2 stay under free-tier request budgets.
+
+```bash
+poetry run baked-superiorsix-auto-score
+poetry run baked-superiorsix-auto-score --all-fixtures
+poetry run baked-superiorsix-auto-score -s 7200   # optional legacy-style loop budget
+```
+
 Env vars (also accept `SUPERIORSIX_` prefix):
 
-- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token` (optional for league list; required for PL/ELC match extract)
-- `GOAL_API_KEY` — Goal API bearer token (EL1/EL2 match extract)
+- `FOOTBALL_DATA_API_TOKEN` — football-data.org `X-Auth-Token` (optional for league list; required for PL/ELC/tournament match extract)
+- `GOAL_API_KEY` — Goal API bearer token (EL1/EL2 match extract + auto-score)
 
 No Flashscore / Selenium. Match extract may still apply scores when the fixture
-payload already includes them (`--live` is the near-real-time path).
+payload already includes them (`--live` / auto-score is the near-real-time path).
 
 ## Requirements
 

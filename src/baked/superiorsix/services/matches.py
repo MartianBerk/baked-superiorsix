@@ -29,6 +29,22 @@ class MatchService:
         matches = await self.list_on_date(match_date, available_only=True)
         return sorted(matches, key=lambda match: match.game_number or 0)
 
+    async def list_score_candidates(
+        self,
+        start: datetime,
+        end: datetime,
+        *,
+        use_match: bool | None = None,
+        statuses: frozenset[str] | None = None,
+    ) -> list[Match]:
+        """Fixtures in ``[start, end)`` eligible for auto-score pulls."""
+        return await self._matches.list_score_candidates(
+            start,
+            end,
+            use_match=use_match,
+            statuses=statuses,
+        )
+
     async def upsert_fixture(self, match: Match) -> Match:
         """Process ingest path: create or update a fixture by external_id.
 
