@@ -25,12 +25,23 @@ def test_decide_pull_before_kickoff() -> None:
         status=MatchStatus.SCHEDULED,
     )
     assert decision.should_pull is False
-    assert decision.reason == "before_kickoff"
+    assert decision.reason == "before_active"
 
 
-def test_decide_pull_active_without_last_updated() -> None:
+def test_decide_pull_still_inactive_one_minute_after_kickoff() -> None:
     decision = decide_pull(
         now=KICKOFF + timedelta(minutes=1),
+        match_date=KICKOFF,
+        last_updated=None,
+        status=MatchStatus.SCHEDULED,
+    )
+    assert decision.should_pull is False
+    assert decision.reason == "before_active"
+
+
+def test_decide_pull_active_two_minutes_after_kickoff() -> None:
+    decision = decide_pull(
+        now=KICKOFF + timedelta(minutes=2),
         match_date=KICKOFF,
         last_updated=None,
         status=MatchStatus.SCHEDULED,

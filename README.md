@@ -92,10 +92,12 @@ ported here (SS-19 / SS-20). Tournament ingest writes into the shared
 Standalone process — **do not** put cron/K8s in this repo; schedule externally
 (~every 15 minutes is fine). Each run:
 
-1. Loads scoreable fixtures in a lookback/lookahead window (default: Super Six
-   selections with `use_match`; pass `--all-fixtures` for everything).
+1. Loads scoreable fixtures in the live-candidate window
+   (`match_date` within **1 hour before → 4 hours after** kickoff relative to
+   now; default: Super Six selections with `use_match`; pass `--all-fixtures`
+   for everything).
 2. Skips API work when:
-   - **before kickoff** — `now < match_date - 1 minute`
+   - **before active** — `now < match_date + 2 minutes` (no pulls at/before kickoff)
    - **half-time pause (15 min)** — concrete HT from the provider, or inferred at
      `match_date + 48 minutes` (45 + 3 added time)
    - **recheck wait** — `now < last_updated + 2 minutes` while live

@@ -369,8 +369,9 @@ def tournament_main(argv: list[str] | None = None) -> None:
 def auto_score_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Smart auto-score job. Finds scoreable fixtures (default: Super Six "
-            "selections), skips API pulls before kickoff / during half-time pause / "
+            "Smart auto-score job. Finds scoreable fixtures in the live-candidate "
+            "window (1h before → 4h after kickoff; default: Super Six selections), "
+            "skips API pulls until 2 minutes after kickoff / during half-time pause / "
             "within the 2-minute recheck window, then reuses MatchExtractor --live "
             "per due league. Orchestration may schedule this ~every 15 minutes; "
             "this CLI does not install cron/K8s."
