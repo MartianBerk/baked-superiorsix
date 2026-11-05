@@ -1,13 +1,15 @@
-"""Server-side baked-auth admin client for membership grants.
+"""Server-side baked-auth admin client for invite-ready users + memberships.
 
-Uses deploy/bootstrap credentials (aud=auth) — never the invitee's token —
-to ``PUT /v1/applications/{slug}/memberships/{username}``.
+Uses deploy/bootstrap credentials (``aud=auth``) for
+``POST /v1/users`` and ``PUT /v1/applications/{slug}/memberships/{username}``.
+Invitee password login uses the public token endpoint (no admin creds).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
+from uuid import UUID
 
 import httpx
 
@@ -20,7 +22,23 @@ class MembershipResult:
     roles: list[str]
 
 
+@dataclass(slots=True, frozen=True)
+class InviteReadyUserResult:
+    id: UUID
+    username: str
+    must_set_password: bool
+    memberships: list[MembershipResult]
+
+
 class AuthAdminGateway(Protocol):
+    async def create_invite_ready_user(
+        self,
+        *,
+        username: str,
+        roles: list[str],
+        application: str = "superiorsix",
+    ) -> InviteReadyUserResult: ...
+
     async def set_membership(
         self,
         *,
@@ -28,6 +46,8 @@ class AuthAdminGateway(Protocol):
         roles: list[str],
         application: str = "superiorsix",
     ) -> MembershipResult: ...
+
+    async def login_user(self, *, username: str, password: str, audience: str) -> str: ...
 
 
 class AuthAdminClient:
@@ -46,6 +66,42 @@ class AuthAdminClient:
         self._timeout = timeout
         self._client = client
         self._auth_base = token_url.rsplit("/v1/auth/token", 1)[0]
+
+    async def create_invite_ready_user(
+        self,
+        *,
+        username: str,
+        roles: list[str],
+        application: str = "superiorsix",
+    ) -> InviteReadyUserResult:
+        """POST /v1/users — passwordless user + optional membership (SS-66)."""
+        token = await self._login_auth_admin()
+        body: dict[str, Any] = {
+            "username": username.strip().lower(),
+            "membership": {
+                "application": application,
+                "roles": list(roles),
+            },
+        }
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(timeout=self._timeout)
+        try:
+            response = await client.post(
+                f"{self._auth_base}/v1/users",
+                headers={"Authorization": f"Bearer {token}"},
+                json=body,
+            )
+        except httpx.HTTPError as exc:
+            raise AuthAdminError(f"baked-auth invite-ready create failed: {exc}") from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        if response.status_code == 409:
+            raise AuthAdminError("USERNAME_EXISTS:" + _error_detail(response))
+        if response.status_code >= 400:
+            raise AuthAdminError(_error_detail(response))
+        return _invite_ready_from_payload(response.json(), application=application)
 
     async def set_membership(
         self,
@@ -119,6 +175,32 @@ class AuthAdminClient:
             password=self._password,
             audience="auth",
         )
+
+
+def _invite_ready_from_payload(
+    payload: dict[str, Any],
+    *,
+    application: str,
+) -> InviteReadyUserResult:
+    raw_id = payload.get("id")
+    if raw_id is None:
+        raise AuthAdminError("baked-auth invite-ready response missing id.")
+    memberships: list[MembershipResult] = []
+    for item in payload.get("memberships") or []:
+        if not isinstance(item, dict):
+            continue
+        memberships.append(
+            MembershipResult(
+                application=str(item.get("application") or application),
+                roles=[str(role) for role in (item.get("roles") or [])],
+            )
+        )
+    return InviteReadyUserResult(
+        id=UUID(str(raw_id)),
+        username=str(payload.get("username") or ""),
+        must_set_password=bool(payload.get("must_set_password", True)),
+        memberships=memberships,
+    )
 
 
 def _error_detail(response: httpx.Response) -> str:

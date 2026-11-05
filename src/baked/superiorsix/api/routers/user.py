@@ -105,65 +105,15 @@ async def accept_invite(
     profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
     auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
 ) -> AcceptInviteResponse:
-    """Accept a pending roster invite after the invitee has registered.
+    """Accept a pending roster invite after set-password claim.
 
-    1. Load pending invite (roles + profile seed) via service superiorsix-admin.
-    2. Grant invite.roles (+ always ``user-profile``) on baked-auth with
-       **server-side** auth-admin creds.
-    3. Login as the invitee (``audience=superiorsix``) → invitee JWT.
-    4. Create roster profile with that JWT (consumes the invite).
+    Membership roles are granted at invite time. This path only:
+    1. Logs in as the invitee (``audience=superiorsix``) with the claimed password.
+    2. Creates the roster profile with that JWT (consumes the invite).
 
-    Admin does not set a password; the invitee chose it at ``/v1/auth/register``.
+    No service bootstrap / auth-admin password is used here.
     """
     settings = request.app.state.settings
-    admin_user = settings.auth_admin_username
-    admin_password = (
-        settings.auth_admin_password.get_secret_value()
-        if settings.auth_admin_password is not None
-        else None
-    )
-    if not admin_user or not admin_password:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Accept-invite is not configured: set SUPERIORSIX_AUTH_ADMIN_USERNAME / "
-                "SUPERIORSIX_AUTH_ADMIN_PASSWORD (local-dev may reuse AUTH_BOOTSTRAP_*)."
-            ),
-        )
-
-    try:
-        ops_token = await auth_admin.login_user(
-            username=admin_user,
-            password=admin_password,
-            audience=settings.jwt_audience,
-        )
-    except AuthAdminError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Unable to obtain service superiorsix token: {exc}",
-        ) from exc
-
-    try:
-        invite = await profiles.get_invite(ops_token, payload.username)
-    except RosterError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    if invite.status != "pending":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Invite for '{payload.username}' is not pending.",
-        )
-
-    # Always include user-profile so baked-user patch_me works for every player.
-    roles = with_always_grant_invite_roles(list(invite.roles))
-    try:
-        membership = await auth_admin.set_membership(
-            username=payload.username,
-            roles=roles,
-            application=settings.jwt_audience,
-        )
-        roles = with_always_grant_invite_roles(list(membership.roles))
-    except AuthAdminError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     try:
         invitee_token = await auth_admin.login_user(
@@ -192,8 +142,7 @@ async def accept_invite(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    if consumed_roles is not None:
-        roles = with_always_grant_invite_roles(list(consumed_roles))
+    roles = with_always_grant_invite_roles(list(consumed_roles or []))
 
     return AcceptInviteResponse(
         player=PlayerResponse.from_roster(player.to_player_dict()),

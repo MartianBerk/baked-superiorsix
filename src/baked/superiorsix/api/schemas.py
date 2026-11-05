@@ -256,11 +256,11 @@ class InvitePlayerResponse(BaseModel):
 
 
 class AcceptInviteRequest(BaseModel):
-    """Invitee accepts a pending roster invite after registering their password.
+    """Invitee accepts a pending roster invite after set-password claim.
 
-    ``username`` + ``password`` prove identity (password chosen at register).
-    The BFF grants invite.roles via auth-admin, obtains the invitee's
-    superiorsix JWT, then creates the roster profile with that JWT.
+    ``username`` + ``password`` prove identity (password set via baked-auth
+    ``POST /v1/auth/set-password``). Membership was granted at invite time;
+    this only logs the invitee in and creates the roster profile.
     """
 
     username: str = Field(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_]+$")
