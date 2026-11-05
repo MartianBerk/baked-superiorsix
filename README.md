@@ -163,9 +163,12 @@ so roster / display-name calls resolve profiles by auth `sub`.
 poetry run baked-superiorsix
 ```
 
-OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs).
+OpenAPI docs are at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs) for poetry, or `:8030` when using Docker.
 
 - Health: `GET /health`
+
+For the full Superior Six stack on Docker (shared JWT, SQLite volumes, invite
+bootstrap notes), see [`baked-devops/local-dev`](https://github.com/MartianBerk/baked-devops/tree/master/local-dev).
 
 ## Tests
 
