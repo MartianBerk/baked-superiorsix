@@ -32,18 +32,18 @@ provides invite-ready (passwordless) users + set-password claim (SS-66). Roles
 are chosen and membership is granted **at invite**; the invitee claims a
 password, then accepts the roster invite.
 
-1. As superiorsix `admin`, invite a username + roles:
+1. As superiorsix `admin`, invite an email + roles:
    `POST /admin/inviteplayer`
-   `{"username":"martin","email":"…","first_name":"…","last_name":"…","roles":["player"]}`
+   `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
    Selectable: `player`, `worldcup`, `euros`.
    `user-profile` is **always granted** server-side (not a selectable chip).
    BFF (server-side `SUPERIORSIX_AUTH_ADMIN_*`, `aud=auth`):
    `POST` baked-auth `/v1/users` with membership → then baked-user roster invite.
 2. Invitee claims password: `POST` baked-auth `/v1/auth/set-password`
-   `{"username":"martin","password":"…"}` (no token returned). `/token` is **403**
+   `{"email":"martin@example.com","password":"…"}` (no token returned). `/token` is **403**
    until this succeeds.
 3. Invitee accepts roster: `POST /user/acceptinvite`
-   `{"username":"martin","password":"…"}`.
+   `{"email":"martin@example.com","password":"…"}`.
    BFF logs the invitee in (`audience=superiorsix`) and creates the roster
    profile (consumes invite). **No** service bootstrap password on this path.
 4. Play with the returned `access_token` (or login again with `audience=superiorsix`).

@@ -18,7 +18,6 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
         "/admin/inviteplayer",
         headers=admin,
         json={
-            "username": "ada",
             "first_name": "Ada",
             "last_name": "Lovelace",
             "email": "ada@example.com",
@@ -36,7 +35,6 @@ def test_list_add_drop_reactivate_player(client: TestClient) -> None:
         headers=admin,
         json={
             "auth_id": str(auth_id),
-            "username": "ada",
             "first_name": "Ada",
             "last_name": "Lovelace",
             "nickname": "Ada",
@@ -82,7 +80,6 @@ def test_addplayer_requires_invite(client: TestClient) -> None:
         headers=auth_header(admin_token),
         json={
             "auth_id": str(uuid4()),
-            "username": "nobody",
             "first_name": "A",
             "last_name": "B",
             "email": "nobody@example.com",
@@ -98,7 +95,6 @@ def test_addplayer_requires_admin(client: TestClient) -> None:
         headers=auth_header(token),
         json={
             "auth_id": str(uuid4()),
-            "username": "xavier",
             "first_name": "A",
             "last_name": "B",
             "email": "xavier@example.com",
@@ -113,14 +109,13 @@ def test_game_master_can_list_players(client: TestClient) -> None:
     client.post(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
-        json={"username": "gmplayer", "email": "gm@example.com"},
+        json={"email": "gmplayer", "email": "gm@example.com"},
     )
     created = client.post(
         "/admin/addplayer",
         headers=auth_header(admin_token),
         json={
             "auth_id": str(auth_id),
-            "username": "gmplayer",
             "first_name": "A",
             "last_name": "B",
             "email": "gm@example.com",
@@ -166,7 +161,6 @@ def test_inviteplayer_rejects_unknown_roles(client: TestClient) -> None:
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "badroles",
             "email": "bad@example.com",
             "roles": ["player", "admin"],
         },
@@ -180,7 +174,6 @@ def test_inviteplayer_requires_email(client: TestClient) -> None:
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "noemail",
             "first_name": "No",
             "last_name": "Email",
             "roles": ["player"],
@@ -195,14 +188,13 @@ def test_addplayer_requires_email(client: TestClient) -> None:
     client.post(
         "/admin/inviteplayer",
         headers=admin,
-        json={"username": "needsmail", "email": "seed@example.com"},
+        json={"email": "needsmail@example.com"},
     )
     response = client.post(
         "/admin/addplayer",
         headers=admin,
         json={
             "auth_id": str(uuid4()),
-            "username": "needsmail",
             "first_name": "Needs",
             "last_name": "Mail",
         },
@@ -219,7 +211,6 @@ def test_inviteplayer_creates_auth_user_and_membership(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "martin",
             "first_name": "Martin",
             "last_name": "Berk",
             "email": "martin@example.com",
@@ -228,9 +219,9 @@ def test_inviteplayer_creates_auth_user_and_membership(
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["roles"] == ["player", "euros", "user-profile"]
-    assert "martin" in auth_admin.created_invite_ready
-    assert auth_admin.passwords["martin"] is None
-    assert auth_admin.memberships["martin"] == ["player", "euros", "user-profile"]
+    assert "martin@example.com" in auth_admin.created_invite_ready
+    assert auth_admin.passwords["martin@example.com"] is None
+    assert auth_admin.memberships["martin@example.com"] == ["player", "euros", "user-profile"]
 
 
 def test_accept_invite_after_set_password_creates_roster(
@@ -243,7 +234,6 @@ def test_accept_invite_after_set_password_creates_roster(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "martin",
             "first_name": "Martin",
             "last_name": "Berk",
             "email": "martin@example.com",
@@ -252,14 +242,14 @@ def test_accept_invite_after_set_password_creates_roster(
     )
     assert invited.status_code == 201, invited.text
 
-    auth_admin.set_password("martin", "password123")
+    auth_admin.set_password("martin@example.com", "password123")
     auth_id = uuid4()
-    user_profiles.bind_username("martin", auth_id)
+    user_profiles.bind_email("martin@example.com", auth_id)
 
     accepted = client.post(
         "/user/acceptinvite",
         json={
-            "username": "martin",
+            "email": "martin@example.com",
             "password": "password123",
             "nickname": "Marty",
         },
@@ -271,8 +261,8 @@ def test_accept_invite_after_set_password_creates_roster(
     assert body["player"]["first_name"] == "Martin"
     assert body["player"]["nickname"] == "Marty"
     assert body["player"]["email"] == "martin@example.com"
-    assert body["access_token"].startswith("token:martin:superiorsix")
-    assert user_profiles._invites["martin"].status == "accepted"
+    assert body["access_token"].startswith("token:martin@example.com:superiorsix")
+    assert user_profiles._invites["martin@example.com"].status == "accepted"
 
 
 def test_inviteplayer_always_grants_user_profile(
@@ -284,14 +274,13 @@ def test_inviteplayer_always_grants_user_profile(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "noprofilechip",
             "email": "np@example.com",
             "roles": ["player", "worldcup"],
         },
     )
     assert invited.status_code == 201, invited.text
     assert invited.json()["roles"] == ["player", "worldcup", "user-profile"]
-    assert auth_admin.memberships["noprofilechip"] == [
+    assert auth_admin.memberships["np@example.com"] == [
         "player",
         "worldcup",
         "user-profile",
@@ -309,7 +298,6 @@ def test_accept_invite_merges_user_profile_from_consumed_roles(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "legacy",
             "first_name": "Leg",
             "last_name": "Acy",
             "email": "legacy@example.com",
@@ -317,23 +305,23 @@ def test_accept_invite_merges_user_profile_from_consumed_roles(
         },
     )
     # Simulate a pre-always-grant invite stored without user-profile.
-    stored = user_profiles._invites["legacy"]
-    user_profiles._invites["legacy"] = type(stored)(
+    stored = user_profiles._invites["legacy@example.com"]
+    user_profiles._invites["legacy@example.com"] = type(stored)(
         id=stored.id,
-        username=stored.username,
+        email=stored.email,
         status=stored.status,
         auth_id=stored.auth_id,
         profile=dict(stored.profile),
         roles=["player"],
     )
 
-    auth_admin.set_password("legacy", "password123")
+    auth_admin.set_password("legacy@example.com", "password123")
     auth_id = uuid4()
-    user_profiles.bind_username("legacy", auth_id)
+    user_profiles.bind_email("legacy@example.com", auth_id)
 
     accepted = client.post(
         "/user/acceptinvite",
-        json={"username": "legacy", "password": "password123"},
+        json={"email": "legacy@example.com", "password": "password123"},
     )
     assert accepted.status_code == 201, accepted.text
     assert accepted.json()["roles"] == ["player", "user-profile"]
@@ -348,18 +336,17 @@ def test_accept_invite_rejects_bad_password(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "martin",
             "roles": ["player"],
             "first_name": "M",
             "last_name": "B",
             "email": "martin@example.com",
         },
     )
-    auth_admin.set_password("martin", "password123")
+    auth_admin.set_password("martin@example.com", "password123")
 
     denied = client.post(
         "/user/acceptinvite",
-        json={"username": "martin", "password": "wrong-password"},
+        json={"email": "martin@example.com", "password": "wrong-password"},
     )
     assert denied.status_code == 401
 
@@ -373,16 +360,15 @@ def test_accept_invite_rejects_before_set_password(
         "/admin/inviteplayer",
         headers=auth_header(admin_token),
         json={
-            "username": "martin",
             "roles": ["player"],
             "email": "martin@example.com",
         },
     )
-    assert auth_admin.passwords["martin"] is None
+    assert auth_admin.passwords["martin@example.com"] is None
 
     denied = client.post(
         "/user/acceptinvite",
-        json={"username": "martin", "password": "password123"},
+        json={"email": "martin@example.com", "password": "password123"},
     )
     assert denied.status_code == 401
 
@@ -391,10 +377,10 @@ def test_accept_invite_requires_pending_invite(
     client: TestClient,
     auth_admin: FakeAuthAdminClient,
 ) -> None:
-    auth_admin.register("nobody", "password123")
-    auth_admin.memberships["nobody"] = ["player", "user-profile"]
+    auth_admin.register("nobody@example.com", "password123")
+    auth_admin.memberships["nobody@example.com"] = ["player", "user-profile"]
     response = client.post(
         "/user/acceptinvite",
-        json={"username": "nobody", "password": "password123"},
+        json={"email": "nobody@example.com", "password": "password123"},
     )
     assert response.status_code == 403

@@ -62,8 +62,8 @@ curl -s http://127.0.0.1:8030/health
 | `BAKED_AUTH_CLIENT_GIT_TOKEN` | BuildKit secret for private `baked-auth-client` git dep |
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
-| `AUTH_BOOTSTRAP_USERNAME` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for inviteplayer → `POST /v1/users` (`aud=auth`) |
-| `SUPERIORSIX_AUTH_ADMIN_USERNAME` / `PASSWORD` | Optional override for invite auth-admin (defaults nest to `AUTH_BOOTSTRAP_*`) |
+| `AUTH_BOOTSTRAP_EMAIL` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for inviteplayer → `POST /v1/users` (`aud=auth`) |
+| `SUPERIORSIX_AUTH_ADMIN_EMAIL` / `PASSWORD` | Optional override for invite auth-admin (defaults nest to `AUTH_BOOTSTRAP_*`) |
 | `CORS_ORIGINS` | Expo web + optional `:8040` origins — **quote as JSON**: `CORS_ORIGINS='["http://localhost:8081",…]'` (unquoted `[…]` is mangled by Compose and crashes auth) |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional match ingest |
 
@@ -93,7 +93,7 @@ with `audience=superiorsix` as well as `audience=auth`.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8010/v1/auth/token \
-  -d 'username=ops&password=local-dev-change-me&audience=superiorsix'
+  -d 'email=ops@example.com&password=local-dev-change-me&audience=superiorsix'
 ```
 
 ## Invite flow (Superior Six)
@@ -108,16 +108,16 @@ membership are applied **at invite**; acceptinvite only creates the roster.
    `POST /v1/users` with `aud=auth` (passwordless create + membership).
 2. **Invite** (superiorsix `admin` token, `audience=superiorsix`):
    `POST http://127.0.0.1:8030/admin/inviteplayer`
-   `{"username":"martin","email":"…","first_name":"…","last_name":"…","roles":["player"]}`
+   `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
    Selectable roles: `player`, `worldcup`, `euros`.
    `user-profile` is always merged server-side (not selectable).
 3. **Set password** (invitee claim):
    `POST http://127.0.0.1:8010/v1/auth/set-password`
-   `{"username":"martin","password":"…"}`.
+   `{"email":"martin@example.com","password":"…"}`.
    `/token` returns **403** until the password is set.
 4. **Accept** (invitee):
    `POST http://127.0.0.1:8030/user/acceptinvite`
-   `{"username":"martin","password":"…"}`
+   `{"email":"martin@example.com","password":"…"}`
    BFF: login invitee (`audience=superiorsix`) → create roster profile (consumes
    invite). No service bootstrap password on accept. Returns player +
    `access_token` + roles.

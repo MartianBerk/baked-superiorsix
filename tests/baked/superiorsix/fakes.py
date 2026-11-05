@@ -12,7 +12,7 @@ class FakeUserProfileClient:
     def __init__(self) -> None:
         self._by_auth: dict[UUID, RosterProfile] = {}
         self._invites: dict[str, RosterInvite] = {}
-        self._auth_id_by_username: dict[str, UUID] = {}
+        self._auth_id_by_email: dict[str, UUID] = {}
 
     def seed(
         self,
@@ -42,8 +42,8 @@ class FakeUserProfileClient:
         self._by_auth[auth_id] = created
         return created
 
-    def bind_username(self, username: str, auth_id: UUID) -> None:
-        self._auth_id_by_username[username.lower()] = auth_id
+    def bind_email(self, email: str, auth_id: UUID) -> None:
+        self._auth_id_by_email[email.lower()] = auth_id
 
     async def list_profiles(
         self,
@@ -70,15 +70,15 @@ class FakeUserProfileClient:
         auth_id: UUID,
         profile: dict[str, Any],
         *,
-        username: str | None = None,
+        email: str | None = None,
     ) -> RosterProfile:
         del bearer_token
-        if username is None:
-            raise RosterError("A username is required to accept an invite for this application.")
-        invite = self._invites.get(username.lower())
+        if email is None:
+            raise RosterError("An email is required to accept an invite for this application.")
+        invite = self._invites.get(email.lower())
         if invite is None or invite.status != "pending":
             raise RosterError(
-                f"No pending invite for username '{username}' on 'superiorsix'."
+                f"No pending invite for email '{email}' on 'superiorsix'."
             )
         if auth_id in self._by_auth:
             raise RosterError("A profile already exists for this auth id.")
@@ -95,9 +95,9 @@ class FakeUserProfileClient:
             profile={**merged, "active": bool(merged.get("active", True))},
         )
         self._by_auth[auth_id] = created
-        self._invites[username.lower()] = RosterInvite(
+        self._invites[email.lower()] = RosterInvite(
             id=invite.id,
-            username=invite.username,
+            email=invite.email,
             status="accepted",
             auth_id=auth_id,
             profile=dict(invite.profile),
@@ -110,19 +110,18 @@ class FakeUserProfileClient:
         bearer_token: str,
         profile: dict[str, Any],
     ) -> tuple[RosterProfile, list[str] | None]:
-        # Tests pass a token shaped like "user:<username>" or use bind_username.
-        username = _username_from_token(bearer_token)
-        auth_id = self._auth_id_by_username.get(username)
+        email = _email_from_token(bearer_token)
+        auth_id = self._auth_id_by_email.get(email)
         if auth_id is None:
             auth_id = uuid4()
-            self._auth_id_by_username[username] = auth_id
+            self._auth_id_by_email[email] = auth_id
         created = await self.create_for_auth_id(
             bearer_token,
             auth_id,
             profile,
-            username=username,
+            email=email,
         )
-        invite = self._invites[username]
+        invite = self._invites[email]
         return created, list(invite.roles)
 
     async def patch_by_auth_id(
@@ -151,7 +150,6 @@ class FakeUserProfileClient:
         return updated
 
     async def patch_me(self, bearer_token: str, patch: dict[str, Any]) -> RosterProfile:
-        # Tests that need patch_me seed a single profile and patch the only entry.
         del bearer_token
         if len(self._by_auth) != 1:
             raise RosterNotFoundError("Player profile not found.")
@@ -161,19 +159,19 @@ class FakeUserProfileClient:
     async def invite(
         self,
         bearer_token: str,
-        username: str,
+        email: str,
         *,
         profile: dict[str, Any] | None = None,
         roles: list[str] | None = None,
     ) -> RosterInvite:
         del bearer_token
-        key = username.lower()
+        key = email.lower()
         existing = self._invites.get(key)
         if existing is not None and existing.status == "accepted":
-            raise RosterError(f"Username '{key}' already accepted an invite for 'superiorsix'.")
+            raise RosterError(f"Email '{key}' already accepted an invite for 'superiorsix'.")
         created = RosterInvite(
             id=uuid4(),
-            username=key,
+            email=key,
             status="pending",
             auth_id=None,
             profile=dict(profile or {}),
@@ -186,11 +184,11 @@ class FakeUserProfileClient:
         del bearer_token
         return list(self._invites.values())
 
-    async def get_invite(self, bearer_token: str, username: str) -> RosterInvite:
+    async def get_invite(self, bearer_token: str, email: str) -> RosterInvite:
         del bearer_token
-        invite = self._invites.get(username.lower())
+        invite = self._invites.get(email.lower())
         if invite is None:
-            raise RosterError(f"No invite for username '{username}' on 'superiorsix'.")
+            raise RosterError(f"No invite for email '{email}' on 'superiorsix'.")
         return invite
 
 
@@ -204,11 +202,11 @@ class FakeAuthAdminClient:
         self.fail_login_for: set[str] = set()
         self.created_invite_ready: list[str] = []
 
-    def register(self, username: str, password: str) -> None:
-        self.passwords[username.lower()] = password
+    def register(self, email: str, password: str) -> None:
+        self.passwords[email.lower()] = password
 
-    def set_password(self, username: str, password: str) -> None:
-        key = username.lower()
+    def set_password(self, email: str, password: str) -> None:
+        key = email.lower()
         if key not in self.passwords:
             raise AuthAdminError("User not found.")
         if self.passwords[key] is not None:
@@ -218,19 +216,19 @@ class FakeAuthAdminClient:
     async def create_invite_ready_user(
         self,
         *,
-        username: str,
+        email: str,
         roles: list[str],
         application: str = "superiorsix",
     ) -> InviteReadyUserResult:
-        key = username.strip().lower()
+        key = email.strip().lower()
         if key in self.passwords:
-            raise AuthAdminError("USERNAME_EXISTS:Username is already registered.")
+            raise AuthAdminError("EMAIL_EXISTS:Email is already registered.")
         self.passwords[key] = None
         self.memberships[key] = list(roles)
         self.created_invite_ready.append(key)
         return InviteReadyUserResult(
             id=uuid4(),
-            username=key,
+            email=key,
             must_set_password=True,
             memberships=[MembershipResult(application=application, roles=list(roles))],
         )
@@ -238,34 +236,38 @@ class FakeAuthAdminClient:
     async def set_membership(
         self,
         *,
-        username: str,
+        email: str,
         roles: list[str],
         application: str = "superiorsix",
     ) -> MembershipResult:
-        key = username.strip().lower()
+        key = email.strip().lower()
         self.memberships[key] = list(roles)
         return MembershipResult(application=application, roles=list(roles))
 
-    async def login_user(self, *, username: str, password: str, audience: str) -> str:
-        key = username.strip().lower()
+    async def login_user(self, *, email: str, password: str, audience: str) -> str:
+        key = email.strip().lower()
         if key in self.fail_login_for:
-            raise AuthAdminError("Incorrect username or password.")
+            raise AuthAdminError("Incorrect email or password.")
         if key not in self.passwords:
-            raise AuthAdminError("Incorrect username or password.")
+            raise AuthAdminError("Incorrect email or password.")
         stored = self.passwords[key]
         if stored is None:
             raise AuthAdminError(
                 "Password not set; complete set-password before login."
             )
         if stored != password:
-            raise AuthAdminError("Incorrect username or password.")
-        if audience == "superiorsix" and key not in self.memberships and key != "ops":
+            raise AuthAdminError("Incorrect email or password.")
+        if (
+            audience == "superiorsix"
+            and key not in self.memberships
+            and key != "ops@example.com"
+        ):
             raise AuthAdminError(f"User is not a member of application '{audience}'.")
         self.tokens_issued.append((key, audience))
         return f"token:{key}:{audience}"
 
 
-def _username_from_token(bearer_token: str) -> str:
+def _email_from_token(bearer_token: str) -> str:
     token = bearer_token.removeprefix("Bearer ").strip()
     if token.startswith("token:"):
         parts = token.split(":")
@@ -273,4 +275,4 @@ def _username_from_token(bearer_token: str) -> str:
             return parts[1]
     if token.startswith("user:"):
         return token.split(":", 1)[1]
-    return "unknown"
+    return "unknown@example.com"
