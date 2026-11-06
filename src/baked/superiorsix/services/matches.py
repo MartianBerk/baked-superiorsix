@@ -144,15 +144,24 @@ class MatchService:
         match_date: date,
         selections: list[tuple[int, int]],
     ) -> list[Match]:
-        """Replace all Super Six selections for a calendar day (legacy ``addmatches``).
+        """Replace all Super Six selections for a calendar day (batch submit).
 
-        ``selections`` is a list of ``(match_id, game_number)`` with game numbers 1–6.
+        ``selections`` is ``(match_id, game_number)`` for 0–6 fixtures. Game
+        numbers must be the contiguous set ``1..n`` (order in the payload does
+        not matter). An empty list clears the day's selections.
         """
-        if len(selections) != 6:
-            raise MatchSelectionError("must submit 6 matches")
+        if len(selections) > 6:
+            raise MatchSelectionError("must submit at most 6 matches")
+        if len({match_id for match_id, _ in selections}) != len(selections):
+            raise MatchSelectionError("duplicate match id in selections")
         game_numbers = [game_number for _, game_number in selections]
-        if sorted(game_numbers) != [1, 2, 3, 4, 5, 6]:
-            raise MatchSelectionError("game_numbers must be 1 - 6")
+        if any(number < 1 or number > 6 for number in game_numbers):
+            raise MatchSelectionError("game_numbers must be between 1 and 6")
+        if sorted(game_numbers) != list(range(1, len(selections) + 1)):
+            raise MatchSelectionError(
+                f"game_numbers must be 1 - {len(selections)} when submitting "
+                f"{len(selections)} match(es)"
+            )
 
         for existing in await self.available_matches(match_date):
             existing.use_match = False

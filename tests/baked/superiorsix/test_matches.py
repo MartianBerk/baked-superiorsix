@@ -350,3 +350,29 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     )
     assert again.status_code == 200, again.text
     assert again.json()["matches"][0]["game_number"] == 1
+
+    # Partial batch (fewer than 6) replaces the day.
+    partial = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+        json=[
+            {"id": all_ids[0], "game_number": 1},
+            {"id": all_ids[1], "game_number": 2},
+            {"id": all_ids[2], "game_number": 3},
+        ],
+    )
+    assert partial.status_code == 200, partial.text
+    assert len(partial.json()["matches"]) == 3
+
+    cleared = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+        json=[],
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["matches"] == []
+    available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    assert available.status_code == 200
+    assert available.json()["matches"] == []
