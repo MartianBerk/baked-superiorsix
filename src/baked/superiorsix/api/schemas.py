@@ -69,6 +69,11 @@ class SelectMatchRequest(BaseModel):
     game_number: int = Field(ge=1, le=6)
 
 
+class BulkSelectMatchItem(BaseModel):
+    id: int = Field(description="Match id to select for Super Six")
+    game_number: int = Field(ge=1, le=6)
+
+
 class LeagueResponse(BaseModel):
     id: int
     name: str

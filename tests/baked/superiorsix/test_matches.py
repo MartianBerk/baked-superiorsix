@@ -224,3 +224,129 @@ def test_matchdetail_not_found(client: TestClient) -> None:
         params={"hometeam": "A", "awayteam": "B", "matchdate": "01-01-2026"},
     )
     assert response.status_code == 404
+
+
+def test_drop_get_and_listmatchesnew(client: TestClient) -> None:
+    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    token, _ = make_access_token(roles=["game-master"])
+    headers = auth_header(token)
+
+    selected = client.post(
+        "/admin/addmatch",
+        headers=headers,
+        json={"id": fixture.id, "game_number": 2},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["use_match"] is True
+    assert selected.json()["game_number"] == 2
+
+    fetched = client.get(
+        "/admin/getmatch",
+        headers=headers,
+        params={"id": fixture.id},
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["game_number"] == 2
+
+    window = client.get(
+        "/admin/listmatchesnew",
+        headers=headers,
+        params={"fromDate": "01-03-2026", "toDate": "31-03-2026"},
+    )
+    assert window.status_code == 200, window.text
+    ids = {row["id"] for row in window.json()["matches"]}
+    assert fixture.id in ids
+
+    dropped = client.get(
+        "/admin/dropmatch",
+        headers=headers,
+        params={"id": fixture.id},
+    )
+    assert dropped.status_code == 200, dropped.text
+    assert dropped.json()["use_match"] is False
+    assert dropped.json()["game_number"] is None
+
+    available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    assert available.status_code == 200
+    assert available.json()["matches"] == []
+
+
+def test_addmatches_replaces_day_selections(client: TestClient) -> None:
+    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    token, _ = make_access_token(roles=["game-master"])
+    headers = auth_header(token)
+
+    listed = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+    )
+    assert listed.status_code == 200
+    day_matches = listed.json()["matches"]
+    assert len(day_matches) == 2
+
+    # Pad to six by selecting the same two fixtures is invalid — seed four more.
+    async def seed_more() -> list[int]:
+        async with client.app.state.session_factory() as session:
+            ingest = _ingest(session)
+            league_id = day_matches[0]["league_id"]
+            extras = []
+            for index, (home, away, hour) in enumerate(
+                (
+                    ("Spurs", "Wolves", 12),
+                    ("Everton", "Fulham", 12),
+                    ("Brentford", "Palace", 14),
+                    ("West Ham", "Forest", 14),
+                ),
+                start=1,
+            ):
+                match = await ingest.upsert_match(
+                    Match(
+                        external_id=f"pl-extra-{index}",
+                        league_id=league_id,
+                        match_date=_kickoff(date(2026, 3, 14), hour=hour),
+                        status=MatchStatus.SCHEDULED,
+                        home_team=home,
+                        away_team=away,
+                    )
+                )
+                assert match.id is not None
+                extras.append(match.id)
+            return extras
+
+    extra_ids = anyio.run(seed_more)
+    all_ids = [day_matches[0]["id"], day_matches[1]["id"], *extra_ids]
+    payload = [
+        {"id": match_id, "game_number": index}
+        for index, match_id in enumerate(all_ids, start=1)
+    ]
+
+    replaced = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+        json=payload,
+    )
+    assert replaced.status_code == 200, replaced.text
+    body = replaced.json()["matches"]
+    assert len(body) == 6
+    assert {row["game_number"] for row in body} == {1, 2, 3, 4, 5, 6}
+    assert all(row["use_match"] is True for row in body)
+
+    # Replace again with a shuffled set of the same six — still valid.
+    reshuffled = [
+        {"id": all_ids[i], "game_number": number}
+        for i, number in enumerate([6, 5, 4, 3, 2, 1])
+    ]
+    again = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+        json=reshuffled,
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["matches"][0]["game_number"] == 1
