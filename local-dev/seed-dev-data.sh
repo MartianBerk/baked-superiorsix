@@ -44,11 +44,26 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+# Single-quoted python -c bodies only — nested "$(python3 -c "...")" ate dicts on Mac.
 json_get() {
-  # json_get <json> <python-expr using `data`>
-  local raw="$1"
-  local expr="$2"
-  python3 -c "import json,sys; data=json.loads(sys.argv[1]); print($expr)" "$raw"
+  # json_get <json> <top-level-key>
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$1" "$2"
+}
+
+invite_json() {
+  python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"first_name":sys.argv[2],"last_name":sys.argv[3],"nickname":sys.argv[4],"roles":["player"]}))' "$@"
+}
+
+set_password_json() {
+  python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2]}))' "$@"
+}
+
+accept_invite_json() {
+  python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2],"first_name":sys.argv[3],"last_name":sys.argv[4],"nickname":sys.argv[5]}))' "$@"
+}
+
+invite_already_accepted() {
+  python3 -c 'import json,sys; d=str(json.loads(sys.argv[1]).get("detail","")).lower(); raise SystemExit(0 if ("already accepted" in d or "already exists" in d) else 1)' "$1" 2>/dev/null
 }
 
 wait_healthy() {
@@ -87,7 +102,7 @@ auth_token() {
     --data-urlencode "password=$password" \
     --data-urlencode "audience=$audience")" \
     || die "login failed for $email (audience=$audience)"
-  json_get "$resp" "data['access_token']"
+  json_get "$resp" access_token
 }
 
 roster_has_email() {
@@ -97,12 +112,7 @@ roster_has_email() {
   resp="$(curl -sf "$SUPERSIX_URL/admin/listplayers" \
     -H "Authorization: Bearer $token")" \
     || die "listplayers failed"
-  python3 -c "
-import json, sys
-email = sys.argv[1].strip().lower()
-players = json.loads(sys.argv[2]).get('players') or []
-raise SystemExit(0 if any((p.get('email') or '').strip().lower() == email for p in players) else 1)
-" "$email" "$resp"
+  python3 -c 'import json,sys; email=sys.argv[1].strip().lower(); players=json.loads(sys.argv[2]).get("players") or []; raise SystemExit(0 if any((p.get("email") or "").strip().lower()==email for p in players) else 1)' "$email" "$resp"
 }
 
 seed_player() {
@@ -122,25 +132,12 @@ seed_player() {
   body="$(curl -sS -w '\n%{http_code}' -X POST "$SUPERSIX_URL/admin/inviteplayer" \
     -H "Authorization: Bearer $token" \
     -H 'Content-Type: application/json' \
-    -d "$(python3 -c "
-import json,sys
-print(json.dumps({
-  'email': sys.argv[1],
-  'first_name': sys.argv[2],
-  'last_name': sys.argv[3],
-  'nickname': sys.argv[4],
-  'roles': ['player'],
-}))
-" "$email" "$first" "$last" "$nick")")"
+    -d "$(invite_json "$email" "$first" "$last" "$nick")")"
   code="${body##*$'\n'}"
   http="${body%$'\n'*}"
   if [[ "$code" != "201" && "$code" != "200" ]]; then
     # Pending re-invite is fine; accepted duplicate means skip remaining steps.
-    if python3 -c "
-import json,sys
-detail=str(json.loads(sys.argv[1]).get('detail','')).lower()
-raise SystemExit(0 if 'already accepted' in detail or 'already exists' in detail else 1)
-" "$http" 2>/dev/null; then
+    if invite_already_accepted "$http"; then
       log "skip $email (invite already accepted)"
       return 0
     fi
@@ -150,10 +147,7 @@ raise SystemExit(0 if 'already accepted' in detail or 'already exists' in detail
   log "set-password $email"
   body="$(curl -sS -w '\n%{http_code}' -X POST "$AUTH_URL/v1/auth/set-password" \
     -H 'Content-Type: application/json' \
-    -d "$(python3 -c "
-import json,sys
-print(json.dumps({'email': sys.argv[1], 'password': sys.argv[2]}))
-" "$email" "$PLAYER_PASSWORD")")"
+    -d "$(set_password_json "$email" "$PLAYER_PASSWORD")")"
   code="${body##*$'\n'}"
   http="${body%$'\n'*}"
   if [[ "$code" != "200" ]]; then
@@ -167,16 +161,7 @@ print(json.dumps({'email': sys.argv[1], 'password': sys.argv[2]}))
   log "acceptinvite $email"
   body="$(curl -sS -w '\n%{http_code}' -X POST "$SUPERSIX_URL/user/acceptinvite" \
     -H 'Content-Type: application/json' \
-    -d "$(python3 -c "
-import json,sys
-print(json.dumps({
-  'email': sys.argv[1],
-  'password': sys.argv[2],
-  'first_name': sys.argv[3],
-  'last_name': sys.argv[4],
-  'nickname': sys.argv[5],
-}))
-" "$email" "$PLAYER_PASSWORD" "$first" "$last" "$nick")")"
+    -d "$(accept_invite_json "$email" "$PLAYER_PASSWORD" "$first" "$last" "$nick")")"
   code="${body##*$'\n'}"
   http="${body%$'\n'*}"
   if [[ "$code" != "201" ]]; then
