@@ -64,6 +64,8 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/dropmatch", "game-master"),
     ("GET", "/admin/listplayers", "admin"),
     ("POST", "/admin/inviteplayer", "admin"),
+    ("GET", "/admin/getplayerroles", "admin"),
+    ("POST", "/admin/updateroles", "admin"),
     ("POST", "/admin/addplayer", "admin"),
     ("GET", "/admin/dropplayer", "admin"),
     ("GET", "/admin/reactivateplayer", "admin"),
@@ -71,8 +73,12 @@ PROTECTED_IMPLEMENTED = [
 
 
 def _request(client: TestClient, method: str, path: str, headers: dict[str, str] | None = None):
+    # Required query for getplayerroles so auth gating is exercised (not 422).
+    get_kwargs: dict[str, object] = {}
+    if path == "/admin/getplayerroles":
+        get_kwargs["params"] = {"email": "roles@example.com"}
     if method == "GET":
-        return client.get(path, headers=headers)
+        return client.get(path, headers=headers, **get_kwargs)
     return client.post(path, json={}, headers=headers)
 
 

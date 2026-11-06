@@ -109,8 +109,11 @@ membership are applied **at invite**; acceptinvite only creates the roster.
 2. **Invite** (superiorsix `admin` token, `audience=superiorsix`):
    `POST http://127.0.0.1:8030/admin/inviteplayer`
    `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
-   Selectable roles: `player`, `worldcup`, `euros`.
+   Selectable roles: `player`, `worldcup`, `euros`, `game-master` (app UI: “Admin”).
+   Real baked-auth `admin` is never assignable from the app.
    `user-profile` is always merged server-side (not selectable).
+   Roster role edit: `GET /admin/getplayerroles?email=` /
+   `POST /admin/updateroles` (preserves bootstrap `admin`).
 3. **Set password** (invitee claim):
    `POST http://127.0.0.1:8010/v1/auth/set-password`
    `{"email":"martin@example.com","password":"…"}`.

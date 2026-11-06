@@ -35,12 +35,15 @@ from baked.superiorsix.api.schemas import (
     MatchesResponse,
     MatchResponse,
     OpenRoundRequest,
+    PlayerRolesResponse,
     PlayerResponse,
     PlayersResponse,
     RoundResponse,
     SelectMatchRequest,
     SubroundResponse,
     SubroundsResponse,
+    UpdatePlayerRolesRequest,
+    merge_preserved_membership_roles,
     with_always_grant_invite_roles,
 )
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
@@ -289,6 +292,91 @@ async def invite_player(
         auth_id=invite.auth_id,
         profile=dict(invite.profile),
         roles=list(invite.roles) or roles,
+    )
+
+
+@router.get("/getplayerroles", response_model=PlayerRolesResponse)
+async def get_player_roles(
+    request: Request,
+    _: RequireAdmin,
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+    email: Annotated[str, Query(min_length=3, max_length=254)],
+) -> PlayerRolesResponse:
+    """Read superiorsix membership roles for a rostered email (SS-76)."""
+    settings = request.app.state.settings
+    normalized = email.strip().lower()
+    try:
+        membership = await auth_admin.get_membership(
+            email=normalized,
+            application=settings.jwt_audience,
+        )
+    except AuthAdminError as exc:
+        detail = str(exc)
+        if "not configured" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Auth admin credentials are not configured: set "
+                    "SUPERIORSIX_AUTH_ADMIN_EMAIL / SUPERIORSIX_AUTH_ADMIN_PASSWORD."
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=detail,
+        ) from exc
+    return PlayerRolesResponse(email=normalized, roles=list(membership.roles))
+
+
+@router.post("/updateroles", response_model=PlayerRolesResponse)
+async def update_player_roles(
+    request: Request,
+    _: RequireAdmin,
+    payload: UpdatePlayerRolesRequest,
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+) -> PlayerRolesResponse:
+    """Replace assignable membership roles; preserve bootstrap ``admin`` (SS-76).
+
+    Uses server-side ``SUPERIORSIX_AUTH_ADMIN_*`` for baked-auth
+    ``PUT /v1/applications/{slug}/memberships/{email}``. Real ``admin`` is never
+    assignable from the app — only preserved when already present.
+    """
+    settings = request.app.state.settings
+    selected = with_always_grant_invite_roles(list(payload.roles))
+    existing_roles: list[str] = []
+    try:
+        existing = await auth_admin.get_membership(
+            email=payload.email,
+            application=settings.jwt_audience,
+        )
+        existing_roles = list(existing.roles)
+    except AuthAdminError:
+        # New / missing membership: set selected roles only.
+        existing_roles = []
+
+    roles = merge_preserved_membership_roles(selected, existing_roles)
+    try:
+        membership = await auth_admin.set_membership(
+            email=payload.email,
+            roles=roles,
+            application=settings.jwt_audience,
+        )
+    except AuthAdminError as exc:
+        detail = str(exc)
+        if "not configured" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Auth admin credentials are not configured: set "
+                    "SUPERIORSIX_AUTH_ADMIN_EMAIL / SUPERIORSIX_AUTH_ADMIN_PASSWORD."
+                ),
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=detail,
+        ) from exc
+    return PlayerRolesResponse(
+        email=payload.email,
+        roles=list(membership.roles),
     )
 
 
