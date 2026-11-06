@@ -138,8 +138,9 @@ The script:
 1. Waits for auth + superiorsix health on host ports `8010` / `8030`.
 2. Runs `docker compose exec baked-auth baked-auth-bootstrap`.
 3. Invites / claims / accepts **three players** (`alice@`, `bob@`, `cara@example.com`)
-   with role `player` (password `local-dev-player`). Skips emails already on the
-   roster.
+   with role `player` (password `local-dev-player`). Then grants bob
+   `game-master` via baked-auth membership PUT (alice/cara stay players only).
+   Skips emails already on the roster; bob’s membership grant is re-applied.
 4. Runs the in-container extractors (same CLIs as the root README):
    - `baked-superiorsix-league-extractor`
    - `baked-superiorsix-match-extractor -l PL --from 2026-10-31 --to 2026-11-07`
