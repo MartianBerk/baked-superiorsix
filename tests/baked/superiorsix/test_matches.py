@@ -24,19 +24,26 @@ def _ingest(session: AsyncSession) -> MatchIngestService:
     return MatchIngestService(matches, leagues)
 
 
-async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Match:
+def _fmt(day: date) -> str:
+    return day.strftime("%d-%m-%Y")
+
+
+async def _seed_weekend(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[Match, date]:
     async with session_factory() as session:
         ingest = _ingest(session)
+        day = date.today() + timedelta(days=14)
+        # League season must match fixture kickoffs (Aug–Jul season window).
+        season_start_year = day.year if day.month >= 8 else day.year - 1
         league = await ingest.upsert_league(
             League(
                 name="Premier League",
                 code="PL",
-                start_date=date(2025, 8, 1),
+                start_date=date(season_start_year, 8, 1),
             )
         )
         assert league.id is not None
-
-        day = date(2026, 3, 14)
         history = [
             ("hist-1", "Arsenal", "Chelsea", 2, 1, day - timedelta(days=28)),
             ("hist-2", "Chelsea", "Arsenal", 0, 0, day - timedelta(days=21)),
@@ -81,15 +88,25 @@ async def _seed_weekend(session_factory: async_sessionmaker[AsyncSession]) -> Ma
             )
         )
         assert fixture.id is not None
-        return fixture
+        return fixture, day
+
+
+def _open_round(client: TestClient, headers: dict[str, str]) -> None:
+    opened = client.post(
+        "/admin/addround",
+        headers=headers,
+        json={"start_date": date.today().isoformat(), "buy_in_pence": 100},
+    )
+    assert opened.status_code == 200, opened.text
 
 
 def test_available_matches_and_match_detail(client: TestClient) -> None:
-    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
     token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
+    _open_round(client, headers)
 
     select = client.post(
         "/admin/addmatch",
@@ -99,8 +116,9 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     assert select.status_code == 200, select.text
     assert select.json()["use_match"] is True
     assert select.json()["game_number"] == 1
+    assert select.json()["subround_id"] is not None
 
-    available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    available = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert available.status_code == 200, available.text
     payload = available.json()["matches"]
     assert len(payload) == 1
@@ -111,7 +129,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     admin_list = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day)},
     )
     assert admin_list.status_code == 200
     listed = admin_list.json()["matches"]
@@ -126,7 +144,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
         params={
             "hometeam": "Arsenal",
             "awayteam": "Chelsea",
-            "matchdate": "14-03-2026",
+            "matchdate": _fmt(day),
         },
     )
     assert detail.status_code == 200, detail.text
@@ -202,8 +220,13 @@ def test_match_writes_stamp_last_updated_utc(
             clock["value"] = datetime(2026, 3, 14, 12, 10, tzinfo=UTC)
             matches = SqlAlchemyMatchRepository(session)
             leagues = LeagueService(SqlAlchemyLeagueRepository(session), matches)
-            selected = await MatchService(matches, leagues).select_for_round(created.id, 1)
+            selected = await MatchService(matches, leagues).select_for_round(
+                created.id,
+                1,
+                subround_id=1,
+            )
             assert selected.last_updated == datetime(2026, 3, 14, 12, 10, tzinfo=UTC)
+            assert selected.subround_id == 1
 
     anyio.run(run)
 
@@ -233,11 +256,12 @@ def test_matchdetail_not_found(client: TestClient) -> None:
 
 
 def test_drop_get_and_listmatches_range(client: TestClient) -> None:
-    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
     token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
+    _open_round(client, headers)
 
     selected = client.post(
         "/admin/addmatch",
@@ -261,7 +285,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     week = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "20-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day + timedelta(days=6))},
     )
     assert week.status_code == 200, week.text
     ids = {row["id"] for row in week.json()["matches"]}
@@ -270,7 +294,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     same_day = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day)},
     )
     assert same_day.status_code == 200
     assert len(same_day.json()["matches"]) == 2
@@ -278,7 +302,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     inverted = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "31-03-2026", "toDate": "01-03-2026"},
+        params={"fromDate": _fmt(day + timedelta(days=1)), "toDate": _fmt(day)},
     )
     assert inverted.status_code == 400
     assert inverted.json()["detail"] == "toDate must be on or after fromDate"
@@ -286,7 +310,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     too_wide = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "21-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day + timedelta(days=7))},
     )
     assert too_wide.status_code == 400
     assert too_wide.json()["detail"] == "date range must be at most 7 days"
@@ -294,7 +318,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     missing_from = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"toDate": "14-03-2026"},
+        params={"toDate": _fmt(day)},
     )
     assert missing_from.status_code == 400
     assert missing_from.json()["detail"] == "missing fromDate"
@@ -302,7 +326,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     missing_to = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026"},
+        params={"fromDate": _fmt(day)},
     )
     assert missing_to.status_code == 400
     assert missing_to.json()["detail"] == "missing toDate"
@@ -317,23 +341,25 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     assert dropped.status_code == 200, dropped.text
     assert dropped.json()["use_match"] is False
     assert dropped.json()["game_number"] is None
+    assert dropped.json()["subround_id"] is None
 
-    available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    available = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert available.status_code == 200
     assert available.json()["matches"] == []
 
 
 def test_addmatches_replaces_day_selections(client: TestClient) -> None:
-    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
     token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
+    _open_round(client, headers)
 
     listed = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day)},
     )
     assert listed.status_code == 200
     day_matches = listed.json()["matches"]
@@ -358,7 +384,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
                     Match(
                         external_id=f"pl-extra-{index}",
                         league_id=league_id,
-                        match_date=_kickoff(date(2026, 3, 14), hour=hour),
+                        match_date=_kickoff(day, hour=hour),
                         status=MatchStatus.SCHEDULED,
                         home_team=home,
                         away_team=away,
@@ -378,7 +404,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     replaced = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"matchDate": _fmt(day)},
         json=payload,
     )
     assert replaced.status_code == 200, replaced.text
@@ -395,7 +421,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     again = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"matchDate": _fmt(day)},
         json=reshuffled,
     )
     assert again.status_code == 200, again.text
@@ -405,7 +431,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     sparse = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"matchDate": _fmt(day)},
         json=[
             {"id": all_ids[0], "game_number": 2},
             {"id": all_ids[1], "game_number": 4},
@@ -418,28 +444,29 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     cleared = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"matchDate": _fmt(day)},
         json=[],
     )
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["matches"] == []
-    available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    available = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert available.status_code == 200
     assert available.json()["matches"] == []
 
 
 def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     """Fewer than six per day is OK; game_number slots stay unique across days."""
-    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
     token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
+    _open_round(client, headers)
 
     listed = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
+        params={"fromDate": _fmt(day), "toDate": _fmt(day)},
     )
     day_ids = [row["id"] for row in listed.json()["matches"]]
     assert len(day_ids) >= 2
@@ -452,7 +479,7 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
                 Match(
                     external_id="pl-next-day",
                     league_id=league_id,
-                    match_date=_kickoff(date(2026, 3, 15), hour=15),
+                    match_date=_kickoff(day + timedelta(days=1), hour=15),
                     status=MatchStatus.SCHEDULED,
                     home_team="Newcastle",
                     away_team="Aston Villa",
@@ -466,7 +493,7 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     first = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"matchDate": _fmt(day)},
         json=[
             {"id": day_ids[0], "game_number": 1},
             {"id": day_ids[1], "game_number": 2},
@@ -478,7 +505,7 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     second = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "15-03-2026"},
+        params={"matchDate": _fmt(day + timedelta(days=1))},
         json=[{"id": next_id, "game_number": 3}],
     )
     assert second.status_code == 200, second.text
@@ -488,13 +515,13 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     reclaim = client.post(
         "/admin/addmatches",
         headers=headers,
-        params={"matchDate": "15-03-2026"},
+        params={"matchDate": _fmt(day + timedelta(days=1))},
         json=[{"id": next_id, "game_number": 1}],
     )
     assert reclaim.status_code == 200, reclaim.text
-    day1 = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    day1 = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert day1.status_code == 200
     assert {row["game_number"] for row in day1.json()["matches"]} == {2}
-    day2 = client.get("/game/livematches", params={"matchDate": "15-03-2026"})
+    day2 = client.get("/game/livematches", params={"matchDate": _fmt(day + timedelta(days=1))})
     assert day2.status_code == 200
     assert day2.json()["matches"][0]["game_number"] == 1

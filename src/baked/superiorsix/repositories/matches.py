@@ -34,6 +34,8 @@ class MatchRepository(Protocol):
 
     async def list_selected(self) -> list[Match]: ...
 
+    async def list_selected_for_subround(self, subround_id: int) -> list[Match]: ...
+
     async def list_score_candidates(
         self,
         start: datetime,
@@ -106,6 +108,17 @@ class SqlAlchemyMatchRepository:
         result = await self._session.execute(
             select(MatchRecord)
             .where(MatchRecord.use_match.is_(True))
+            .order_by(MatchRecord.game_number.nulls_last(), MatchRecord.match_date)
+        )
+        return [_to_domain(record) for record in result.scalars().all()]
+
+    async def list_selected_for_subround(self, subround_id: int) -> list[Match]:
+        result = await self._session.execute(
+            select(MatchRecord)
+            .where(
+                MatchRecord.use_match.is_(True),
+                MatchRecord.subround_id == subround_id,
+            )
             .order_by(MatchRecord.game_number.nulls_last(), MatchRecord.match_date)
         )
         return [_to_domain(record) for record in result.scalars().all()]
@@ -211,6 +224,7 @@ class SqlAlchemyMatchRepository:
             home_score=match.home_score,
             away_score=match.away_score,
             game_number=match.game_number,
+            subround_id=match.subround_id,
             last_updated=now,
         )
         self._session.add(record)
@@ -235,6 +249,7 @@ class SqlAlchemyMatchRepository:
         record.home_score = match.home_score
         record.away_score = match.away_score
         record.game_number = match.game_number
+        record.subround_id = match.subround_id
         record.last_updated = _stamp_now()
         await self._session.commit()
         await self._session.refresh(record)
@@ -256,4 +271,5 @@ def _to_domain(record: MatchRecord) -> Match:
         away_score=record.away_score,
         game_number=record.game_number,
         last_updated=_as_utc(record.last_updated),
+        subround_id=record.subround_id,
     )

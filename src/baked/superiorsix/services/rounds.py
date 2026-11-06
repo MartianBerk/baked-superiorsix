@@ -9,6 +9,12 @@ class RoundService:
     def __init__(self, rounds: RoundRepository) -> None:
         self._rounds = rounds
 
+    async def get(self, round_id: int) -> Round:
+        round_ = await self._rounds.get(round_id)
+        if round_ is None or round_.id is None:
+            raise RoundNotFoundError(f"Round {round_id} not found.")
+        return round_
+
     async def current(self) -> Round:
         round_ = await self._rounds.current()
         if round_ is None or round_.id is None:

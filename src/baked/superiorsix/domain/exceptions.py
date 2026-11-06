@@ -22,6 +22,14 @@ class RoundError(SuperiorSixError):
     """Raised when opening or closing a round fails."""
 
 
+class SubroundNotFoundError(SuperiorSixError):
+    """Raised when a prediction subround cannot be found."""
+
+
+class SubroundError(SuperiorSixError):
+    """Raised when opening or resolving a prediction subround fails."""
+
+
 class PredictionError(SuperiorSixError):
     """Raised when a prediction cannot be accepted."""
 

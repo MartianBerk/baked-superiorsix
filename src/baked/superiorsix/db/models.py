@@ -31,6 +31,37 @@ class LeagueRecord(Base):
     start_date: Mapped[date] = mapped_column(Date)
 
 
+class RoundRecord(Base):
+    __tablename__ = "rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    buy_in_pence: Mapped[int] = mapped_column(Integer)
+
+
+class SubroundRecord(Base):
+    """Admin match-submission slate under a parent ``rounds`` row."""
+
+    __tablename__ = "subrounds"
+    __table_args__ = (
+        UniqueConstraint("round_id", "sequence", name="uq_subrounds_round_sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utc_now,
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
 class MatchRecord(Base):
     __tablename__ = "matches"
     __table_args__ = (UniqueConstraint("external_id", name="uq_matches_external_id"),)
@@ -47,21 +78,17 @@ class MatchRecord(Base):
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     game_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    subround_id: Mapped[int | None] = mapped_column(
+        ForeignKey("subrounds.id"),
+        nullable=True,
+        index=True,
+    )
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=_utc_now,
         onupdate=_utc_now,
     )
-
-
-class RoundRecord(Base):
-    __tablename__ = "rounds"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    start_date: Mapped[date] = mapped_column(Date)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    buy_in_pence: Mapped[int] = mapped_column(Integer)
 
 
 class PredictionRecord(Base):

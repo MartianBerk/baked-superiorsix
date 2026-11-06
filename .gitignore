@@ -17,6 +17,9 @@
 !/Dockerfile
 !/docker-compose.yml
 !/.dockerignore
+!/alembic.ini
+!/alembic/
+!/alembic/**
 !/local-dev/
 !/local-dev/**
 

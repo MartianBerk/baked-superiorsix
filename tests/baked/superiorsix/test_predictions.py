@@ -17,8 +17,7 @@ from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.predictions import (
     PredictionService,
-    cluster_game_weeks,
-    earliest_kickoff_for_game_week,
+    earliest_kickoff_for_subround,
 )
 
 
@@ -77,6 +76,7 @@ def test_user_prediction_end_to_end(
         json={"id": fixture.id, "game_number": 1},
     )
     assert selected.status_code == 200, selected.text
+    assert selected.json()["subround_id"] is not None
 
     available = client.get(
         "/game/livematches",
@@ -140,6 +140,7 @@ def _fixture(
     kickoff: datetime,
     game_number: int | None = 1,
     use_match: bool = True,
+    subround_id: int | None = 1,
 ) -> Match:
     return Match(
         id=match_id,
@@ -151,38 +152,42 @@ def _fixture(
         away_team="Away",
         use_match=use_match,
         game_number=game_number,
+        subround_id=subround_id,
     )
 
 
-def test_cluster_game_weeks_splits_on_gap_over_six_days() -> None:
-    early = _fixture(match_id=1, kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC), game_number=1)
-    same_week = _fixture(
-        match_id=2, kickoff=datetime(2026, 3, 15, 14, 0, tzinfo=UTC), game_number=2
-    )
-    # 7 calendar days after same_week → new slate (gap > 6).
-    next_week = _fixture(
-        match_id=3, kickoff=datetime(2026, 3, 22, 15, 0, tzinfo=UTC), game_number=1
-    )
-    ignored = _fixture(
-        match_id=99,
-        kickoff=datetime(2026, 3, 14, 12, 0, tzinfo=UTC),
-        use_match=False,
-        game_number=None,
-    )
-
-    weeks = cluster_game_weeks([next_week, ignored, same_week, early])
-    assert [[m.id for m in week] for week in weeks] == [[1, 2], [3]]
-
-
-def test_earliest_kickoff_uses_week_not_iso_monday() -> None:
-    """Sat + following Fri stay one week; Monday ISO week would split them."""
+def test_earliest_kickoff_uses_subround_not_date_gap() -> None:
+    """Sat + Mon in separate subrounds do not share a cutoff window."""
     saturday = _fixture(
-        match_id=1, kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC), game_number=1
+        match_id=1,
+        kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC),
+        game_number=1,
+        subround_id=1,
     )
-    friday = _fixture(
-        match_id=2, kickoff=datetime(2026, 3, 20, 19, 45, tzinfo=UTC), game_number=2
+    monday = _fixture(
+        match_id=2,
+        kickoff=datetime(2026, 3, 16, 19, 45, tzinfo=UTC),
+        game_number=1,
+        subround_id=2,
     )
-    assert earliest_kickoff_for_game_week(friday, [saturday, friday]) == saturday.match_date
+    assert earliest_kickoff_for_subround(monday, [saturday, monday]) == monday.match_date
+    assert earliest_kickoff_for_subround(saturday, [saturday, monday]) == saturday.match_date
+
+
+def test_earliest_kickoff_same_subround_uses_min() -> None:
+    early = _fixture(
+        match_id=1,
+        kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC),
+        game_number=1,
+        subround_id=1,
+    )
+    later = _fixture(
+        match_id=2,
+        kickoff=datetime(2026, 3, 15, 16, 30, tzinfo=UTC),
+        game_number=2,
+        subround_id=1,
+    )
+    assert earliest_kickoff_for_subround(later, [early, later]) == early.match_date
 
 
 class _FakePredictions:
@@ -225,6 +230,13 @@ class _FakeMatches:
     async def selected_matches(self) -> list[Match]:
         return [m for m in self._by_id.values() if m.use_match]
 
+    async def selected_matches_for_subround(self, subround_id: int) -> list[Match]:
+        return [
+            m
+            for m in self._by_id.values()
+            if m.use_match and m.subround_id == subround_id
+        ]
+
 
 def _service(matches: list[Match]) -> PredictionService:
     return PredictionService(
@@ -235,7 +247,7 @@ def _service(matches: list[Match]) -> PredictionService:
 
 
 @pytest.mark.asyncio
-async def test_submit_blocks_later_same_week_after_earliest_cutoff() -> None:
+async def test_submit_blocks_later_same_subround_after_earliest_cutoff() -> None:
     earliest = _fixture(
         match_id=1, kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC), game_number=1
     )
@@ -243,7 +255,6 @@ async def test_submit_blocks_later_same_week_after_earliest_cutoff() -> None:
         match_id=2, kickoff=datetime(2026, 3, 15, 16, 30, tzinfo=UTC), game_number=2
     )
     service = _service([earliest, later])
-    # 5 minutes before earliest kickoff → past 10m cutoff for the whole week.
     now = earliest.match_date - timedelta(minutes=5)
 
     with pytest.raises(PredictionError, match="Past cutoff for prediction set"):
@@ -256,29 +267,35 @@ async def test_submit_blocks_later_same_week_after_earliest_cutoff() -> None:
 
 
 @pytest.mark.asyncio
-async def test_submit_earlier_week_does_not_lock_later_week() -> None:
-    week1 = _fixture(
-        match_id=1, kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC), game_number=1
+async def test_submit_earlier_subround_does_not_lock_later_subround() -> None:
+    """Within 6 days but different subrounds: later slate stays open."""
+    first = _fixture(
+        match_id=1,
+        kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC),
+        game_number=1,
+        subround_id=1,
     )
-    week2 = _fixture(
-        match_id=2, kickoff=datetime(2026, 3, 22, 15, 0, tzinfo=UTC), game_number=1
+    second = _fixture(
+        match_id=2,
+        kickoff=datetime(2026, 3, 16, 15, 0, tzinfo=UTC),
+        game_number=1,
+        subround_id=2,
     )
-    service = _service([week1, week2])
-    # Past week1 cutoff, but still well before week2 earliest kickoff.
-    now = week1.match_date + timedelta(hours=1)
+    service = _service([first, second])
+    now = first.match_date + timedelta(hours=1)
 
     created = await service.submit(
         auth_id=uuid4(),
-        match_id=week2.id,
+        match_id=second.id,
         prediction="away",
         now=now,
     )
     assert created.prediction == "away"
-    assert created.match_id == week2.id
+    assert created.match_id == second.id
 
 
 @pytest.mark.asyncio
-async def test_submit_single_match_week_uses_own_kickoff() -> None:
+async def test_submit_single_match_subround_uses_own_kickoff() -> None:
     alone = _fixture(
         match_id=1, kickoff=datetime(2026, 3, 14, 15, 0, tzinfo=UTC), game_number=1
     )

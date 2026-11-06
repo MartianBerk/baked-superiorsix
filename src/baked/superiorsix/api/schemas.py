@@ -12,6 +12,7 @@ from baked.superiorsix.domain.models import (
     Round,
     TeamResult,
 )
+from baked.superiorsix.services.subrounds import SubroundStatus
 
 
 class AvailableMatchResponse(BaseModel):
@@ -26,6 +27,7 @@ class AvailableMatchResponse(BaseModel):
     match_minute: int | None = None
     game_number: int | None = None
     match_date: datetime
+    subround_id: int | None = None
 
     @classmethod
     def from_domain(cls, match: Match) -> "AvailableMatchResponse":
@@ -40,6 +42,7 @@ class AvailableMatchResponse(BaseModel):
             match_minute=match.match_minute,
             game_number=match.game_number,
             match_date=match.match_date,
+            subround_id=match.subround_id,
         )
 
 
@@ -126,6 +129,7 @@ class MatchResponse(BaseModel):
     home_score: int | None = None
     away_score: int | None = None
     game_number: int | None = None
+    subround_id: int | None = None
     last_updated: datetime | None = None
     difficulty: MatchDifficultyPayload | None = None
 
@@ -150,6 +154,7 @@ class MatchResponse(BaseModel):
             home_score=match.home_score,
             away_score=match.away_score,
             game_number=match.game_number,
+            subround_id=match.subround_id,
             last_updated=match.last_updated,
             difficulty=(
                 None if difficulty is None else MatchDifficultyPayload.from_domain(difficulty)
@@ -215,6 +220,44 @@ class RoundResponse(BaseModel):
 
 class CurrentRoundResponse(BaseModel):
     current_round: RoundResponse | None
+
+
+class SubroundResponse(BaseModel):
+    id: int
+    round_id: int
+    sequence: int
+    created_at: datetime | None = None
+    closed_at: datetime | None = None
+    match_count: int = 0
+    min_kickoff: datetime | None = None
+    max_kickoff: datetime | None = None
+    is_over: bool = False
+    is_open_for_editing: bool = False
+
+    @classmethod
+    def from_status(cls, status: SubroundStatus) -> "SubroundResponse":
+        subround = status.subround
+        assert subround.id is not None
+        return cls(
+            id=subround.id,
+            round_id=subround.round_id,
+            sequence=subround.sequence,
+            created_at=subround.created_at,
+            closed_at=subround.closed_at,
+            match_count=status.match_count,
+            min_kickoff=status.min_kickoff,
+            max_kickoff=status.max_kickoff,
+            is_over=status.is_over,
+            is_open_for_editing=status.is_open_for_editing,
+        )
+
+
+class SubroundsResponse(BaseModel):
+    subrounds: list[SubroundResponse]
+
+
+class CurrentSubroundResponse(BaseModel):
+    current_subround: SubroundResponse | None
 
 
 # Selectable invite permission chips (admin UX). `user-profile` is always granted.
