@@ -1,8 +1,16 @@
 from datetime import UTC, date, datetime, time, timedelta
 
 from baked.superiorsix.domain.exceptions import MatchNotFoundError, MatchSelectionError
-from baked.superiorsix.domain.models import Match, MatchDetail, MatchStatus, TeamResult
+from baked.superiorsix.domain.models import (
+    LeagueTableEntry,
+    Match,
+    MatchDetail,
+    MatchDifficultyScore,
+    MatchStatus,
+    TeamResult,
+)
 from baked.superiorsix.repositories.matches import MatchRepository
+from baked.superiorsix.services.difficulty import calculate_match_difficulty
 from baked.superiorsix.services.leagues import LeagueService
 
 
@@ -215,21 +223,96 @@ class MatchService:
         positions = {entry.team: entry.position for entry in table}
         before = start
         home_h2h, away_h2h = await self.head_to_head(home_team, away_team, before)
+        home_form = await self.team_performance(home_team, before)
+        away_form = await self.team_performance(away_team, before)
+        home_position = positions.get(home_team)
+        away_position = positions.get(away_team)
+        difficulty = calculate_match_difficulty(
+            home_performance=home_form,
+            away_performance=away_form,
+            home_position=home_position,
+            away_position=away_position,
+            home_head_to_head=home_h2h,
+            away_head_to_head=away_h2h,
+            league_size=len(table) or None,
+        )
 
         return MatchDetail(
             league_position={
-                home_team: positions.get(home_team),
-                away_team: positions.get(away_team),
+                home_team: home_position,
+                away_team: away_position,
             },
             team_performance={
-                home_team: await self.team_performance(home_team, before),
-                away_team: await self.team_performance(away_team, before),
+                home_team: home_form,
+                away_team: away_form,
             },
             head_to_head={
                 home_team: home_h2h,
                 away_team: away_h2h,
             },
+            difficulty=MatchDifficultyScore(score=difficulty.score, band=difficulty.band),
         )
+
+    async def difficulty_for_match(self, match: Match) -> MatchDifficultyScore:
+        """Compute difficulty for a stored fixture (admin list/get enrichment)."""
+        league = await self._leagues.get(match.league_id)
+        table = await self._leagues.league_table(league.code)
+        positions = {entry.team: entry.position for entry in table}
+        before = day_bounds(match.match_date.astimezone(UTC).date())[0]
+        home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
+        home_form = await self.team_performance(match.home_team, before)
+        away_form = await self.team_performance(match.away_team, before)
+        difficulty = calculate_match_difficulty(
+            home_performance=home_form,
+            away_performance=away_form,
+            home_position=positions.get(match.home_team),
+            away_position=positions.get(match.away_team),
+            home_head_to_head=home_h2h,
+            away_head_to_head=away_h2h,
+            league_size=len(table) or None,
+        )
+        return MatchDifficultyScore(score=difficulty.score, band=difficulty.band)
+
+    async def difficulties_for_matches(
+        self,
+        matches: list[Match],
+    ) -> dict[int, MatchDifficultyScore]:
+        """Batch difficulty for admin list payloads (caches league tables)."""
+        if not matches:
+            return {}
+
+        tables_by_league: dict[int, list[LeagueTableEntry]] = {}
+        out: dict[int, MatchDifficultyScore] = {}
+        for match in matches:
+            if match.id is None:
+                continue
+            if match.league_id not in tables_by_league:
+                league = await self._leagues.get(match.league_id)
+                tables_by_league[match.league_id] = await self._leagues.league_table(league.code)
+            table = tables_by_league[match.league_id]
+            positions = {entry.team: entry.position for entry in table}
+            before = day_bounds(match.match_date.astimezone(UTC).date())[0]
+            home_h2h, away_h2h = await self.head_to_head(
+                match.home_team,
+                match.away_team,
+                before,
+            )
+            home_form = await self.team_performance(match.home_team, before)
+            away_form = await self.team_performance(match.away_team, before)
+            difficulty = calculate_match_difficulty(
+                home_performance=home_form,
+                away_performance=away_form,
+                home_position=positions.get(match.home_team),
+                away_position=positions.get(match.away_team),
+                home_head_to_head=home_h2h,
+                away_head_to_head=away_h2h,
+                league_size=len(table) or None,
+            )
+            out[match.id] = MatchDifficultyScore(
+                score=difficulty.score,
+                band=difficulty.band,
+            )
+        return out
 
     async def _resolve(
         self,

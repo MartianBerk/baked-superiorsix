@@ -114,7 +114,12 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
         params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
     )
     assert admin_list.status_code == 200
-    assert len(admin_list.json()["matches"]) == 2
+    listed = admin_list.json()["matches"]
+    assert len(listed) == 2
+    arsenal_row = next(row for row in listed if row["home_team"] == "Arsenal")
+    assert arsenal_row["difficulty"] is not None
+    assert 0.0 <= arsenal_row["difficulty"]["score"] <= 1.0
+    assert 1 <= arsenal_row["difficulty"]["band"] <= 5
 
     detail = client.get(
         "/game/matchdetail",
@@ -131,6 +136,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     assert body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
     assert body["head_to_head"]["Arsenal"] == ["WIN", "DRAW"]
     assert body["head_to_head"]["Chelsea"] == ["LOSE", "DRAW"]
+    assert body["difficulty"] == arsenal_row["difficulty"]
 
     async def update_score() -> Match:
         async with client.app.state.session_factory() as session:
@@ -249,6 +255,8 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     )
     assert fetched.status_code == 200
     assert fetched.json()["game_number"] == 2
+    assert fetched.json()["difficulty"] is not None
+    assert 1 <= fetched.json()["difficulty"]["band"] <= 5
 
     week = client.get(
         "/admin/listmatches",

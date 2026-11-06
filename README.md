@@ -10,7 +10,9 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 `matches` tables are live. Public game reads:
 
 - `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
-- `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions
+- `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions,
+  and prediction ``difficulty`` (`score` 0–1 higher=harder, `band` 1–5). Admin
+  ``GET /admin/listmatches`` / ``GET /admin/getmatch`` include the same field.
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
 - Roster (proxied to baked-user by auth `sub`):
