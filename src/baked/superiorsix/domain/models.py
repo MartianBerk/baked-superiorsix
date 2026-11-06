@@ -89,6 +89,7 @@ class Round:
     buy_in_pence: int
     id: int | None = None
     end_date: date | None = None
+    winner_ids: list[UUID] | None = None
 
 
 @dataclass(slots=True)

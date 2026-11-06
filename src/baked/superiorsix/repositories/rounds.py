@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from typing import Protocol
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from baked.superiorsix.db.models import RoundRecord
+from baked.superiorsix.db.models import RoundRecord, RoundWinnerRecord
 from baked.superiorsix.domain.models import Round
 
 
@@ -18,6 +21,8 @@ class RoundRepository(Protocol):
 
     async def save(self, round_: Round) -> Round: ...
 
+    async def end_with_winners(self, round_: Round, winner_ids: list[UUID]) -> Round: ...
+
 
 class SqlAlchemyRoundRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -25,7 +30,9 @@ class SqlAlchemyRoundRepository:
 
     async def get(self, round_id: int) -> Round | None:
         record = await self._session.get(RoundRecord, round_id)
-        return _to_domain(record) if record else None
+        if record is None:
+            return None
+        return await self._to_domain(record)
 
     async def current(self) -> Round | None:
         result = await self._session.execute(
@@ -34,11 +41,13 @@ class SqlAlchemyRoundRepository:
             .order_by(RoundRecord.start_date.desc())
         )
         record = result.scalars().first()
-        return _to_domain(record) if record else None
+        if record is None:
+            return None
+        return await self._to_domain(record)
 
     async def list(self) -> list[Round]:
         result = await self._session.execute(select(RoundRecord).order_by(RoundRecord.start_date))
-        return [_to_domain(record) for record in result.scalars().all()]
+        return [await self._to_domain(record) for record in result.scalars().all()]
 
     async def add(self, round_: Round) -> Round:
         record = RoundRecord(
@@ -49,7 +58,7 @@ class SqlAlchemyRoundRepository:
         self._session.add(record)
         await self._session.commit()
         await self._session.refresh(record)
-        return _to_domain(record)
+        return await self._to_domain(record)
 
     async def save(self, round_: Round) -> Round:
         if round_.id is None:
@@ -62,13 +71,37 @@ class SqlAlchemyRoundRepository:
         record.buy_in_pence = round_.buy_in_pence
         await self._session.commit()
         await self._session.refresh(record)
-        return _to_domain(record)
+        return await self._to_domain(record)
 
+    async def end_with_winners(self, round_: Round, winner_ids: list[UUID]) -> Round:
+        if round_.id is None:
+            raise ValueError("round id is required to record winners")
+        record = await self._session.get(RoundRecord, round_.id)
+        if record is None:
+            raise ValueError(f"round {round_.id} not found")
+        record.start_date = round_.start_date
+        record.end_date = round_.end_date
+        record.buy_in_pence = round_.buy_in_pence
+        for auth_id in winner_ids:
+            self._session.add(RoundWinnerRecord(round_id=round_.id, auth_id=auth_id))
+        await self._session.commit()
+        await self._session.refresh(record)
+        return await self._to_domain(record)
 
-def _to_domain(record: RoundRecord) -> Round:
-    return Round(
-        id=record.id,
-        start_date=record.start_date,
-        end_date=record.end_date,
-        buy_in_pence=record.buy_in_pence,
-    )
+    async def _winner_ids(self, round_id: int) -> list[UUID]:
+        result = await self._session.execute(
+            select(RoundWinnerRecord.auth_id)
+            .where(RoundWinnerRecord.round_id == round_id)
+            .order_by(RoundWinnerRecord.auth_id)
+        )
+        return list(result.scalars().all())
+
+    async def _to_domain(self, record: RoundRecord) -> Round:
+        winners = await self._winner_ids(record.id)
+        return Round(
+            id=record.id,
+            start_date=record.start_date,
+            end_date=record.end_date,
+            buy_in_pence=record.buy_in_pence,
+            winner_ids=winners,
+        )
