@@ -67,10 +67,19 @@ class LeagueTableEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class MatchDifficultyScore:
+    """Prediction difficulty attached to match detail / admin match payloads."""
+
+    score: float
+    band: int
+
+
+@dataclass(frozen=True, slots=True)
 class MatchDetail:
     league_position: dict[str, str | None]
     team_performance: dict[str, list[TeamResult]]
     head_to_head: dict[str, list[TeamResult]]
+    difficulty: MatchDifficultyScore | None = None
 
 
 @dataclass(slots=True)

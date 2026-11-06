@@ -332,7 +332,16 @@ async def list_matches(
     start, _ = day_bounds(start_day)
     _, end = day_bounds(end_day)
     matches = await match_service.list_in_range(start=start, end=end)
-    return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
+    difficulties = await match_service.difficulties_for_matches(matches)
+    return MatchesResponse(
+        matches=[
+            MatchResponse.from_domain(
+                match,
+                difficulty=None if match.id is None else difficulties.get(match.id),
+            )
+            for match in matches
+        ]
+    )
 
 
 @router.get("/getmatch", response_model=MatchResponse)
@@ -348,9 +357,10 @@ async def get_match(
         )
     try:
         match = await match_service.get(match_id)
+        difficulty = await match_service.difficulty_for_match(match)
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return MatchResponse.from_domain(match)
+    return MatchResponse.from_domain(match, difficulty=difficulty)
 
 
 @router.post("/addmatch", response_model=MatchResponse)

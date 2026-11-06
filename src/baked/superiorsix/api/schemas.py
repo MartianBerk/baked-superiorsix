@@ -7,6 +7,7 @@ from baked.superiorsix.domain.models import (
     League,
     Match,
     MatchDetail,
+    MatchDifficultyScore,
     Prediction,
     Round,
     TeamResult,
@@ -46,10 +47,22 @@ class AvailableMatchesResponse(BaseModel):
     matches: list[AvailableMatchResponse]
 
 
+class MatchDifficultyPayload(BaseModel):
+    """Prediction difficulty: ``score`` in ``[0, 1]`` (higher = harder), ``band`` 1–5."""
+
+    score: float
+    band: int = Field(ge=1, le=5)
+
+    @classmethod
+    def from_domain(cls, difficulty: MatchDifficultyScore) -> "MatchDifficultyPayload":
+        return cls(score=difficulty.score, band=difficulty.band)
+
+
 class MatchDetailPayload(BaseModel):
     league_position: dict[str, str | None]
     team_performance: dict[str, list[TeamResult]]
     head_to_head: dict[str, list[TeamResult]]
+    difficulty: MatchDifficultyPayload | None = None
 
     @classmethod
     def from_domain(cls, detail: MatchDetail) -> "MatchDetailPayload":
@@ -57,6 +70,11 @@ class MatchDetailPayload(BaseModel):
             league_position=detail.league_position,
             team_performance=detail.team_performance,
             head_to_head=detail.head_to_head,
+            difficulty=(
+                None
+                if detail.difficulty is None
+                else MatchDifficultyPayload.from_domain(detail.difficulty)
+            ),
         )
 
 
@@ -109,9 +127,15 @@ class MatchResponse(BaseModel):
     away_score: int | None = None
     game_number: int | None = None
     last_updated: datetime | None = None
+    difficulty: MatchDifficultyPayload | None = None
 
     @classmethod
-    def from_domain(cls, match: Match) -> "MatchResponse":
+    def from_domain(
+        cls,
+        match: Match,
+        *,
+        difficulty: MatchDifficultyScore | None = None,
+    ) -> "MatchResponse":
         assert match.id is not None
         return cls(
             id=match.id,
@@ -127,6 +151,9 @@ class MatchResponse(BaseModel):
             away_score=match.away_score,
             game_number=match.game_number,
             last_updated=match.last_updated,
+            difficulty=(
+                None if difficulty is None else MatchDifficultyPayload.from_domain(difficulty)
+            ),
         )
 
 
