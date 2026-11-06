@@ -41,6 +41,10 @@ class MatchService:
         """All Super Six selections across days (``use_match``)."""
         return await self._matches.list_selected()
 
+    async def selected_matches_for_subround(self, subround_id: int) -> list[Match]:
+        """Super Six selections belonging to one prediction subround."""
+        return await self._matches.list_selected_for_subround(subround_id)
+
     async def list_score_candidates(
         self,
         start: datetime,
@@ -60,8 +64,8 @@ class MatchService:
     async def upsert_fixture(self, match: Match) -> Match:
         """Process ingest path: create or update a fixture by external_id.
 
-        Preserves Super Six selection fields (``use_match`` / ``game_number``)
-        when an existing row is updated from a feed.
+        Preserves Super Six selection fields (``use_match`` / ``game_number`` /
+        ``subround_id``) when an existing row is updated from a feed.
         """
         existing = await self._matches.get_by_external_id(match.external_id)
         if existing is None:
@@ -70,6 +74,7 @@ class MatchService:
         match.id = existing.id
         match.use_match = existing.use_match
         match.game_number = existing.game_number
+        match.subround_id = existing.subround_id
         return await self._matches.save(match)
 
     async def apply_score_update(
@@ -103,18 +108,30 @@ class MatchService:
             key=lambda match: (match.match_date, match.game_number or 0, match.id or 0),
         )
 
-    async def select_for_round(self, match_id: int, game_number: int) -> Match:
-        """Mark a fixture as a Super Six selection (slots 1–6, any kickoff day)."""
+    async def select_for_round(
+        self,
+        match_id: int,
+        game_number: int,
+        *,
+        subround_id: int,
+    ) -> Match:
+        """Mark a fixture as a Super Six selection in ``subround_id`` (slots 1–6)."""
         if game_number < 1 or game_number > 6:
             raise MatchSelectionError("Invalid game_number, must be between 1 and 6.")
 
         match = await self.get(match_id)
-        selected = await self.selected_matches()
+        selected = await self.selected_matches_for_subround(subround_id)
 
-        if match.use_match and match.game_number != game_number:
+        if (
+            match.use_match
+            and match.subround_id == subround_id
+            and match.game_number != game_number
+        ):
             raise MatchSelectionError(f"Match already selected as game number {match.game_number}")
 
-        if len(selected) >= 6 and not match.use_match:
+        if len(selected) >= 6 and not (
+            match.use_match and match.subround_id == subround_id
+        ):
             raise MatchSelectionError(
                 "Six matches already selected. Drop a match first."
             )
@@ -123,10 +140,12 @@ class MatchService:
             if existing.game_number == game_number and existing.id != match.id:
                 existing.use_match = False
                 existing.game_number = None
+                existing.subround_id = None
                 await self._matches.save(existing)
 
         match.use_match = True
         match.game_number = game_number
+        match.subround_id = subround_id
         return await self._matches.save(match)
 
     async def deselect_from_round(self, match_id: int) -> Match:
@@ -134,20 +153,24 @@ class MatchService:
         match = await self.get(match_id)
         match.use_match = False
         match.game_number = None
+        match.subround_id = None
         return await self._matches.save(match)
 
     async def replace_day_selections(
         self,
         match_date: date,
         selections: list[tuple[int, int]],
+        *,
+        subround_id: int,
     ) -> list[Match]:
-        """Replace Super Six selections for one calendar day (batch submit).
+        """Replace Super Six selections for one calendar day in a subround.
 
         ``selections`` is ``(match_id, game_number)`` for 0–6 fixtures on that
         day. Game numbers must be unique and in ``1..6`` (sparse OK). Fewer
-        than six is allowed; slots remain unique across other days (assigning
-        game N clears that slot elsewhere). An empty list clears this day's
-        selections only.
+        than six is allowed; slots remain unique within the subround across
+        other days (assigning game N clears that slot elsewhere in the same
+        subround). An empty list clears this day's selections for the
+        subround only.
         """
         if len(selections) > 6:
             raise MatchSelectionError("must submit at most 6 matches")
@@ -160,19 +183,24 @@ class MatchService:
             raise MatchSelectionError("duplicate game_number in selections")
 
         for existing in await self.available_matches(match_date):
+            if existing.subround_id not in (None, subround_id):
+                # Leave selections that belong to another subround untouched.
+                continue
             existing.use_match = False
             existing.game_number = None
+            existing.subround_id = None
             await self._matches.save(existing)
 
         claimed = set(game_numbers)
         if claimed:
-            for existing in await self.selected_matches():
+            for existing in await self.selected_matches_for_subround(subround_id):
                 day = existing.match_date.astimezone(UTC).date()
                 if day == match_date:
                     continue
                 if existing.game_number in claimed:
                     existing.use_match = False
                     existing.game_number = None
+                    existing.subround_id = None
                     await self._matches.save(existing)
 
         updated: list[Match] = []
@@ -185,6 +213,7 @@ class MatchService:
                 )
             match.use_match = True
             match.game_number = game_number
+            match.subround_id = subround_id
             updated.append(await self._matches.save(match))
         return sorted(updated, key=lambda match: match.game_number or 0)
 

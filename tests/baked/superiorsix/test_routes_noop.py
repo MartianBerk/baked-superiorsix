@@ -25,6 +25,7 @@ PUBLIC_NOOP = [
 IMPLEMENTED_PUBLIC = [
     ("GET", "/game/livematches"),
     ("GET", "/game/matchdetail"),
+    ("GET", "/game/listsubrounds"),
 ]
 
 PROTECTED_NOOP = [
@@ -53,6 +54,9 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/currentround", "game-master"),
     ("POST", "/admin/addround", "game-master"),
     ("POST", "/admin/endround", "game-master"),
+    ("GET", "/admin/listsubrounds", "game-master"),
+    ("GET", "/admin/currentsubround", "game-master"),
+    ("POST", "/admin/opensubround", "game-master"),
     ("GET", "/admin/listmatches", "game-master"),
     ("GET", "/admin/getmatch", "game-master"),
     ("POST", "/admin/addmatch", "game-master"),

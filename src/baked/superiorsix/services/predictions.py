@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from baked.superiorsix.domain.exceptions import PredictionError, RoundNotFoundError
@@ -9,9 +9,6 @@ from baked.superiorsix.services.rounds import RoundService
 
 _CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
-# Calendar-day gap between consecutive selected fixtures that starts a new game week.
-# Contiguous selected days within a ~week window stay one slate; ISO/Monday weeks are not used.
-_GAME_WEEK_GAP_DAYS = 6
 
 
 class PredictionService:
@@ -55,10 +52,9 @@ class PredictionService:
         if not match.use_match:
             raise PredictionError("Match is not selected for Super Six.")
 
-        selected = await self._matches.selected_matches()
-        week_kickoff = earliest_kickoff_for_game_week(match, selected)
+        slate_kickoff = await self._earliest_kickoff_for_match(match)
         cutoff_at = (now or datetime.now(UTC)) + _CUTOFF
-        if cutoff_at >= week_kickoff:
+        if cutoff_at >= slate_kickoff:
             raise PredictionError("Past cutoff for prediction set.")
 
         assert round_.id is not None
@@ -80,6 +76,19 @@ class PredictionService:
             )
         )
 
+    async def _earliest_kickoff_for_match(self, match: Match) -> datetime:
+        """Earliest kickoff among selected fixtures in the match's subround.
+
+        Falls back to the match's own kickoff when ``subround_id`` is unset
+        (pre-migration rows).
+        """
+        if match.subround_id is None:
+            return _as_utc(match.match_date)
+        selected = await self._matches.selected_matches_for_subround(match.subround_id)
+        if not selected:
+            return _as_utc(match.match_date)
+        return min(_as_utc(fixture.match_date) for fixture in selected)
+
     async def _require_current_round(self):
         try:
             return await self._rounds.current()
@@ -87,64 +96,29 @@ class PredictionService:
             raise PredictionError(str(exc)) from exc
 
 
-def earliest_kickoff_for_game_week(match: Match, selected: list[Match]) -> datetime:
-    """Earliest kickoff among selected fixtures in the same game week as ``match``.
+def earliest_kickoff_for_subround(match: Match, selected: list[Match]) -> datetime:
+    """Earliest kickoff among ``selected`` fixtures that share ``match.subround_id``.
 
-    A game week is a cluster of Super Six selections (``use_match`` + set
-    ``game_number``), sorted by kickoff. A new week starts when the calendar-day
-    gap from the previous selected match exceeds ``_GAME_WEEK_GAP_DAYS`` (6).
-    This is intentional slate clustering — not ISO/Monday weeks.
+    Pure helper for unit tests. Prefer ``PredictionService`` submit path in app code.
     """
-    week = game_week_for_match(match, selected)
-    if not week:
+    if match.subround_id is None:
         return _as_utc(match.match_date)
-    return min(_as_utc(fixture.match_date) for fixture in week)
-
-
-def game_week_for_match(match: Match, selected: list[Match]) -> list[Match]:
-    """Return the game-week cluster containing ``match``, or ``[]`` if none."""
-    for week in cluster_game_weeks(selected):
-        if any(fixture.id == match.id for fixture in week):
-            return week
-    return []
-
-
-def cluster_game_weeks(selected: list[Match]) -> list[list[Match]]:
-    """Partition Super Six selections into game weeks by kickoff day gaps.
-
-    Only ``use_match=True`` fixtures with a set ``game_number`` are considered.
-    Sorted by ``match_date``; a gap of more than 6 calendar days between
-    consecutive selected fixtures starts a new week.
-    """
     slate = [
         fixture
         for fixture in selected
-        if fixture.use_match and fixture.game_number is not None
+        if fixture.use_match
+        and fixture.game_number is not None
+        and fixture.subround_id == match.subround_id
     ]
-    slate.sort(key=lambda fixture: (_as_utc(fixture.match_date), fixture.id or 0))
-
-    weeks: list[list[Match]] = []
-    for fixture in slate:
-        if not weeks:
-            weeks.append([fixture])
-            continue
-        previous = weeks[-1][-1]
-        gap = (_calendar_day(fixture.match_date) - _calendar_day(previous.match_date)).days
-        if gap > _GAME_WEEK_GAP_DAYS:
-            weeks.append([fixture])
-        else:
-            weeks[-1].append(fixture)
-    return weeks
+    if not slate:
+        return _as_utc(match.match_date)
+    return min(_as_utc(fixture.match_date) for fixture in slate)
 
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
-
-
-def _calendar_day(value: datetime) -> date:
-    return _as_utc(value).date()
 
 
 def _parse_user_choice(value: str) -> PredictionChoice:

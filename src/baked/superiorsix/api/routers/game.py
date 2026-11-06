@@ -5,16 +5,19 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from baked.superiorsix.api.dates import parse_legacy_date
-from baked.superiorsix.api.deps import get_match_service
+from baked.superiorsix.api.deps import get_match_service, get_subround_service
 from baked.superiorsix.api.schemas import (
     AvailableMatchesResponse,
     AvailableMatchResponse,
     MatchDetailPayload,
     MatchDetailResponse,
+    SubroundResponse,
+    SubroundsResponse,
 )
 from baked.superiorsix.domain.exceptions import MatchNotFoundError
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.matches import MatchService
+from baked.superiorsix.services.subrounds import SubroundService
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -49,6 +52,24 @@ async def game_live_scores() -> dict[str, Any]:
 @router.get("/currentround")
 async def game_current_round() -> dict[str, Any]:
     return noop()
+
+
+@router.get("/listsubrounds", response_model=SubroundsResponse)
+async def game_list_subrounds(
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    round_id: Annotated[int | None, Query(alias="roundId")] = None,
+) -> SubroundsResponse:
+    """Player-facing subrounds for the current (or given) parent round.
+
+    Does not bootstrap a round — returns ``[]`` when none is open.
+    """
+    if round_id is None:
+        statuses = await subround_service.list_for_current_round()
+    else:
+        statuses = await subround_service.list_for_round(round_id)
+    return SubroundsResponse(
+        subrounds=[SubroundResponse.from_status(item) for item in statuses]
+    )
 
 
 @router.get("/specialmessage")

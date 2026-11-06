@@ -48,6 +48,7 @@ class Match:
     away_score: int | None = None
     game_number: int | None = None
     last_updated: datetime | None = None
+    subround_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +89,17 @@ class Round:
     buy_in_pence: int
     id: int | None = None
     end_date: date | None = None
+
+
+@dataclass(slots=True)
+class Subround:
+    """One admin match-submission slate under a parent pot/round."""
+
+    round_id: int
+    sequence: int
+    id: int | None = None
+    created_at: datetime | None = None
+    closed_at: datetime | None = None
 
 
 @dataclass(slots=True)

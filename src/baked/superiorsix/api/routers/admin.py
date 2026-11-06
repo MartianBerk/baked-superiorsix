@@ -19,12 +19,14 @@ from baked.superiorsix.api.deps import (
     get_league_service,
     get_match_service,
     get_round_service,
+    get_subround_service,
     get_user_profiles,
 )
 from baked.superiorsix.api.schemas import (
     AddPlayerRequest,
     BulkSelectMatchItem,
     CurrentRoundResponse,
+    CurrentSubroundResponse,
     InvitePlayerRequest,
     InvitePlayerResponse,
     LeagueResponse,
@@ -36,6 +38,8 @@ from baked.superiorsix.api.schemas import (
     PlayersResponse,
     RoundResponse,
     SelectMatchRequest,
+    SubroundResponse,
+    SubroundsResponse,
     with_always_grant_invite_roles,
 )
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
@@ -48,11 +52,14 @@ from baked.superiorsix.domain.exceptions import (
     RosterNotFoundError,
     RoundError,
     RoundNotFoundError,
+    SubroundError,
+    SubroundNotFoundError,
 )
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService, day_bounds
 from baked.superiorsix.services.rounds import RoundService
+from baked.superiorsix.services.subrounds import SubroundService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -116,6 +123,69 @@ async def current_round(
 @router.get("/historicrounds")
 async def historic_rounds(_: RequireGameMaster) -> dict[str, Any]:
     return noop()
+
+
+@router.get("/listsubrounds", response_model=SubroundsResponse)
+async def list_subrounds(
+    _: RequireGameMaster,
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    round_id: Annotated[int | None, Query(alias="roundId")] = None,
+) -> SubroundsResponse:
+    """List subrounds for the current (or given) round.
+
+    Read-only: never creates Round or Subround. No open Round → ``{subrounds: []}``.
+    """
+    try:
+        if round_id is None:
+            statuses = await subround_service.list_for_current_round()
+        else:
+            statuses = await subround_service.list_for_round(round_id)
+    except (RoundNotFoundError, SubroundError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return SubroundsResponse(
+        subrounds=[SubroundResponse.from_status(item) for item in statuses]
+    )
+
+
+@router.get("/currentsubround", response_model=CurrentSubroundResponse)
+async def current_subround(
+    _: RequireGameMaster,
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    create: Annotated[bool, Query()] = False,
+) -> CurrentSubroundResponse:
+    """Return the open-for-editing subround.
+
+    Default is read-only (``null`` with no round / no open subround). Pass
+    ``create=true`` to open the next sequence when none exist or the latest is
+    over — **400** ``No round in progress.`` if no parent Round. The usual first
+    subround is created on ``addmatches`` submit instead.
+    """
+    try:
+        if create:
+            status_ = await subround_service.current_or_create_open()
+        else:
+            status_ = await subround_service.current_open_for_editing()
+    except (RoundNotFoundError, SubroundError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return CurrentSubroundResponse(
+        current_subround=None if status_ is None else SubroundResponse.from_status(status_)
+    )
+
+
+@router.post("/opensubround", response_model=SubroundResponse)
+async def open_subround(
+    _: RequireGameMaster,
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+) -> SubroundResponse:
+    """Force-create the next subround for the current round (editing target).
+
+    Requires an open parent Round — 400 ``No round in progress.`` otherwise.
+    """
+    try:
+        status_ = await subround_service.open_next(force=True)
+    except (RoundNotFoundError, SubroundError, SubroundNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return SubroundResponse.from_status(status_)
 
 
 @router.get("/listpredictions")
@@ -368,12 +438,19 @@ async def add_match(
     _: RequireGameMaster,
     payload: SelectMatchRequest,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
 ) -> MatchResponse:
     try:
-        match = await match_service.select_for_round(payload.id, payload.game_number)
+        subround = await subround_service.require_open_for_selection()
+        assert subround.id is not None
+        match = await match_service.select_for_round(
+            payload.id,
+            payload.game_number,
+            subround_id=subround.id,
+        )
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except MatchSelectionError as exc:
+    except (MatchSelectionError, SubroundError, RoundNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return MatchResponse.from_domain(match)
 
@@ -382,6 +459,7 @@ async def add_match(
 async def add_matches(
     _: RequireGameMaster,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
     payload: Annotated[list[BulkSelectMatchItem], Body()],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
 ) -> MatchesResponse:
@@ -392,13 +470,16 @@ async def add_matches(
         )
     day = parse_legacy_date(match_date, field_name="matchDate")
     try:
+        subround = await subround_service.require_open_for_selection()
+        assert subround.id is not None
         matches = await match_service.replace_day_selections(
             day,
             [(item.id, item.game_number) for item in payload],
+            subround_id=subround.id,
         )
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except MatchSelectionError as exc:
+    except (MatchSelectionError, SubroundError, RoundNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
 

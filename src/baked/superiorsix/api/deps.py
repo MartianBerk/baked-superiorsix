@@ -13,10 +13,12 @@ from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
 from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
+from baked.superiorsix.repositories.subrounds import SqlAlchemySubroundRepository
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
+from baked.superiorsix.services.subrounds import SubroundService
 
 __all__ = [
     "RequireActivePlayer",
@@ -37,6 +39,7 @@ __all__ = [
     "get_prediction_service",
     "get_round_service",
     "get_session_factory",
+    "get_subround_service",
     "get_user_profiles",
     "require_active_player",
     "require_roles",
@@ -71,6 +74,17 @@ async def get_round_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RoundService:
     return RoundService(SqlAlchemyRoundRepository(session))
+
+
+async def get_subround_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    rounds: Annotated[RoundService, Depends(get_round_service)],
+) -> SubroundService:
+    return SubroundService(
+        SqlAlchemySubroundRepository(session),
+        SqlAlchemyMatchRepository(session),
+        rounds,
+    )
 
 
 async def get_prediction_service(
