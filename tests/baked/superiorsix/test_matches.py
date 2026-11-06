@@ -111,7 +111,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     admin_list = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
     )
     assert admin_list.status_code == 200
     assert len(admin_list.json()["matches"]) == 2
@@ -205,7 +205,7 @@ def test_match_writes_stamp_last_updated_utc(
     listed = client.get(
         "/admin/listmatches",
         headers=auth_header(token),
-        params={"matchDate": "14-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
     )
     assert listed.status_code == 200
     row = listed.json()["matches"][0]
@@ -250,13 +250,13 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     assert fetched.status_code == 200
     assert fetched.json()["game_number"] == 2
 
-    window = client.get(
+    week = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "01-03-2026", "toDate": "31-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "20-03-2026"},
     )
-    assert window.status_code == 200, window.text
-    ids = {row["id"] for row in window.json()["matches"]}
+    assert week.status_code == 200, week.text
+    ids = {row["id"] for row in week.json()["matches"]}
     assert fixture.id in ids
 
     same_day = client.get(
@@ -267,29 +267,39 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     assert same_day.status_code == 200
     assert len(same_day.json()["matches"]) == 2
 
-    legacy_day = client.get(
-        "/admin/listmatches",
-        headers=headers,
-        params={"matchDate": "14-03-2026"},
-    )
-    assert legacy_day.status_code == 200
-    assert len(legacy_day.json()["matches"]) == 2
-
     inverted = client.get(
         "/admin/listmatches",
         headers=headers,
         params={"fromDate": "31-03-2026", "toDate": "01-03-2026"},
     )
     assert inverted.status_code == 400
+    assert inverted.json()["detail"] == "toDate must be on or after fromDate"
 
-    # Deprecated alias still works.
-    alias = client.get(
-        "/admin/listmatchesnew",
+    too_wide = client.get(
+        "/admin/listmatches",
         headers=headers,
-        params={"fromDate": "01-03-2026", "toDate": "31-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "21-03-2026"},
     )
-    assert alias.status_code == 200
-    assert fixture.id in {row["id"] for row in alias.json()["matches"]}
+    assert too_wide.status_code == 400
+    assert too_wide.json()["detail"] == "date range must be at most 7 days"
+
+    missing_from = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"toDate": "14-03-2026"},
+    )
+    assert missing_from.status_code == 400
+    assert missing_from.json()["detail"] == "missing fromDate"
+
+    missing_to = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"fromDate": "14-03-2026"},
+    )
+    assert missing_to.status_code == 400
+    assert missing_to.json()["detail"] == "missing toDate"
+
+    assert client.get("/admin/listmatchesnew", headers=headers).status_code == 404
 
     dropped = client.get(
         "/admin/dropmatch",
@@ -315,7 +325,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     listed = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
     )
     assert listed.status_code == 200
     day_matches = listed.json()["matches"]
@@ -421,7 +431,7 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     listed = client.get(
         "/admin/listmatches",
         headers=headers,
-        params={"matchDate": "14-03-2026"},
+        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
     )
     day_ids = [row["id"] for row in listed.json()["matches"]]
     assert len(day_ids) >= 2

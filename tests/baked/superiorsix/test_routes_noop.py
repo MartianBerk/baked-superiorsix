@@ -54,7 +54,6 @@ PROTECTED_IMPLEMENTED = [
     ("POST", "/admin/addround", "game-master"),
     ("POST", "/admin/endround", "game-master"),
     ("GET", "/admin/listmatches", "game-master"),
-    ("GET", "/admin/listmatchesnew", "game-master"),
     ("GET", "/admin/getmatch", "game-master"),
     ("POST", "/admin/addmatch", "game-master"),
     ("POST", "/admin/addmatches", "game-master"),

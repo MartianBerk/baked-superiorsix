@@ -87,24 +87,9 @@ class MatchService:
             match.match_minute = 90
         return await self._matches.save(match)
 
-    async def list_upcoming_window(
-        self,
-        *,
-        start: datetime | None = None,
-        end: datetime | None = None,
-    ) -> list[Match]:
-        """Fixtures in an admin scrubber / listmatches window.
-
-        Default window: start of UTC today minus 14 days through +31 days, so
-        the current weekend (including recent kickoffs) remains selectable.
-        Callers may pass explicit ``start`` / ``end`` (fromDate/toDate bounds).
-        """
-        now = datetime.now(UTC)
-        window_start = start if start is not None else (now - timedelta(days=14)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        window_end = end if end is not None else now + timedelta(days=31)
-        matches = await self._matches.list_between(window_start, window_end)
+    async def list_in_range(self, *, start: datetime, end: datetime) -> list[Match]:
+        """Fixtures with kickoff in ``[start, end)`` (UTC day bounds from the router)."""
+        matches = await self._matches.list_between(start, end)
         return sorted(
             matches,
             key=lambda match: (match.match_date, match.game_number or 0, match.id or 0),
