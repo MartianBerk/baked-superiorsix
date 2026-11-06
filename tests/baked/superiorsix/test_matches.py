@@ -351,19 +351,19 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     assert again.status_code == 200, again.text
     assert again.json()["matches"][0]["game_number"] == 1
 
-    # Partial batch (fewer than 6) replaces the day.
-    partial = client.post(
+    # Partial batch with sparse slots (e.g. kept 2,4,6 after drops) is valid.
+    sparse = client.post(
         "/admin/addmatches",
         headers=headers,
         params={"matchDate": "14-03-2026"},
         json=[
-            {"id": all_ids[0], "game_number": 1},
-            {"id": all_ids[1], "game_number": 2},
-            {"id": all_ids[2], "game_number": 3},
+            {"id": all_ids[0], "game_number": 2},
+            {"id": all_ids[1], "game_number": 4},
+            {"id": all_ids[2], "game_number": 6},
         ],
     )
-    assert partial.status_code == 200, partial.text
-    assert len(partial.json()["matches"]) == 3
+    assert sparse.status_code == 200, sparse.text
+    assert {row["game_number"] for row in sparse.json()["matches"]} == {2, 4, 6}
 
     cleared = client.post(
         "/admin/addmatches",
