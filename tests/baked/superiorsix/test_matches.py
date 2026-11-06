@@ -226,7 +226,7 @@ def test_matchdetail_not_found(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_drop_get_and_listmatchesnew(client: TestClient) -> None:
+def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
@@ -251,13 +251,45 @@ def test_drop_get_and_listmatchesnew(client: TestClient) -> None:
     assert fetched.json()["game_number"] == 2
 
     window = client.get(
-        "/admin/listmatchesnew",
+        "/admin/listmatches",
         headers=headers,
         params={"fromDate": "01-03-2026", "toDate": "31-03-2026"},
     )
     assert window.status_code == 200, window.text
     ids = {row["id"] for row in window.json()["matches"]}
     assert fixture.id in ids
+
+    same_day = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"fromDate": "14-03-2026", "toDate": "14-03-2026"},
+    )
+    assert same_day.status_code == 200
+    assert len(same_day.json()["matches"]) == 2
+
+    legacy_day = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+    )
+    assert legacy_day.status_code == 200
+    assert len(legacy_day.json()["matches"]) == 2
+
+    inverted = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"fromDate": "31-03-2026", "toDate": "01-03-2026"},
+    )
+    assert inverted.status_code == 400
+
+    # Deprecated alias still works.
+    alias = client.get(
+        "/admin/listmatchesnew",
+        headers=headers,
+        params={"fromDate": "01-03-2026", "toDate": "31-03-2026"},
+    )
+    assert alias.status_code == 200
+    assert fixture.id in {row["id"] for row in alias.json()["matches"]}
 
     dropped = client.get(
         "/admin/dropmatch",

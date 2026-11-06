@@ -93,10 +93,11 @@ class MatchService:
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> list[Match]:
-        """Fixtures in an admin scrubber window (legacy ``listmatchesnew``).
+        """Fixtures in an admin scrubber / listmatches window.
 
         Default window: start of UTC today minus 14 days through +31 days, so
         the current weekend (including recent kickoffs) remains selectable.
+        Callers may pass explicit ``start`` / ``end`` (fromDate/toDate bounds).
         """
         now = datetime.now(UTC)
         window_start = start if start is not None else (now - timedelta(days=14)).replace(

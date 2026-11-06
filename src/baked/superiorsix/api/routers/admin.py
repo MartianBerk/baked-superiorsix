@@ -297,41 +297,66 @@ async def list_matches(
     _: RequireGameMaster,
     match_service: Annotated[MatchService, Depends(get_match_service)],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
+    from_date: Annotated[str | None, Query(alias="fromDate")] = None,
+    to_date: Annotated[str | None, Query(alias="toDate")] = None,
 ) -> MatchesResponse:
-    if not match_date:
+    """List fixtures for one day or an inclusive date range.
+
+    - ``matchDate=dd-mm-yyyy`` — single calendar day (legacy).
+    - ``fromDate`` + ``toDate`` — inclusive range (``fromDate=toDate`` is one day).
+    - Omit all dates — default scrubber window (UTC today−14d … today+31d).
+    """
+    if match_date and (from_date or to_date):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="missing matchDate",
+            detail="use matchDate or fromDate/toDate, not both",
         )
-    day = parse_legacy_date(match_date, field_name="matchDate")
-    matches = await match_service.list_on_date(day)
+    if from_date and not to_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing toDate",
+        )
+    if to_date and not from_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing fromDate",
+        )
+
+    if match_date:
+        day = parse_legacy_date(match_date, field_name="matchDate")
+        matches = await match_service.list_on_date(day)
+    elif from_date and to_date:
+        start_day = parse_legacy_date(from_date, field_name="fromDate")
+        end_day = parse_legacy_date(to_date, field_name="toDate")
+        if end_day < start_day:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="toDate must be on or after fromDate",
+            )
+        start, _ = day_bounds(start_day)
+        _, end = day_bounds(end_day)
+        matches = await match_service.list_upcoming_window(start=start, end=end)
+    else:
+        matches = await match_service.list_upcoming_window()
+
     return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
 
 
-@router.get("/listmatchesnew", response_model=MatchesResponse)
+@router.get("/listmatchesnew", response_model=MatchesResponse, deprecated=True)
 async def list_matches_new(
-    _: RequireGameMaster,
+    principal: RequireGameMaster,
     match_service: Annotated[MatchService, Depends(get_match_service)],
     from_date: Annotated[str | None, Query(alias="fromDate")] = None,
     to_date: Annotated[str | None, Query(alias="toDate")] = None,
 ) -> MatchesResponse:
-    """Upcoming (and recent) fixtures for the admin date scrubber.
-
-    Optional ``fromDate`` / ``toDate`` (``dd-mm-yyyy``) override the default
-    window of UTC today−14d through today+31d.
-    """
-    start = (
-        day_bounds(parse_legacy_date(from_date, field_name="fromDate"))[0]
-        if from_date
-        else None
+    """Deprecated thin alias of ``GET /admin/listmatches`` (fromDate/toDate or default window)."""
+    return await list_matches(
+        principal,
+        match_service,
+        match_date=None,
+        from_date=from_date,
+        to_date=to_date,
     )
-    end = (
-        day_bounds(parse_legacy_date(to_date, field_name="toDate"))[1]
-        if to_date
-        else None
-    )
-    matches = await match_service.list_upcoming_window(start=start, end=end)
-    return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
 
 
 @router.get("/getmatch", response_model=MatchResponse)
