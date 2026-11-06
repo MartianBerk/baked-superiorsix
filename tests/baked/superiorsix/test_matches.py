@@ -376,3 +376,75 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     available = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
     assert available.status_code == 200
     assert available.json()["matches"] == []
+
+
+def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
+    """Fewer than six per day is OK; game_number slots stay unique across days."""
+    fixture = anyio.run(_seed_weekend, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    token, _ = make_access_token(roles=["game-master"])
+    headers = auth_header(token)
+
+    listed = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+    )
+    day_ids = [row["id"] for row in listed.json()["matches"]]
+    assert len(day_ids) >= 2
+
+    async def seed_next_day() -> int:
+        async with client.app.state.session_factory() as session:
+            ingest = _ingest(session)
+            league_id = listed.json()["matches"][0]["league_id"]
+            match = await ingest.upsert_match(
+                Match(
+                    external_id="pl-next-day",
+                    league_id=league_id,
+                    match_date=_kickoff(date(2026, 3, 15), hour=15),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Newcastle",
+                    away_team="Aston Villa",
+                )
+            )
+            assert match.id is not None
+            return match.id
+
+    next_id = anyio.run(seed_next_day)
+
+    first = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "14-03-2026"},
+        json=[
+            {"id": day_ids[0], "game_number": 1},
+            {"id": day_ids[1], "game_number": 2},
+        ],
+    )
+    assert first.status_code == 200, first.text
+    assert len(first.json()["matches"]) == 2
+
+    second = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "15-03-2026"},
+        json=[{"id": next_id, "game_number": 3}],
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["matches"][0]["game_number"] == 3
+
+    # Reusing slot 1 on the next day clears it from the previous day.
+    reclaim = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": "15-03-2026"},
+        json=[{"id": next_id, "game_number": 1}],
+    )
+    assert reclaim.status_code == 200, reclaim.text
+    day1 = client.get("/game/livematches", params={"matchDate": "14-03-2026"})
+    assert day1.status_code == 200
+    assert {row["game_number"] for row in day1.json()["matches"]} == {2}
+    day2 = client.get("/game/livematches", params={"matchDate": "15-03-2026"})
+    assert day2.status_code == 200
+    assert day2.json()["matches"][0]["game_number"] == 1

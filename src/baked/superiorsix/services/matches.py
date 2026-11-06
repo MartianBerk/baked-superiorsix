@@ -29,6 +29,10 @@ class MatchService:
         matches = await self.list_on_date(match_date, available_only=True)
         return sorted(matches, key=lambda match: match.game_number or 0)
 
+    async def selected_matches(self) -> list[Match]:
+        """All Super Six selections across days (``use_match``)."""
+        return await self._matches.list_selected()
+
     async def list_score_candidates(
         self,
         start: datetime,
@@ -106,20 +110,19 @@ class MatchService:
         )
 
     async def select_for_round(self, match_id: int, game_number: int) -> Match:
-        """Mark a fixture as one of the day's Super Six selections."""
+        """Mark a fixture as a Super Six selection (slots 1–6, any kickoff day)."""
         if game_number < 1 or game_number > 6:
             raise MatchSelectionError("Invalid game_number, must be between 1 and 6.")
 
         match = await self.get(match_id)
-        day = match.match_date.astimezone(UTC).date()
-        selected = await self.available_matches(day)
+        selected = await self.selected_matches()
 
         if match.use_match and match.game_number != game_number:
             raise MatchSelectionError(f"Match already selected as game number {match.game_number}")
 
         if len(selected) >= 6 and not match.use_match:
             raise MatchSelectionError(
-                f"Six matches already submitted for {day}. Drop a match first."
+                "Six matches already selected. Drop a match first."
             )
 
         for existing in selected:
@@ -144,12 +147,13 @@ class MatchService:
         match_date: date,
         selections: list[tuple[int, int]],
     ) -> list[Match]:
-        """Replace all Super Six selections for a calendar day (batch submit).
+        """Replace Super Six selections for one calendar day (batch submit).
 
-        ``selections`` is ``(match_id, game_number)`` for 0–6 fixtures. Each
-        ``game_number`` must be unique and in ``1..6`` (sparse slots allowed —
-        dropping game 1 does not renumber remaining picks). An empty list
-        clears the day's selections.
+        ``selections`` is ``(match_id, game_number)`` for 0–6 fixtures on that
+        day. Game numbers must be unique and in ``1..6`` (sparse OK). Fewer
+        than six is allowed; slots remain unique across other days (assigning
+        game N clears that slot elsewhere). An empty list clears this day's
+        selections only.
         """
         if len(selections) > 6:
             raise MatchSelectionError("must submit at most 6 matches")
@@ -165,6 +169,17 @@ class MatchService:
             existing.use_match = False
             existing.game_number = None
             await self._matches.save(existing)
+
+        claimed = set(game_numbers)
+        if claimed:
+            for existing in await self.selected_matches():
+                day = existing.match_date.astimezone(UTC).date()
+                if day == match_date:
+                    continue
+                if existing.game_number in claimed:
+                    existing.use_match = False
+                    existing.game_number = None
+                    await self._matches.save(existing)
 
         updated: list[Match] = []
         for match_id, game_number in selections:

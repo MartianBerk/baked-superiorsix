@@ -32,6 +32,8 @@ class MatchRepository(Protocol):
         use_match: bool | None = None,
     ) -> list[Match]: ...
 
+    async def list_selected(self) -> list[Match]: ...
+
     async def list_score_candidates(
         self,
         start: datetime,
@@ -96,6 +98,14 @@ class SqlAlchemyMatchRepository:
         result = await self._session.execute(
             select(MatchRecord)
             .where(and_(*clauses))
+            .order_by(MatchRecord.game_number.nulls_last(), MatchRecord.match_date)
+        )
+        return [_to_domain(record) for record in result.scalars().all()]
+
+    async def list_selected(self) -> list[Match]:
+        result = await self._session.execute(
+            select(MatchRecord)
+            .where(MatchRecord.use_match.is_(True))
             .order_by(MatchRecord.game_number.nulls_last(), MatchRecord.match_date)
         )
         return [_to_domain(record) for record in result.scalars().all()]
