@@ -37,10 +37,13 @@ password, then accepts the roster invite.
 1. As superiorsix `admin`, invite an email + roles:
    `POST /admin/inviteplayer`
    `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
-   Selectable: `player`, `worldcup`, `euros`.
-   `user-profile` is **always granted** server-side (not a selectable chip).
+   Selectable: `player`, `worldcup`, `euros`, `game-master` (UI label “Admin”).
+   Real baked-auth `admin` is **not** assignable here. `user-profile` is
+   **always granted** server-side (not a selectable chip).
    BFF (server-side `SUPERIORSIX_AUTH_ADMIN_*`, `aud=auth`):
    `POST` baked-auth `/v1/users` with membership → then baked-user roster invite.
+   Edit rostered roles later via `GET /admin/getplayerroles?email=` and
+   `POST /admin/updateroles` `{"email","roles"}` (preserves existing `admin`).
 2. Invitee claims password: `POST` baked-auth `/v1/auth/set-password`
    `{"email":"martin@example.com","password":"…"}` (no token returned). `/token` is **403**
    until this succeeds.

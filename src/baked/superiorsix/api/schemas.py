@@ -268,9 +268,13 @@ class CurrentSubroundResponse(BaseModel):
     current_subround: SubroundResponse | None
 
 
-# Selectable invite permission chips (admin UX). `user-profile` is always granted.
-INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros"})
+# Selectable permission chips (invite + roster role edit). `user-profile` is
+# always granted. Real baked-auth ``admin`` is never assignable here — only via
+# bootstrap / direct auth. ``game-master`` is labeled "Admin" in the app UI.
+INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros", "game-master"})
 ALWAYS_GRANT_INVITE_ROLES: tuple[str, ...] = ("user-profile",)
+# Roles the app must preserve on update but never offer as chips (bootstrap ops).
+PRESERVE_MEMBERSHIP_ROLES = frozenset({"admin"})
 # Tolerate legacy clients that still send always-grant roles in the request body.
 _INVITE_ROLE_INPUT_ALLOWED = INVITE_ALLOWED_ROLES | frozenset(ALWAYS_GRANT_INVITE_ROLES)
 
@@ -284,6 +288,56 @@ def with_always_grant_invite_roles(roles: list[str]) -> list[str]:
             out.append(role)
             seen.add(role)
     return out
+
+
+def normalize_assignable_roles(value: list[str]) -> list[str]:
+    """Validate selectable roles and merge always-granted ones.
+
+    Rejects ``admin`` and any other non-chip role. Callers that update an
+    existing membership should re-attach preserved roles separately.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    unknown: list[str] = []
+    for role in value:
+        normalized = role.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        if normalized not in _INVITE_ROLE_INPUT_ALLOWED:
+            unknown.append(normalized)
+            continue
+        # Only persist selectable roles from input; always-grant merged below.
+        if normalized not in INVITE_ALLOWED_ROLES:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    if unknown:
+        allowed = ", ".join(sorted(INVITE_ALLOWED_ROLES))
+        raise ValueError(
+            f"Unsupported invite roles: {', '.join(sorted(set(unknown)))}. "
+            f"Allowed: {allowed} "
+            f"(plus always-granted: {', '.join(ALWAYS_GRANT_INVITE_ROLES)})."
+        )
+    return with_always_grant_invite_roles(out)
+
+
+def merge_preserved_membership_roles(
+    selected: list[str],
+    existing: list[str] | None,
+) -> list[str]:
+    """Keep bootstrap-only roles (e.g. ``admin``) when replacing assignable chips."""
+    merged = list(selected)
+    seen = {role.strip().lower() for role in merged if role and role.strip()}
+    for role in existing or []:
+        normalized = role.strip().lower()
+        if (
+            normalized
+            and normalized in PRESERVE_MEMBERSHIP_ROLES
+            and normalized not in seen
+        ):
+            merged.append(normalized)
+            seen.add(normalized)
+    return merged
 
 
 class InvitePlayerRequest(BaseModel):
@@ -304,29 +358,29 @@ class InvitePlayerRequest(BaseModel):
     @field_validator("roles")
     @classmethod
     def normalize_and_validate_roles(cls, value: list[str]) -> list[str]:
-        seen: set[str] = set()
-        out: list[str] = []
-        unknown: list[str] = []
-        for role in value:
-            normalized = role.strip().lower()
-            if not normalized or normalized in seen:
-                continue
-            if normalized not in _INVITE_ROLE_INPUT_ALLOWED:
-                unknown.append(normalized)
-                continue
-            # Only persist selectable roles from input; always-grant merged below.
-            if normalized not in INVITE_ALLOWED_ROLES:
-                continue
-            seen.add(normalized)
-            out.append(normalized)
-        if unknown:
-            allowed = ", ".join(sorted(INVITE_ALLOWED_ROLES))
-            raise ValueError(
-                f"Unsupported invite roles: {', '.join(sorted(set(unknown)))}. "
-                f"Allowed: {allowed} "
-                f"(plus always-granted: {', '.join(ALWAYS_GRANT_INVITE_ROLES)})."
-            )
-        return with_always_grant_invite_roles(out)
+        return normalize_assignable_roles(value)
+
+
+class UpdatePlayerRolesRequest(BaseModel):
+    """Replace assignable superiorsix membership roles for a rostered email."""
+
+    email: str = Field(min_length=3, max_length=254)
+    roles: list[str] = Field(default_factory=list)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("roles")
+    @classmethod
+    def normalize_and_validate_roles(cls, value: list[str]) -> list[str]:
+        return normalize_assignable_roles(value)
+
+
+class PlayerRolesResponse(BaseModel):
+    email: str
+    roles: list[str] = Field(default_factory=list)
 
 
 class InvitePlayerResponse(BaseModel):

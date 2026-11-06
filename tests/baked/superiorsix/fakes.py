@@ -233,6 +233,18 @@ class FakeAuthAdminClient:
             memberships=[MembershipResult(application=application, roles=list(roles))],
         )
 
+    async def get_membership(
+        self,
+        *,
+        email: str,
+        application: str = "superiorsix",
+    ) -> MembershipResult:
+        key = email.strip().lower()
+        roles = self.memberships.get(key)
+        if roles is None:
+            raise AuthAdminError("User is not a member of application.")
+        return MembershipResult(application=application, roles=list(roles))
+
     async def set_membership(
         self,
         *,

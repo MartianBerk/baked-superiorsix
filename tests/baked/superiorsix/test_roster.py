@@ -384,3 +384,74 @@ def test_accept_invite_requires_pending_invite(
         json={"email": "nobody@example.com", "password": "password123"},
     )
     assert response.status_code == 403
+
+
+def test_inviteplayer_allows_game_master_role(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    invited = client.post(
+        "/admin/inviteplayer",
+        headers=auth_header(admin_token),
+        json={
+            "email": "gm-invite@example.com",
+            "first_name": "Game",
+            "last_name": "Master",
+            "roles": ["player", "game-master"],
+        },
+    )
+    assert invited.status_code == 201, invited.text
+    assert invited.json()["roles"] == ["player", "game-master", "user-profile"]
+
+
+def test_update_and_get_player_roles_preserves_admin(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    admin = auth_header(admin_token)
+    email = "ops-edit@example.com"
+    auth_admin.memberships[email] = ["admin", "player", "user-profile"]
+
+    got = client.get(
+        "/admin/getplayerroles",
+        headers=admin,
+        params={"email": email},
+    )
+    assert got.status_code == 200, got.text
+    assert got.json() == {
+        "email": email,
+        "roles": ["admin", "player", "user-profile"],
+    }
+
+    updated = client.post(
+        "/admin/updateroles",
+        headers=admin,
+        json={"email": email, "roles": ["player", "worldcup", "game-master"]},
+    )
+    assert updated.status_code == 200, updated.text
+    roles = updated.json()["roles"]
+    assert "admin" in roles
+    assert "player" in roles
+    assert "worldcup" in roles
+    assert "game-master" in roles
+    assert "user-profile" in roles
+    assert auth_admin.memberships[email] == roles
+
+
+def test_updateroles_rejects_real_admin_role(client: TestClient) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    response = client.post(
+        "/admin/updateroles",
+        headers=auth_header(admin_token),
+        json={"email": "someone@example.com", "roles": ["player", "admin"]},
+    )
+    assert response.status_code == 422
+
+
+def test_getplayerroles_requires_admin(client: TestClient) -> None:
+    token, _ = make_access_token(roles=["player"])
+    response = client.get(
+        "/admin/getplayerroles",
+        headers=auth_header(token),
+        params={"email": "x@example.com"},
+    )
+    assert response.status_code == 403

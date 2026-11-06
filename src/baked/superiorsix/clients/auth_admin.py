@@ -40,6 +40,13 @@ class AuthAdminGateway(Protocol):
         application: str = "superiorsix",
     ) -> InviteReadyUserResult: ...
 
+    async def get_membership(
+        self,
+        *,
+        email: str,
+        application: str = "superiorsix",
+    ) -> MembershipResult: ...
+
     async def set_membership(
         self,
         *,
@@ -103,6 +110,36 @@ class AuthAdminClient:
         if response.status_code >= 400:
             raise AuthAdminError(_error_detail(response))
         return _invite_ready_from_payload(response.json(), application=application)
+
+    async def get_membership(
+        self,
+        *,
+        email: str,
+        application: str = "superiorsix",
+    ) -> MembershipResult:
+        token = await self._login_auth_admin()
+        encoded = quote(email.strip().lower(), safe="")
+        url = f"{self._auth_base}/v1/applications/{application}/memberships/{encoded}"
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(timeout=self._timeout)
+        try:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError as exc:
+            raise AuthAdminError(f"baked-auth membership request failed: {exc}") from exc
+        finally:
+            if owns_client:
+                await client.aclose()
+
+        if response.status_code >= 400:
+            raise AuthAdminError(_error_detail(response))
+        payload = response.json()
+        return MembershipResult(
+            application=str(payload.get("application") or application),
+            roles=[str(role) for role in (payload.get("roles") or [])],
+        )
 
     async def set_membership(
         self,
