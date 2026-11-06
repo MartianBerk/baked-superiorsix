@@ -29,6 +29,10 @@ class MatchService:
         matches = await self.list_on_date(match_date, available_only=True)
         return sorted(matches, key=lambda match: match.game_number or 0)
 
+    async def selected_matches(self) -> list[Match]:
+        """All Super Six selections across days (``use_match``)."""
+        return await self._matches.list_selected()
+
     async def list_score_candidates(
         self,
         start: datetime,
@@ -83,21 +87,28 @@ class MatchService:
             match.match_minute = 90
         return await self._matches.save(match)
 
+    async def list_in_range(self, *, start: datetime, end: datetime) -> list[Match]:
+        """Fixtures with kickoff in ``[start, end)`` (UTC day bounds from the router)."""
+        matches = await self._matches.list_between(start, end)
+        return sorted(
+            matches,
+            key=lambda match: (match.match_date, match.game_number or 0, match.id or 0),
+        )
+
     async def select_for_round(self, match_id: int, game_number: int) -> Match:
-        """Mark a fixture as one of the day's Super Six selections."""
+        """Mark a fixture as a Super Six selection (slots 1–6, any kickoff day)."""
         if game_number < 1 or game_number > 6:
             raise MatchSelectionError("Invalid game_number, must be between 1 and 6.")
 
         match = await self.get(match_id)
-        day = match.match_date.astimezone(UTC).date()
-        selected = await self.available_matches(day)
+        selected = await self.selected_matches()
 
         if match.use_match and match.game_number != game_number:
             raise MatchSelectionError(f"Match already selected as game number {match.game_number}")
 
         if len(selected) >= 6 and not match.use_match:
             raise MatchSelectionError(
-                f"Six matches already submitted for {day}. Drop a match first."
+                "Six matches already selected. Drop a match first."
             )
 
         for existing in selected:
@@ -109,6 +120,65 @@ class MatchService:
         match.use_match = True
         match.game_number = game_number
         return await self._matches.save(match)
+
+    async def deselect_from_round(self, match_id: int) -> Match:
+        """Clear Super Six selection flags on a fixture (legacy ``dropmatch``)."""
+        match = await self.get(match_id)
+        match.use_match = False
+        match.game_number = None
+        return await self._matches.save(match)
+
+    async def replace_day_selections(
+        self,
+        match_date: date,
+        selections: list[tuple[int, int]],
+    ) -> list[Match]:
+        """Replace Super Six selections for one calendar day (batch submit).
+
+        ``selections`` is ``(match_id, game_number)`` for 0–6 fixtures on that
+        day. Game numbers must be unique and in ``1..6`` (sparse OK). Fewer
+        than six is allowed; slots remain unique across other days (assigning
+        game N clears that slot elsewhere). An empty list clears this day's
+        selections only.
+        """
+        if len(selections) > 6:
+            raise MatchSelectionError("must submit at most 6 matches")
+        if len({match_id for match_id, _ in selections}) != len(selections):
+            raise MatchSelectionError("duplicate match id in selections")
+        game_numbers = [game_number for _, game_number in selections]
+        if any(number < 1 or number > 6 for number in game_numbers):
+            raise MatchSelectionError("game_numbers must be between 1 and 6")
+        if len(set(game_numbers)) != len(game_numbers):
+            raise MatchSelectionError("duplicate game_number in selections")
+
+        for existing in await self.available_matches(match_date):
+            existing.use_match = False
+            existing.game_number = None
+            await self._matches.save(existing)
+
+        claimed = set(game_numbers)
+        if claimed:
+            for existing in await self.selected_matches():
+                day = existing.match_date.astimezone(UTC).date()
+                if day == match_date:
+                    continue
+                if existing.game_number in claimed:
+                    existing.use_match = False
+                    existing.game_number = None
+                    await self._matches.save(existing)
+
+        updated: list[Match] = []
+        for match_id, game_number in selections:
+            match = await self.get(match_id)
+            day = match.match_date.astimezone(UTC).date()
+            if day != match_date:
+                raise MatchSelectionError(
+                    f"Match {match_id} kickoff is not on {match_date}."
+                )
+            match.use_match = True
+            match.game_number = game_number
+            updated.append(await self._matches.save(match))
+        return sorted(updated, key=lambda match: match.game_number or 0)
 
     async def team_performance(self, team: str, before: datetime) -> list[TeamResult]:
         matches = await self._matches.list_finished_for_team_before(team, before)

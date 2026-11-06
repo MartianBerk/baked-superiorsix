@@ -7,7 +7,7 @@ Roster display resolves via baked-user by auth ``sub`` (no local permissions mod
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 
 from baked.superiorsix.api.dates import parse_legacy_date
 from baked.superiorsix.api.deps import (
@@ -23,6 +23,7 @@ from baked.superiorsix.api.deps import (
 )
 from baked.superiorsix.api.schemas import (
     AddPlayerRequest,
+    BulkSelectMatchItem,
     CurrentRoundResponse,
     InvitePlayerRequest,
     InvitePlayerResponse,
@@ -50,7 +51,7 @@ from baked.superiorsix.domain.exceptions import (
 )
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.leagues import LeagueService
-from baked.superiorsix.services.matches import MatchService
+from baked.superiorsix.services.matches import MatchService, day_bounds
 from baked.superiorsix.services.rounds import RoundService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -295,26 +296,61 @@ async def get_round(_: RequireGameMaster) -> dict[str, Any]:
 async def list_matches(
     _: RequireGameMaster,
     match_service: Annotated[MatchService, Depends(get_match_service)],
-    match_date: Annotated[str | None, Query(alias="matchDate")] = None,
+    from_date: Annotated[str | None, Query(alias="fromDate")] = None,
+    to_date: Annotated[str | None, Query(alias="toDate")] = None,
 ) -> MatchesResponse:
-    if not match_date:
+    """List fixtures for an inclusive UTC date range (max 7 calendar days).
+
+    Both ``fromDate`` and ``toDate`` are required (``dd-mm-yyyy``).
+    ``fromDate=toDate`` is a single day. Day bounds are UTC midnight-aligned.
+    """
+    if not from_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="missing matchDate",
+            detail="missing fromDate",
         )
-    day = parse_legacy_date(match_date, field_name="matchDate")
-    matches = await match_service.list_on_date(day)
+    if not to_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing toDate",
+        )
+
+    start_day = parse_legacy_date(from_date, field_name="fromDate")
+    end_day = parse_legacy_date(to_date, field_name="toDate")
+    if end_day < start_day:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="toDate must be on or after fromDate",
+        )
+    span_days = (end_day - start_day).days + 1
+    if span_days > 7:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date range must be at most 7 days",
+        )
+
+    start, _ = day_bounds(start_day)
+    _, end = day_bounds(end_day)
+    matches = await match_service.list_in_range(start=start, end=end)
     return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
 
 
-@router.get("/listmatchesnew")
-async def list_matches_new(_: RequireGameMaster) -> dict[str, Any]:
-    return noop()
-
-
-@router.get("/getmatch")
-async def get_match(_: RequireGameMaster) -> dict[str, Any]:
-    return noop()
+@router.get("/getmatch", response_model=MatchResponse)
+async def get_match(
+    _: RequireGameMaster,
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    match_id: Annotated[int | None, Query(alias="id")] = None,
+) -> MatchResponse:
+    if match_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing id",
+        )
+    try:
+        match = await match_service.get(match_id)
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return MatchResponse.from_domain(match)
 
 
 @router.post("/addmatch", response_model=MatchResponse)
@@ -332,14 +368,47 @@ async def add_match(
     return MatchResponse.from_domain(match)
 
 
-@router.post("/addmatches")
-async def add_matches(_: RequireGameMaster) -> dict[str, Any]:
-    return noop()
+@router.post("/addmatches", response_model=MatchesResponse)
+async def add_matches(
+    _: RequireGameMaster,
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    payload: Annotated[list[BulkSelectMatchItem], Body()],
+    match_date: Annotated[str | None, Query(alias="matchDate")] = None,
+) -> MatchesResponse:
+    if not match_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing matchDate",
+        )
+    day = parse_legacy_date(match_date, field_name="matchDate")
+    try:
+        matches = await match_service.replace_day_selections(
+            day,
+            [(item.id, item.game_number) for item in payload],
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except MatchSelectionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
 
 
-@router.get("/dropmatch")
-async def drop_match(_: RequireGameMaster) -> dict[str, Any]:
-    return noop()
+@router.get("/dropmatch", response_model=MatchResponse)
+async def drop_match(
+    _: RequireGameMaster,
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    match_id: Annotated[int | None, Query(alias="id")] = None,
+) -> MatchResponse:
+    if match_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing id",
+        )
+    try:
+        match = await match_service.deselect_from_round(match_id)
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return MatchResponse.from_domain(match)
 
 
 @router.post("/addpredictions")
