@@ -139,7 +139,8 @@ def test_no_round_listmatches_ok_subround_paths_clear(client: TestClient) -> Non
     assert player.json()["subrounds"] == []
 
 
-def test_addmatches_attaches_to_open_subround(client: TestClient) -> None:
+def test_addmatches_creates_first_subround_then_attaches(client: TestClient) -> None:
+    """With a Round but no subround, list/current stay empty until submit."""
     sat_id, mon_id, _, sat_day, mon_day, _ = anyio.run(
         _seed_fixtures, client.app.state.session_factory
     )
@@ -147,9 +148,11 @@ def test_addmatches_attaches_to_open_subround(client: TestClient) -> None:
 
     current = client.get("/admin/currentsubround", headers=headers)
     assert current.status_code == 200
-    assert current.json()["current_subround"] is not None
-    assert current.json()["current_subround"]["sequence"] == 1
-    assert current.json()["current_subround"]["match_count"] == 0
+    assert current.json()["current_subround"] is None
+
+    listed_before = client.get("/admin/listsubrounds", headers=headers)
+    assert listed_before.status_code == 200
+    assert listed_before.json()["subrounds"] == []
 
     first = client.post(
         "/admin/addmatches",

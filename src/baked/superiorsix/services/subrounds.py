@@ -45,22 +45,16 @@ class SubroundService:
         self,
         *,
         now: datetime | None = None,
-        open_first_if_empty: bool = False,
     ) -> list[SubroundStatus]:
         """List subrounds for the current pot round.
 
-        With no open round, returns ``[]`` (parent Round is created manually).
-        When ``open_first_if_empty`` is True and a round exists with no subrounds,
-        opens sequence 1 so the admin scrubber has a target.
+        With no open round, returns ``[]``. Does not create Round or Subround —
+        the first subround is created on ``addmatches`` submit.
         """
         round_ = await self._rounds.current_or_none()
         if round_ is None or round_.id is None:
             return []
-        statuses = await self.list_for_round(round_.id, now=now)
-        if open_first_if_empty and not statuses:
-            await self.open_next(round_id=round_.id, now=now, force=False)
-            statuses = await self.list_for_round(round_.id, now=now)
-        return statuses
+        return await self.list_for_round(round_.id, now=now)
 
     async def list_for_round(
         self,
@@ -89,26 +83,17 @@ class SubroundService:
         self,
         *,
         now: datetime | None = None,
-        open_first_if_empty: bool = False,
     ) -> SubroundStatus | None:
         """Latest non-over subround for the current round, or ``None``.
 
-        ``None`` when no parent round is open, or when the latest subround is over.
-        With ``open_first_if_empty``, opens sequence 1 only if a round exists and
-        has no subrounds yet — never creates a Round.
+        ``None`` when no parent round is open, when no subrounds exist yet, or
+        when the latest subround is over. Does not create Round or Subround.
         """
         round_ = await self._rounds.current_or_none()
         if round_ is None or round_.id is None:
             return None
         clock = now or datetime.now(UTC)
-        existing = await self._open_editing_for_round(round_.id, clock)
-        if existing is not None:
-            return existing
-        if open_first_if_empty:
-            subrounds = await self._subrounds.list_for_round(round_.id)
-            if not subrounds:
-                return await self.open_next(round_id=round_.id, now=clock, force=False)
-        return None
+        return await self._open_editing_for_round(round_.id, clock)
 
     async def current_or_create_open(
         self,
@@ -117,8 +102,8 @@ class SubroundService:
     ) -> SubroundStatus:
         """Return the open editing subround, creating the next when none / over.
 
-        Requires an open parent Round (manual admin creation). Raises
-        ``SubroundError`` when no round is in progress.
+        Used by ``addmatches`` / ``create=true``. Requires an open parent Round
+        (manual). Raises ``SubroundError`` when no round is in progress.
         """
         round_ = await self._require_current_round()
         assert round_.id is not None

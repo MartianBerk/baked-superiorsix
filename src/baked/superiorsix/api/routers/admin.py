@@ -133,14 +133,11 @@ async def list_subrounds(
 ) -> SubroundsResponse:
     """List subrounds for the current (or given) round.
 
-    With no open parent Round, returns ``{subrounds: []}``. When a round exists
-    but has no subrounds yet, opens sequence 1 for the admin scrubber.
+    Read-only: never creates Round or Subround. No open Round → ``{subrounds: []}``.
     """
     try:
         if round_id is None:
-            statuses = await subround_service.list_for_current_round(
-                open_first_if_empty=True
-            )
+            statuses = await subround_service.list_for_current_round()
         else:
             statuses = await subround_service.list_for_round(round_id)
     except (RoundNotFoundError, SubroundError) as exc:
@@ -158,17 +155,16 @@ async def current_subround(
 ) -> CurrentSubroundResponse:
     """Return the open-for-editing subround.
 
-    Requires an open parent Round (manual admin creation). With no round,
-    ``current_subround`` is ``null``. Pass ``create=true`` to open the next
-    sequence when none exist or the latest is over (400 if no round).
+    Default is read-only (``null`` with no round / no open subround). Pass
+    ``create=true`` to open the next sequence when none exist or the latest is
+    over — **400** ``No round in progress.`` if no parent Round. The usual first
+    subround is created on ``addmatches`` submit instead.
     """
     try:
         if create:
             status_ = await subround_service.current_or_create_open()
         else:
-            status_ = await subround_service.current_open_for_editing(
-                open_first_if_empty=True
-            )
+            status_ = await subround_service.current_open_for_editing()
     except (RoundNotFoundError, SubroundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CurrentSubroundResponse(
