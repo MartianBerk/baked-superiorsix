@@ -89,13 +89,12 @@ def _admin(client: TestClient) -> dict[str, str]:
     return headers
 
 
-def test_fresh_db_bootstraps_round_and_subround(client: TestClient) -> None:
-    """Admin fixtures path works with match data but no prior Round."""
+def test_no_round_listmatches_ok_subround_paths_clear(client: TestClient) -> None:
+    """Fixtures list without a Round; subround open/create requires a Round."""
     sat_id, _, _, sat_day, _, _ = anyio.run(_seed_fixtures, client.app.state.session_factory)
     token, _ = make_access_token(roles=["game-master"])
     headers = auth_header(token)
 
-    # listmatches is independent of round/subround.
     listed = client.get(
         "/admin/listmatches",
         headers=headers,
@@ -104,24 +103,27 @@ def test_fresh_db_bootstraps_round_and_subround(client: TestClient) -> None:
     assert listed.status_code == 200, listed.text
     assert len(listed.json()["matches"]) >= 1
 
-    rounds_before = client.get("/admin/listrounds", headers=headers)
-    assert rounds_before.status_code == 200
-    assert rounds_before.json()["rounds"] == []
+    assert client.get("/admin/listrounds", headers=headers).json()["rounds"] == []
 
     current = client.get("/admin/currentsubround", headers=headers)
-    assert current.status_code == 200, current.text
-    body = current.json()["current_subround"]
-    assert body is not None
-    assert body["sequence"] == 1
-    assert body["is_open_for_editing"] is True
-    assert body["match_count"] == 0
-
-    rounds_after = client.get("/admin/listrounds", headers=headers)
-    assert len(rounds_after.json()["rounds"]) == 1
+    assert current.status_code == 200
+    assert current.json()["current_subround"] is None
 
     subrounds = client.get("/admin/listsubrounds", headers=headers)
     assert subrounds.status_code == 200
-    assert len(subrounds.json()["subrounds"]) == 1
+    assert subrounds.json()["subrounds"] == []
+
+    create = client.get(
+        "/admin/currentsubround",
+        headers=headers,
+        params={"create": "true"},
+    )
+    assert create.status_code == 400
+    assert create.json()["detail"] == "No round in progress."
+
+    opened = client.post("/admin/opensubround", headers=headers)
+    assert opened.status_code == 400
+    assert opened.json()["detail"] == "No round in progress."
 
     submitted = client.post(
         "/admin/addmatches",
@@ -129,14 +131,12 @@ def test_fresh_db_bootstraps_round_and_subround(client: TestClient) -> None:
         params={"matchDate": _fmt(sat_day)},
         json=[{"id": sat_id, "game_number": 1}],
     )
-    assert submitted.status_code == 200, submitted.text
-    assert submitted.json()["matches"][0]["subround_id"] == body["id"]
+    assert submitted.status_code == 400
+    assert submitted.json()["detail"] == "No round in progress."
 
-    # Player list does not bootstrap when no round was opened by admin earlier —
-    # here a round exists, so it returns the slate.
     player = client.get("/game/listsubrounds")
     assert player.status_code == 200
-    assert len(player.json()["subrounds"]) == 1
+    assert player.json()["subrounds"] == []
 
 
 def test_addmatches_attaches_to_open_subround(client: TestClient) -> None:

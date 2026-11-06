@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from baked.superiorsix.domain.exceptions import SubroundNotFoundError
+from baked.superiorsix.domain.exceptions import (
+    RoundNotFoundError,
+    SubroundError,
+    SubroundNotFoundError,
+)
 from baked.superiorsix.domain.models import Match, Subround
 from baked.superiorsix.repositories.matches import MatchRepository
 from baked.superiorsix.repositories.subrounds import SubroundRepository
@@ -41,23 +45,19 @@ class SubroundService:
         self,
         *,
         now: datetime | None = None,
-        ensure: bool = False,
+        open_first_if_empty: bool = False,
     ) -> list[SubroundStatus]:
         """List subrounds for the current pot round.
 
-        When ``ensure`` is True (admin fixtures path), create the first round and
-        an open subround if the DB has none — so a fresh DB still has a scrubber
-        target. Player reads leave ``ensure`` False and get ``[]`` with no round.
+        With no open round, returns ``[]`` (parent Round is created manually).
+        When ``open_first_if_empty`` is True and a round exists with no subrounds,
+        opens sequence 1 so the admin scrubber has a target.
         """
-        if ensure:
-            round_ = await self._ensure_current_round()
-        else:
-            round_ = await self._rounds.current_or_none()
-            if round_ is None or round_.id is None:
-                return []
-        assert round_.id is not None
+        round_ = await self._rounds.current_or_none()
+        if round_ is None or round_.id is None:
+            return []
         statuses = await self.list_for_round(round_.id, now=now)
-        if ensure and not statuses:
+        if open_first_if_empty and not statuses:
             await self.open_next(round_id=round_.id, now=now, force=False)
             statuses = await self.list_for_round(round_.id, now=now)
         return statuses
@@ -89,27 +89,22 @@ class SubroundService:
         self,
         *,
         now: datetime | None = None,
-        ensure: bool = False,
+        open_first_if_empty: bool = False,
     ) -> SubroundStatus | None:
         """Latest non-over subround for the current round, or ``None``.
 
-        With ``ensure=True``, bootstraps a parent round and the first empty
-        subround when the DB has none. Does **not** open a new slate when the
-        latest is already over — use ``current_or_create_open`` / ``create=true``
-        for that.
+        ``None`` when no parent round is open, or when the latest subround is over.
+        With ``open_first_if_empty``, opens sequence 1 only if a round exists and
+        has no subrounds yet — never creates a Round.
         """
+        round_ = await self._rounds.current_or_none()
+        if round_ is None or round_.id is None:
+            return None
         clock = now or datetime.now(UTC)
-        if ensure:
-            round_ = await self._ensure_current_round()
-        else:
-            round_ = await self._rounds.current_or_none()
-            if round_ is None or round_.id is None:
-                return None
-        assert round_.id is not None
         existing = await self._open_editing_for_round(round_.id, clock)
         if existing is not None:
             return existing
-        if ensure:
+        if open_first_if_empty:
             subrounds = await self._subrounds.list_for_round(round_.id)
             if not subrounds:
                 return await self.open_next(round_id=round_.id, now=clock, force=False)
@@ -120,17 +115,17 @@ class SubroundService:
         *,
         now: datetime | None = None,
     ) -> SubroundStatus:
-        """Return the open editing subround, creating round/subround when needed."""
-        round_ = await self._ensure_current_round()
+        """Return the open editing subround, creating the next when none / over.
+
+        Requires an open parent Round (manual admin creation). Raises
+        ``SubroundError`` when no round is in progress.
+        """
+        round_ = await self._require_current_round()
         assert round_.id is not None
         clock = now or datetime.now(UTC)
-        # Look up without re-entering ensure to avoid recursion.
-        subrounds = await self._subrounds.list_for_round(round_.id)
-        editing_id = await self._editing_subround_id(subrounds, clock)
-        if editing_id is not None:
-            for status in await self.list_for_round(round_.id, now=clock):
-                if status.subround.id == editing_id:
-                    return status
+        existing = await self._open_editing_for_round(round_.id, clock)
+        if existing is not None:
+            return existing
         return await self.open_next(round_id=round_.id, now=clock, force=False)
 
     async def open_next(
@@ -142,16 +137,16 @@ class SubroundService:
     ) -> SubroundStatus:
         """Create the next subround sequence for the (current) round.
 
-        When ``force`` is False, refuses if an open editing subround already exists.
+        When ``force`` is False, returns the existing open editing subround if any.
         When ``force`` is True (admin explicit open), creates even if the previous
         slate is still before its max kickoff — previous stays prediction-open but
         is no longer the editing target.
 
-        Bootstraps a parent round when none is open.
+        Requires an open parent Round — never creates one.
         """
         clock = now or datetime.now(UTC)
         if round_id is None:
-            round_ = await self._ensure_current_round()
+            round_ = await self._require_current_round()
             round_id = round_.id
             assert round_id is not None
         else:
@@ -181,13 +176,19 @@ class SubroundService:
         *,
         now: datetime | None = None,
     ) -> Subround:
-        """Open-or-create the editing subround for admin match selection."""
+        """Open-or-create the editing subround for admin match selection.
+
+        Requires an open parent Round.
+        """
         status = await self.current_or_create_open(now=now)
         assert status.subround.id is not None
         return status.subround
 
-    async def _ensure_current_round(self):
-        return await self._rounds.current_or_create()
+    async def _require_current_round(self):
+        try:
+            return await self._rounds.current()
+        except RoundNotFoundError as exc:
+            raise SubroundError("No round in progress.") from exc
 
     async def _open_editing_for_round(
         self,

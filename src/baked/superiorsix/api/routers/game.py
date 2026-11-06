@@ -64,7 +64,7 @@ async def game_list_subrounds(
     Does not bootstrap a round — returns ``[]`` when none is open.
     """
     if round_id is None:
-        statuses = await subround_service.list_for_current_round(ensure=False)
+        statuses = await subround_service.list_for_current_round()
     else:
         statuses = await subround_service.list_for_round(round_id)
     return SubroundsResponse(

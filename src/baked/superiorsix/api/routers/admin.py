@@ -131,10 +131,16 @@ async def list_subrounds(
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
     round_id: Annotated[int | None, Query(alias="roundId")] = None,
 ) -> SubroundsResponse:
-    """List subrounds; bootstraps first round + open subround on a fresh DB."""
+    """List subrounds for the current (or given) round.
+
+    With no open parent Round, returns ``{subrounds: []}``. When a round exists
+    but has no subrounds yet, opens sequence 1 for the admin scrubber.
+    """
     try:
         if round_id is None:
-            statuses = await subround_service.list_for_current_round(ensure=True)
+            statuses = await subround_service.list_for_current_round(
+                open_first_if_empty=True
+            )
         else:
             statuses = await subround_service.list_for_round(round_id)
     except (RoundNotFoundError, SubroundError) as exc:
@@ -152,15 +158,17 @@ async def current_subround(
 ) -> CurrentSubroundResponse:
     """Return the open-for-editing subround.
 
-    Always bootstraps a parent round (and first subround) when the DB has none.
-    Pass ``create=true`` to also open the next sequence when the latest is over.
+    Requires an open parent Round (manual admin creation). With no round,
+    ``current_subround`` is ``null``. Pass ``create=true`` to open the next
+    sequence when none exist or the latest is over (400 if no round).
     """
     try:
         if create:
             status_ = await subround_service.current_or_create_open()
         else:
-            # Fresh DB: ensure round + first subround so admin scrubber is usable.
-            status_ = await subround_service.current_open_for_editing(ensure=True)
+            status_ = await subround_service.current_open_for_editing(
+                open_first_if_empty=True
+            )
     except (RoundNotFoundError, SubroundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CurrentSubroundResponse(
@@ -175,7 +183,7 @@ async def open_subround(
 ) -> SubroundResponse:
     """Force-create the next subround for the current round (editing target).
 
-    Bootstraps a parent round when none is open.
+    Requires an open parent Round — 400 ``No round in progress.`` otherwise.
     """
     try:
         status_ = await subround_service.open_next(force=True)
