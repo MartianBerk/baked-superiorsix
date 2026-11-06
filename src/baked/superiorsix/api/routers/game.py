@@ -14,7 +14,7 @@ from baked.superiorsix.api.schemas import (
     SubroundResponse,
     SubroundsResponse,
 )
-from baked.superiorsix.domain.exceptions import MatchNotFoundError, SubroundError
+from baked.superiorsix.domain.exceptions import MatchNotFoundError
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.subrounds import SubroundService
@@ -59,14 +59,14 @@ async def game_list_subrounds(
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
     round_id: Annotated[int | None, Query(alias="roundId")] = None,
 ) -> SubroundsResponse:
-    """Player-facing subrounds for the current (or given) parent round."""
-    try:
-        if round_id is None:
-            statuses = await subround_service.list_for_current_round()
-        else:
-            statuses = await subround_service.list_for_round(round_id)
-    except SubroundError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    """Player-facing subrounds for the current (or given) parent round.
+
+    Does not bootstrap a round — returns ``[]`` when none is open.
+    """
+    if round_id is None:
+        statuses = await subround_service.list_for_current_round(ensure=False)
+    else:
+        statuses = await subround_service.list_for_round(round_id)
     return SubroundsResponse(
         subrounds=[SubroundResponse.from_status(item) for item in statuses]
     )

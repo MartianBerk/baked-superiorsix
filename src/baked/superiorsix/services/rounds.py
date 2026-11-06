@@ -4,6 +4,9 @@ from baked.superiorsix.domain.exceptions import RoundError, RoundNotFoundError
 from baked.superiorsix.domain.models import Round
 from baked.superiorsix.repositories.rounds import RoundRepository
 
+# Default buy-in when admin match-selection bootstraps a first round on a fresh DB.
+_DEFAULT_BOOTSTRAP_BUY_IN_PENCE = 0
+
 
 class RoundService:
     def __init__(self, rounds: RoundRepository) -> None:
@@ -23,6 +26,21 @@ class RoundService:
 
     async def current_or_none(self) -> Round | None:
         return await self._rounds.current()
+
+    async def current_or_create(
+        self,
+        *,
+        start_date: date | None = None,
+        buy_in_pence: int = _DEFAULT_BOOTSTRAP_BUY_IN_PENCE,
+    ) -> Round:
+        """Return the open round, creating one (today / buy-in 0) if the DB has none."""
+        current = await self.current_or_none()
+        if current is not None:
+            return current
+        return await self.open_round(
+            start_date=start_date or date.today(),
+            buy_in_pence=buy_in_pence,
+        )
 
     async def list(self) -> list[Round]:
         return await self._rounds.list()

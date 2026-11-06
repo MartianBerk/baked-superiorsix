@@ -89,6 +89,56 @@ def _admin(client: TestClient) -> dict[str, str]:
     return headers
 
 
+def test_fresh_db_bootstraps_round_and_subround(client: TestClient) -> None:
+    """Admin fixtures path works with match data but no prior Round."""
+    sat_id, _, _, sat_day, _, _ = anyio.run(_seed_fixtures, client.app.state.session_factory)
+    token, _ = make_access_token(roles=["game-master"])
+    headers = auth_header(token)
+
+    # listmatches is independent of round/subround.
+    listed = client.get(
+        "/admin/listmatches",
+        headers=headers,
+        params={"fromDate": _fmt(sat_day), "toDate": _fmt(sat_day)},
+    )
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()["matches"]) >= 1
+
+    rounds_before = client.get("/admin/listrounds", headers=headers)
+    assert rounds_before.status_code == 200
+    assert rounds_before.json()["rounds"] == []
+
+    current = client.get("/admin/currentsubround", headers=headers)
+    assert current.status_code == 200, current.text
+    body = current.json()["current_subround"]
+    assert body is not None
+    assert body["sequence"] == 1
+    assert body["is_open_for_editing"] is True
+    assert body["match_count"] == 0
+
+    rounds_after = client.get("/admin/listrounds", headers=headers)
+    assert len(rounds_after.json()["rounds"]) == 1
+
+    subrounds = client.get("/admin/listsubrounds", headers=headers)
+    assert subrounds.status_code == 200
+    assert len(subrounds.json()["subrounds"]) == 1
+
+    submitted = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": _fmt(sat_day)},
+        json=[{"id": sat_id, "game_number": 1}],
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["matches"][0]["subround_id"] == body["id"]
+
+    # Player list does not bootstrap when no round was opened by admin earlier —
+    # here a round exists, so it returns the slate.
+    player = client.get("/game/listsubrounds")
+    assert player.status_code == 200
+    assert len(player.json()["subrounds"]) == 1
+
+
 def test_addmatches_attaches_to_open_subround(client: TestClient) -> None:
     sat_id, mon_id, _, sat_day, mon_day, _ = anyio.run(
         _seed_fixtures, client.app.state.session_factory
@@ -97,7 +147,9 @@ def test_addmatches_attaches_to_open_subround(client: TestClient) -> None:
 
     current = client.get("/admin/currentsubround", headers=headers)
     assert current.status_code == 200
-    assert current.json()["current_subround"] is None
+    assert current.json()["current_subround"] is not None
+    assert current.json()["current_subround"]["sequence"] == 1
+    assert current.json()["current_subround"]["match_count"] == 0
 
     first = client.post(
         "/admin/addmatches",
