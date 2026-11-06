@@ -189,6 +189,8 @@ docker compose up --build
 ```
 
 See [`local-dev/README.md`](./local-dev/README.md). Host ports: **8010** / **8020** / **8030**.
+After the stack is healthy, `./seed-dev-data.sh` bootstraps ops, creates three
+players, and runs league + PL/ELC match extract for 2026-10-31…2026-11-07.
 Front end: sibling [`baked-superiorsix-app`](https://github.com/MartianBerk/baked-superiorsix-app) (host Expo).
 
 ## Tests
