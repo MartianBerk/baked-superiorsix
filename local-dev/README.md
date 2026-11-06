@@ -122,6 +122,35 @@ membership are applied **at invite**; acceptinvite only creates the roster.
    invite). No service bootstrap password on accept. Returns player +
    `access_token` + roles.
 
+## Seed local players + fixtures
+
+After the stack is up (and `FOOTBALL_DATA_API_TOKEN` is set in `.env` for
+football-data.org), run:
+
+```bash
+cd baked-superiorsix/local-dev
+chmod +x seed-dev-data.sh   # once
+./seed-dev-data.sh
+```
+
+The script:
+
+1. Waits for auth + superiorsix health on host ports `8010` / `8030`.
+2. Runs `docker compose exec baked-auth baked-auth-bootstrap`.
+3. Invites / claims / accepts **three players** (`alice@`, `bob@`, `cara@example.com`)
+   with role `player` (password `local-dev-player`). Skips emails already on the
+   roster.
+4. Runs the in-container extractors (same CLIs as the root README):
+   - `baked-superiorsix-league-extractor`
+   - `baked-superiorsix-match-extractor -l PL --from 2026-10-31 --to 2026-11-07`
+   - `baked-superiorsix-match-extractor -l ELC --from 2026-10-31 --to 2026-11-07`
+
+Overrides (optional): `SEED_FROM`, `SEED_TO`, `SEED_LEAGUES`, `SEED_PLAYER_PASSWORD`,
+`AUTH_URL`, `SUPERSIX_URL`. Extractors upsert, so re-runs are safe.
+
+Wipe and start clean with `docker compose down -v` if you want a fresh DB
+(no Alembic — recreate volumes is the local reset).
+
 ## Point the Expo app at this stack
 
 Primary path: APIs here, Expo on the **host** in `baked-superiorsix-app`:
