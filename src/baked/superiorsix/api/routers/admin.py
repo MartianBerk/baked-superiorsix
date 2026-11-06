@@ -27,6 +27,7 @@ from baked.superiorsix.api.schemas import (
     BulkSelectMatchItem,
     CurrentRoundResponse,
     CurrentSubroundResponse,
+    EndRoundRequest,
     InvitePlayerRequest,
     InvitePlayerResponse,
     LeagueResponse,
@@ -342,8 +343,14 @@ async def add_round(
 async def end_round(
     _: RequireGameMaster,
     round_service: Annotated[RoundService, Depends(get_round_service)],
+    payload: EndRoundRequest,
     end_date: Annotated[str | None, Query(alias="endDate")] = None,
 ) -> RoundResponse:
+    """Close the open round and record one or more winners.
+
+    Query ``endDate`` (``dd-mm-yyyy``) is required. Body ``winner_ids`` is a
+    non-empty list of roster ``auth_id`` UUIDs (same identity as ``listplayers``).
+    """
     if not end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -351,9 +358,11 @@ async def end_round(
         )
     day = parse_legacy_date(end_date, field_name="endDate")
     try:
-        round_ = await round_service.end_current(day)
+        round_ = await round_service.end_current(day, payload.winner_ids)
     except RoundNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RoundError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return RoundResponse.from_domain(round_)
 
 

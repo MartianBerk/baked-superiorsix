@@ -201,11 +201,18 @@ class OpenRoundRequest(BaseModel):
     buy_in_pence: int = Field(default=0, ge=0)
 
 
+class EndRoundRequest(BaseModel):
+    """Close the open round. ``winner_ids`` are roster ``auth_id`` UUIDs (legacy ``player_id``)."""
+
+    winner_ids: list[UUID] = Field(min_length=1)
+
+
 class RoundResponse(BaseModel):
     id: int
     start_date: date
     end_date: date | None = None
     buy_in_pence: int
+    winner_ids: list[UUID] = Field(default_factory=list)
 
     @classmethod
     def from_domain(cls, round_: Round) -> "RoundResponse":
@@ -215,6 +222,7 @@ class RoundResponse(BaseModel):
             start_date=round_.start_date,
             end_date=round_.end_date,
             buy_in_pence=round_.buy_in_pence,
+            winner_ids=list(round_.winner_ids or []),
         )
 
 

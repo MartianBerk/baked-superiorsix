@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import date
+from uuid import UUID
 
 from baked.superiorsix.domain.exceptions import RoundError, RoundNotFoundError
 from baked.superiorsix.domain.models import Round
@@ -35,7 +38,17 @@ class RoundService:
             raise RoundError("buy_in_pence must be >= 0.")
         return await self._rounds.add(Round(start_date=start_date, buy_in_pence=buy_in_pence))
 
-    async def end_current(self, end_date: date) -> Round:
+    async def end_current(self, end_date: date, winner_ids: list[UUID]) -> Round:
+        """Close the open round with one or more winners (roster auth ids)."""
+        if not winner_ids:
+            raise RoundError("at least one winner_id is required")
+        seen: set[UUID] = set()
+        unique: list[UUID] = []
+        for auth_id in winner_ids:
+            if auth_id in seen:
+                raise RoundError("winner_ids must be unique")
+            seen.add(auth_id)
+            unique.append(auth_id)
         round_ = await self.current()
         round_.end_date = end_date
-        return await self._rounds.save(round_)
+        return await self._rounds.end_with_winners(round_, unique)

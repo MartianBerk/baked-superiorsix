@@ -40,6 +40,15 @@ class RoundRecord(Base):
     buy_in_pence: Mapped[int] = mapped_column(Integer)
 
 
+class RoundWinnerRecord(Base):
+    """Winners for a closed round — keyed by roster ``auth_id`` (not legacy player id)."""
+
+    __tablename__ = "round_winners"
+
+    round_id: Mapped[int] = mapped_column(ForeignKey("rounds.id"), primary_key=True)
+    auth_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+
+
 class SubroundRecord(Base):
     """Admin match-submission slate under a parent ``rounds`` row."""
 
