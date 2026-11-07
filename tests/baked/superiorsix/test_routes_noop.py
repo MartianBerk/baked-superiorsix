@@ -4,9 +4,6 @@ from tests.baked.superiorsix.tokens import auth_header, make_access_token
 # Legacy supersix routes still returning scaffold no-ops.
 PUBLIC_NOOP = [
     ("GET", "/health"),
-    ("GET", "/game/meta"),
-    ("GET", "/game/livescores"),
-    ("GET", "/game/currentround"),
     ("GET", "/game/specialmessage"),
     ("GET", "/stats/aggregate"),
     ("GET", "/stats/winners"),
@@ -23,6 +20,9 @@ PUBLIC_NOOP = [
 ]
 
 IMPLEMENTED_PUBLIC = [
+    ("GET", "/game/meta"),
+    ("GET", "/game/livescores"),
+    ("GET", "/game/currentround"),
     ("GET", "/game/livematches"),
     ("GET", "/game/matchdetail"),
     ("GET", "/game/listsubrounds"),

@@ -8,12 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
+from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.domain.exceptions import RosterNotFoundError
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
 from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
 from baked.superiorsix.repositories.subrounds import SqlAlchemySubroundRepository
+from baked.superiorsix.services.gameday import GamedayService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.predictions import PredictionService
@@ -31,6 +33,7 @@ __all__ = [
     "get_bearer_token",
     "get_current_principal",
     "get_db_session",
+    "get_gameday_service",
     "get_key_set",
     "get_league_service",
     "get_match_service",
@@ -99,6 +102,26 @@ def get_user_profiles(request: Request) -> UserProfileGateway:
 
 def get_auth_admin(request: Request) -> AuthAdminGateway:
     return request.app.state.auth_admin
+
+
+async def get_gameday_service(
+    rounds: Annotated[RoundService, Depends(get_round_service)],
+    subrounds: Annotated[SubroundService, Depends(get_subround_service)],
+    matches: Annotated[MatchService, Depends(get_match_service)],
+    predictions: Annotated[PredictionService, Depends(get_prediction_service)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GamedayService:
+    return GamedayService(
+        rounds=rounds,
+        subrounds=subrounds,
+        matches=matches,
+        predictions=predictions,
+        profiles=profiles,
+        auth_admin=auth_admin,
+        settings=settings,
+    )
 
 
 def get_bearer_token(request: Request) -> str:
