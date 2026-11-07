@@ -20,6 +20,7 @@ from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
+from baked.superiorsix.services.stats import StatsService
 from baked.superiorsix.services.subrounds import SubroundService
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "get_prediction_service",
     "get_round_service",
     "get_session_factory",
+    "get_stats_service",
     "get_subround_service",
     "get_user_profiles",
     "require_active_player",
@@ -118,6 +120,20 @@ async def get_gameday_service(
         subrounds=subrounds,
         matches=matches,
         predictions=predictions,
+        profiles=profiles,
+        auth_admin=auth_admin,
+        settings=settings,
+    )
+
+
+async def get_stats_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StatsService:
+    return StatsService(
+        session,
         profiles=profiles,
         auth_admin=auth_admin,
         settings=settings,

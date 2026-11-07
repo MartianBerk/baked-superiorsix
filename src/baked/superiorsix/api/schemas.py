@@ -604,3 +604,82 @@ class PlayerResponse(BaseModel):
 
 class PlayersResponse(BaseModel):
     players: list[PlayerResponse]
+
+
+class AggregateScorePoint(BaseModel):
+    """One scored match-day for a player."""
+
+    name: str
+    date: date
+    score: int
+    matches: int
+
+
+class AggregatePlayerStats(BaseModel):
+    """Player success-rate row. ``playerid`` is roster ``auth_id``."""
+
+    playerid: UUID
+    name: str
+    correct: int
+    matches: int
+    success_rate: float
+    scores: list[AggregateScorePoint] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, row: object) -> "AggregatePlayerStats":
+        from baked.superiorsix.services.stats import PlayerAggregate
+
+        assert isinstance(row, PlayerAggregate)
+        return cls(
+            playerid=row.auth_id,
+            name=row.name,
+            correct=row.correct,
+            matches=row.matches,
+            success_rate=row.success_rate,
+            scores=[
+                AggregateScorePoint(
+                    name=score.name,
+                    date=score.match_date,
+                    score=score.correct,
+                    matches=score.matches,
+                )
+                for score in row.scores
+            ],
+        )
+
+
+class AggregateStatsResponse(BaseModel):
+    stats: list[AggregatePlayerStats]
+
+
+class HistoricRoundResponse(BaseModel):
+    """One closed round in the full winners archive."""
+
+    round_id: int
+    start_date: date
+    end_date: date
+    matches: int
+    players: int
+    jackpot: int
+    winner: str
+    winner_ids: list[UUID] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, row: object) -> "HistoricRoundResponse":
+        from baked.superiorsix.services.stats import HistoricRound
+
+        assert isinstance(row, HistoricRound)
+        return cls(
+            round_id=row.round_id,
+            start_date=row.start_date,
+            end_date=row.end_date,
+            matches=row.matches,
+            players=row.players,
+            jackpot=row.jackpot,
+            winner=row.winner,
+            winner_ids=list(row.winner_ids),
+        )
+
+
+class HistoricRoundsResponse(BaseModel):
+    rounds: list[HistoricRoundResponse]

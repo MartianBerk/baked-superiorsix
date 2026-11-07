@@ -1,0 +1,333 @@
+"""Player success-rate aggregates (n−1 round) and full historic winners (SS-18)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date
+from uuid import UUID
+
+from sqlalchemy import case, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from baked.superiorsix.clients.auth_admin import AuthAdminGateway
+from baked.superiorsix.clients.user_profiles import RosterProfile, UserProfileGateway
+from baked.superiorsix.core.config import Settings
+from baked.superiorsix.db.models import (
+    MatchRecord,
+    PredictionRecord,
+    RoundRecord,
+    RoundWinnerRecord,
+)
+from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError
+from baked.superiorsix.domain.models import MatchStatus, PredictionChoice
+from baked.superiorsix.services.matches import day_bounds
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerDayScore:
+    """One player's scored match-day within the previous round."""
+
+    round_id: int
+    auth_id: UUID
+    name: str
+    match_date: date
+    matches: int
+    correct: int
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerAggregate:
+    """Aggregate row with totals + optional day breakdown (previous round only)."""
+
+    auth_id: UUID
+    name: str
+    correct: int
+    matches: int
+    success_rate: float
+    scores: list[PlayerDayScore] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricRound:
+    """Closed round winners summary (full multi-round archive)."""
+
+    round_id: int
+    start_date: date
+    end_date: date
+    matches: int
+    players: int
+    jackpot: int
+    winner: str
+    winner_ids: list[UUID]
+
+
+def display_name(profile: RosterProfile) -> str:
+    """Aggregate/winner label: ``first last``."""
+    return f"{profile.first_name} {profile.last_name}".strip() or str(profile.auth_id)
+
+
+def success_rate(*, correct: int, matches: int) -> float:
+    if matches <= 0:
+        return 0.0
+    return round((correct / matches) * 100.0, 2)
+
+
+class StatsService:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        profiles: UserProfileGateway,
+        auth_admin: AuthAdminGateway,
+        settings: Settings,
+    ) -> None:
+        self._session = session
+        self._profiles = profiles
+        self._auth_admin = auth_admin
+        self._settings = settings
+
+    async def aggregate(
+        self,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        bearer_token: str | None = None,
+    ) -> list[PlayerAggregate]:
+        """Success-rate aggregates for the previous closed round only (n−1).
+
+        Not the full score history — only the most recently closed round.
+        Optional ``start_date`` / ``end_date`` further filter match days.
+        Inactive roster profiles are excluded.
+        """
+        roster = await self._load_roster(bearer_token=bearer_token, active=True)
+        by_auth = {profile.auth_id: profile for profile in roster}
+        if not by_auth:
+            return []
+
+        previous = await self._previous_closed_round()
+        if previous is None:
+            return []
+
+        day_rows = await self._day_scores(
+            auth_ids=list(by_auth.keys()),
+            round_ids=[previous.id],
+            start_date=start_date,
+            end_date=end_date,
+        )
+        grouped: dict[UUID, list[PlayerDayScore]] = {}
+        for row in day_rows:
+            name = display_name(by_auth[row.auth_id])
+            score = PlayerDayScore(
+                round_id=row.round_id,
+                auth_id=row.auth_id,
+                name=name,
+                match_date=row.match_date,
+                matches=row.matches,
+                correct=row.correct,
+            )
+            grouped.setdefault(row.auth_id, []).append(score)
+
+        aggregates: list[PlayerAggregate] = []
+        for auth_id, scores in grouped.items():
+            correct = sum(item.correct for item in scores)
+            matches = sum(item.matches for item in scores)
+            aggregates.append(
+                PlayerAggregate(
+                    auth_id=auth_id,
+                    name=display_name(by_auth[auth_id]),
+                    correct=correct,
+                    matches=matches,
+                    success_rate=success_rate(correct=correct, matches=matches),
+                    scores=scores,
+                )
+            )
+        aggregates.sort(key=lambda row: (-row.success_rate, row.name.lower(), str(row.auth_id)))
+        return aggregates
+
+    async def historic_rounds(self, *, bearer_token: str | None = None) -> list[HistoricRound]:
+        """Full closed-round winners archive (legacy HISTORIC_ROUNDS)."""
+        roster = await self._load_roster(bearer_token=bearer_token, active=None)
+        names = {profile.auth_id: display_name(profile) for profile in roster}
+
+        rounds_result = await self._session.execute(
+            select(RoundRecord)
+            .where(RoundRecord.end_date.is_not(None))
+            .order_by(RoundRecord.start_date.desc())
+        )
+        closed = list(rounds_result.scalars().all())
+        if not closed:
+            return []
+
+        round_ids = [record.id for record in closed]
+
+        winners_result = await self._session.execute(
+            select(RoundWinnerRecord.round_id, RoundWinnerRecord.auth_id).where(
+                RoundWinnerRecord.round_id.in_(round_ids)
+            )
+        )
+        winners_by_round: dict[int, list[UUID]] = {}
+        for round_id, auth_id in winners_result.all():
+            winners_by_round.setdefault(int(round_id), []).append(auth_id)
+
+        players_result = await self._session.execute(
+            select(PredictionRecord.round_id, func.count(func.distinct(PredictionRecord.auth_id)))
+            .where(PredictionRecord.round_id.in_(round_ids))
+            .group_by(PredictionRecord.round_id)
+        )
+        players_by_round = {int(round_id): int(count) for round_id, count in players_result.all()}
+
+        match_day = func.date(MatchRecord.match_date)
+        match_days_by_round: dict[int, int] = {}
+        for record in closed:
+            assert record.end_date is not None
+            start, _ = day_bounds(record.start_date)
+            _, end = day_bounds(record.end_date)
+            day_count = await self._session.scalar(
+                select(func.count(func.distinct(match_day))).where(
+                    MatchRecord.use_match.is_(True),
+                    MatchRecord.match_date >= start,
+                    MatchRecord.match_date < end,
+                )
+            )
+            match_days_by_round[record.id] = int(day_count or 0)
+
+        historic: list[HistoricRound] = []
+        for record in closed:
+            assert record.end_date is not None
+            winner_ids = sorted(winners_by_round.get(record.id, []), key=str)
+            winner_labels = [
+                names.get(auth_id) or str(auth_id)
+                for auth_id in sorted(
+                    winner_ids,
+                    key=lambda aid: (names.get(aid) or str(aid)).lower(),
+                )
+            ]
+            players = players_by_round.get(record.id, 0)
+            matches = match_days_by_round.get(record.id, 0)
+            historic.append(
+                HistoricRound(
+                    round_id=record.id,
+                    start_date=record.start_date,
+                    end_date=record.end_date,
+                    matches=matches,
+                    players=players,
+                    jackpot=record.buy_in_pence * matches * players,
+                    winner=" & ".join(winner_labels),
+                    winner_ids=winner_ids,
+                )
+            )
+        return historic
+
+    async def _day_scores(
+        self,
+        *,
+        auth_ids: list[UUID],
+        round_ids: list[int],
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> list[PlayerDayScore]:
+        if not auth_ids or not round_ids:
+            return []
+
+        correct_expr = case(
+            (
+                (PredictionRecord.prediction == PredictionChoice.HOME)
+                & (MatchRecord.home_score > MatchRecord.away_score),
+                1,
+            ),
+            (
+                (PredictionRecord.prediction == PredictionChoice.AWAY)
+                & (MatchRecord.away_score > MatchRecord.home_score),
+                1,
+            ),
+            (
+                (PredictionRecord.prediction == PredictionChoice.DRAW)
+                & (MatchRecord.home_score == MatchRecord.away_score),
+                1,
+            ),
+            else_=0,
+        )
+        match_day = func.date(MatchRecord.match_date)
+        stmt = (
+            select(
+                PredictionRecord.round_id,
+                PredictionRecord.auth_id,
+                match_day.label("match_day"),
+                func.count(MatchRecord.id).label("matches"),
+                func.coalesce(func.sum(correct_expr), 0).label("correct"),
+            )
+            .join(MatchRecord, MatchRecord.id == PredictionRecord.match_id)
+            .where(
+                PredictionRecord.dropped.is_(False),
+                MatchRecord.use_match.is_(True),
+                MatchRecord.status == MatchStatus.FINISHED,
+                PredictionRecord.auth_id.in_(auth_ids),
+                PredictionRecord.round_id.in_(round_ids),
+            )
+            .group_by(PredictionRecord.round_id, PredictionRecord.auth_id, match_day)
+            .order_by(match_day, PredictionRecord.auth_id)
+        )
+        if start_date is not None:
+            start, _ = day_bounds(start_date)
+            stmt = stmt.where(MatchRecord.match_date >= start)
+        if end_date is not None:
+            _, end = day_bounds(end_date)
+            stmt = stmt.where(MatchRecord.match_date < end)
+
+        result = await self._session.execute(stmt)
+        rows: list[PlayerDayScore] = []
+        for round_id, auth_id, match_day_raw, matches, correct in result.all():
+            rows.append(
+                PlayerDayScore(
+                    round_id=int(round_id),
+                    auth_id=auth_id,
+                    name="",
+                    match_date=_as_date(match_day_raw),
+                    matches=int(matches),
+                    correct=int(correct),
+                )
+            )
+        return rows
+
+    async def _previous_closed_round(self) -> RoundRecord | None:
+        result = await self._session.execute(
+            select(RoundRecord)
+            .where(RoundRecord.end_date.is_not(None))
+            .order_by(RoundRecord.end_date.desc(), RoundRecord.id.desc())
+        )
+        return result.scalars().first()
+
+    async def _load_roster(
+        self,
+        *,
+        bearer_token: str | None,
+        active: bool | None,
+    ) -> list[RosterProfile]:
+        token = bearer_token or await self._service_token()
+        if token is None:
+            return []
+        try:
+            return await self._profiles.list_profiles(token, active=active)
+        except RosterError:
+            return []
+
+    async def _service_token(self) -> str | None:
+        email = self._settings.auth_admin_email
+        password = self._settings.auth_admin_password
+        if not email or password is None:
+            return None
+        try:
+            return await self._auth_admin.login_user(
+                email=email,
+                password=password.get_secret_value(),
+                audience=self._settings.jwt_audience,
+            )
+        except AuthAdminError:
+            return None
+
+
+def _as_date(value: object) -> date:
+    if isinstance(value, date):
+        return value
+    text = str(value)
+    return date.fromisoformat(text[:10])
