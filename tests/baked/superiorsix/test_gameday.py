@@ -243,6 +243,7 @@ def test_livescores_scores_predictions_and_live_flag(
     assert body["subround"]["id"] == subround_id
     assert body["matches"][0]["status"] == MatchStatus.IN_PLAY, body["matches"]
     assert body["matches"][0]["home_score"] == 1
+    assert body["matches"][0]["match_minute"] == 35
     assert body["live"] is True
     assert body["next_kickoff"] is not None
     assert len(body["scores"]) == 2
@@ -255,9 +256,11 @@ def test_livescores_scores_predictions_and_live_flag(
     assert ada["matches"][0]["correct"] is True
     assert ada["matches"][0]["home_score"] == 1
     assert ada["matches"][0]["away_score"] == 0
+    assert ada["matches"][0]["match_minute"] == 35
     assert ada["matches"][1]["home_score"] is None
     assert ada["matches"][1]["prediction"] is None
     assert bob["matches"][0]["correct"] is False
+    assert bob["matches"][0]["match_minute"] == 35
 
     by_date = client.get(
         "/game/livescores",
@@ -269,3 +272,128 @@ def test_livescores_scores_predictions_and_live_flag(
     by_sub = client.get("/game/livescores", params={"subroundId": subround_id})
     assert by_sub.status_code == 200, by_sub.text
     assert by_sub.json()["match_count"] == 2
+
+
+def test_livescores_computes_match_minute_when_provider_null(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+) -> None:
+    """football-data live rows store null minute — derive from kickoff for FE n'."""
+    admin = _admin_headers()
+    kickoff = datetime.now(UTC) - timedelta(minutes=20)
+    fixture = anyio.run(
+        partial(
+            _seed_fixture,
+            client.app.state.session_factory,
+            external_id="gameday-computed-minute",
+            home="Spurs",
+            away="West Ham",
+            kickoff=kickoff,
+        )
+    )
+
+    opened = client.post(
+        "/admin/addround",
+        headers=admin,
+        json={"start_date": date.today().isoformat(), "buy_in_pence": 100},
+    )
+    assert opened.status_code == 200, opened.text
+
+    selected = client.post(
+        "/admin/addmatch",
+        headers=admin,
+        json={"id": fixture.id, "game_number": 1},
+    )
+    assert selected.status_code == 200, selected.text
+
+    async def _go_live(session_factory: async_sessionmaker[AsyncSession]) -> None:
+        async with session_factory() as session:
+            matches = MatchService(
+                SqlAlchemyMatchRepository(session),
+                LeagueService(
+                    SqlAlchemyLeagueRepository(session),
+                    SqlAlchemyMatchRepository(session),
+                ),
+            )
+            await matches.apply_score_update(
+                match_id=fixture.id,
+                status=MatchStatus.IN_PLAY,
+                home_score=0,
+                away_score=0,
+                match_minute=None,
+            )
+
+    anyio.run(_go_live, client.app.state.session_factory)
+
+    _, player_id = make_access_token(roles=["player"])
+    user_profiles.seed(player_id, first_name="Pat", last_name="Player", nickname="Pat")
+
+    board = client.get("/game/livescores")
+    assert board.status_code == 200, board.text
+    body = board.json()
+    assert body["matches"][0]["status"] == MatchStatus.IN_PLAY
+    minute = body["matches"][0]["match_minute"]
+    assert minute is not None
+    assert 19 <= minute <= 23, minute
+    assert body["scores"][0]["matches"][0]["match_minute"] == minute
+
+
+def test_livescores_half_time_window_keeps_match_minute_null(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+) -> None:
+    admin = _admin_headers()
+    kickoff = datetime.now(UTC) - timedelta(minutes=50)
+    fixture = anyio.run(
+        partial(
+            _seed_fixture,
+            client.app.state.session_factory,
+            external_id="gameday-ht-null-minute",
+            home="Brighton",
+            away="Fulham",
+            kickoff=kickoff,
+        )
+    )
+
+    opened = client.post(
+        "/admin/addround",
+        headers=admin,
+        json={"start_date": date.today().isoformat(), "buy_in_pence": 100},
+    )
+    assert opened.status_code == 200, opened.text
+    assert (
+        client.post(
+            "/admin/addmatch",
+            headers=admin,
+            json={"id": fixture.id, "game_number": 1},
+        ).status_code
+        == 200
+    )
+
+    async def _go_live(session_factory: async_sessionmaker[AsyncSession]) -> None:
+        async with session_factory() as session:
+            matches = MatchService(
+                SqlAlchemyMatchRepository(session),
+                LeagueService(
+                    SqlAlchemyLeagueRepository(session),
+                    SqlAlchemyMatchRepository(session),
+                ),
+            )
+            await matches.apply_score_update(
+                match_id=fixture.id,
+                status=MatchStatus.IN_PLAY,
+                home_score=1,
+                away_score=1,
+                match_minute=None,
+            )
+
+    anyio.run(_go_live, client.app.state.session_factory)
+
+    _, player_id = make_access_token(roles=["player"])
+    user_profiles.seed(player_id, first_name="Pat", last_name="Player", nickname="Pat")
+
+    board = client.get("/game/livescores")
+    assert board.status_code == 200, board.text
+    body = board.json()
+    assert body["matches"][0]["match_minute"] is None
+    assert body["scores"][0]["matches"][0]["match_minute"] is None

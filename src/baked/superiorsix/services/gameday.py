@@ -10,6 +10,7 @@ from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import RosterProfile, UserProfileGateway
 from baked.superiorsix.core.config import Settings
 from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError, SubroundNotFoundError
+from baked.superiorsix.domain.match_clock import resolve_match_minute
 from baked.superiorsix.domain.models import Match, MatchStatus, Prediction, PredictionChoice, Round
 from baked.superiorsix.services.matches import MatchService, day_bounds
 from baked.superiorsix.services.predictions import PredictionService
@@ -333,7 +334,7 @@ def build_live_scores_board(
                     away_score=match.away_score,
                     status=match.status,
                     match_date=match.match_date,
-                    match_minute=match.match_minute,
+                    match_minute=resolve_match_minute(match, now=now),
                     prediction=choice,
                     correct=correct,
                 )
