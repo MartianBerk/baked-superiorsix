@@ -61,9 +61,15 @@ def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
     away = (raw.get("awayTeam") or {}).get("name")
     if not home or not away:
         return None
-    score = (raw.get("score") or {}).get("fullTime") or {}
+    score_block = raw.get("score") or {}
+    score = score_block.get("fullTime") or {}
     home_score = score.get("home")
     away_score = score.get("away")
+    matchday_raw = raw.get("matchday")
+    matchday = int(matchday_raw) if matchday_raw is not None else None
+    extra_time, penalties = _parse_et_pens_flags(score_block)
+    minute_raw = raw.get("minute")
+    match_minute = int(minute_raw) if minute_raw is not None else None
     return MatchPayload(
         external_id=f"fd-{match_id}",
         match_date=match_date,
@@ -72,7 +78,34 @@ def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
         away_team=away,
         home_score=int(home_score) if home_score is not None else None,
         away_score=int(away_score) if away_score is not None else None,
+        match_minute=match_minute,
+        matchday=matchday,
+        extra_time=extra_time,
+        penalties=penalties,
     )
+
+
+def _parse_et_pens_flags(score_block: dict[str, Any]) -> tuple[bool | None, bool | None]:
+    """Derive ET / pens booleans from football-data ``score`` (legacy Euro Wizard).
+
+    A side having a non-null ET or pens value means that phase was played.
+    Returns ``(None, None)`` when the feed omits both blocks (league fixtures).
+    """
+    et_block = score_block.get("extraTime")
+    pens_block = score_block.get("penalties")
+    if et_block is None and pens_block is None:
+        return None, None
+
+    def _phase_played(block: Any) -> bool:
+        if not isinstance(block, dict):
+            return False
+        # v4 uses home/away; legacy connector used homeTeam/awayTeam.
+        return any(
+            block.get(key) is not None
+            for key in ("home", "away", "homeTeam", "awayTeam")
+        )
+
+    return _phase_played(et_block or {}), _phase_played(pens_block or {})
 
 
 class FootballDataConnector:

@@ -5,6 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from baked.superiorsix.domain.match_clock import resolve_match_minute
 from baked.superiorsix.domain.models import (
+    EurosMatch,
+    EurosPrediction,
+    EurosScoreRow,
+    EurosTournament,
     League,
     Match,
     MatchDetail,
@@ -690,3 +694,156 @@ class HistoricRoundResponse(BaseModel):
 
 class HistoricRoundsResponse(BaseModel):
     rounds: list[HistoricRoundResponse]
+
+
+# --- Euro Wizard (SS-19) ---
+
+
+class EurosMatchResponse(BaseModel):
+    """Public /euros/matches row (legacy shape + ET/pens flags)."""
+
+    id: int
+    home_team: str
+    away_team: str
+    home_score: int | None = None
+    away_score: int | None = None
+    status: str
+    match_minute: int | None = None
+    match_date: datetime
+    matchday: int
+    extra_time: bool = False
+    penalties: bool = False
+    use_match: bool = True
+
+    @classmethod
+    def from_domain(cls, match: EurosMatch) -> "EurosMatchResponse":
+        assert match.id is not None
+        return cls(
+            id=match.id,
+            home_team=match.home_team,
+            away_team=match.away_team,
+            home_score=match.home_score,
+            away_score=match.away_score,
+            status=match.status,
+            match_minute=match.match_minute,
+            match_date=match.match_date,
+            matchday=match.matchday,
+            extra_time=match.extra_time,
+            penalties=match.penalties,
+            use_match=match.use_match,
+        )
+
+
+class EurosMatchesResponse(BaseModel):
+    matches: list[EurosMatchResponse]
+
+
+class EurosScoreResponse(BaseModel):
+    player: str
+    score: int
+    bonus: int
+    total: int
+    auth_id: UUID | None = None
+
+    @classmethod
+    def from_domain(cls, row: EurosScoreRow) -> "EurosScoreResponse":
+        return cls(
+            player=row.player,
+            score=row.score,
+            bonus=row.bonus,
+            total=row.total,
+            auth_id=row.auth_id,
+        )
+
+
+class EurosScoresResponse(BaseModel):
+    scores: list[EurosScoreResponse]
+
+
+class EurosPredictionResponse(BaseModel):
+    id: int
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    plus_ninety: bool = False
+    extra_time: bool = False
+    penalties: bool = False
+    dropped: bool = False
+
+    @classmethod
+    def from_domain(cls, prediction: EurosPrediction) -> "EurosPredictionResponse":
+        assert prediction.id is not None
+        return cls(
+            id=prediction.id,
+            auth_id=prediction.auth_id,
+            match_id=prediction.match_id,
+            prediction=prediction.prediction,
+            plus_ninety=prediction.plus_ninety,
+            extra_time=prediction.extra_time,
+            penalties=prediction.penalties,
+            dropped=prediction.dropped,
+        )
+
+
+class EurosPredictionsResponse(BaseModel):
+    predictions: list[EurosPredictionResponse]
+
+
+class EurosGetPredictionResponse(BaseModel):
+    """Legacy getprediction: full prediction object or ``{"prediction": null}``."""
+
+    prediction: EurosPredictionResponse | None = None
+
+
+class EurosAddPredictionRequest(BaseModel):
+    game_id: int
+    prediction: str
+    extra_time: bool | None = None
+    penalties: bool | None = None
+
+
+class EurosTournamentResponse(BaseModel):
+    id: int
+    competition_code: str
+    label: str
+    start_date: date
+    end_date: date | None = None
+    buy_in_pence: int
+    entrant_count: int
+    prize_pot_pence: int
+
+    @classmethod
+    def from_domain(cls, tournament: EurosTournament) -> "EurosTournamentResponse":
+        assert tournament.id is not None
+        return cls(
+            id=tournament.id,
+            competition_code=tournament.competition_code,
+            label=tournament.label,
+            start_date=tournament.start_date,
+            end_date=tournament.end_date,
+            buy_in_pence=tournament.buy_in_pence,
+            entrant_count=tournament.entrant_count,
+            prize_pot_pence=tournament.buy_in_pence * tournament.entrant_count,
+        )
+
+
+class EurosMetaResponse(BaseModel):
+    open: bool
+    buy_in_pence: int
+    entrant_count: int
+    prize_pot_pence: int
+    tournament: EurosTournamentResponse | None = None
+
+
+class EurosMetaEnvelope(BaseModel):
+    meta: EurosMetaResponse
+
+
+class OpenEurosTournamentRequest(BaseModel):
+    start_date: date
+    buy_in_pence: int = Field(default=0, ge=0)
+    label: str = "European Championship"
+
+
+class EndEurosTournamentRequest(BaseModel):
+    end_date: date | None = None

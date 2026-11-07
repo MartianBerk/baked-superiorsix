@@ -3,14 +3,19 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from baked.superiorsix.domain.models import League, Match
+from baked.superiorsix.domain.models import EurosMatch, League, Match
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
 from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload
 from baked.superiorsix.process.extractors.connectors.football_data import (
     TOURNAMENT_CATALOG_CODES,
     FootballDataConnector,
 )
+from baked.superiorsix.process.extractors.euros import (
+    EUROS_COMPETITION_CODE,
+    EurosMatchExtractor,
+)
 from baked.superiorsix.process.extractors.match import MatchExtractor
+from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.ingest import MatchIngestService
 from baked.superiorsix.services.leagues import LeagueService
 
@@ -21,9 +26,10 @@ class TournamentExtractor:
     """Port of legacy euros/world-cup *league* catalog ingest — focused.
 
     Upserts football-data cup / international tournament rows (FAC, EC, WC) into
-    the shared ``leagues`` table. Fixture pulls reuse :class:`MatchExtractor`
-    (football-data path). Does not revive Flashscore / Selenium score agents or
-    the side-game WorldCupMatch tables (SS-19 / SS-20).
+    the shared ``leagues`` table. FAC fixture pulls reuse :class:`MatchExtractor`
+    (Super Six ``matches``). EC fixtures go to isolated ``euros_matches`` via
+    :class:`EurosMatchExtractor` when an :class:`EurosService` is supplied.
+    World Cup side-game tables remain SS-20.
     """
 
     def __init__(
@@ -35,9 +41,11 @@ class TournamentExtractor:
         goal_api_key: str | None = None,
         codes: frozenset[str] | None = None,
         http: JsonHttpClient | None = None,
+        euros: EurosService | None = None,
     ) -> None:
         self._ingest = ingest
         self._leagues = leagues
+        self._euros = euros
         self._football_data_token = football_data_token
         self._goal_api_key = goal_api_key
         self._codes = frozenset(
@@ -81,13 +89,29 @@ class TournamentExtractor:
         date_from: date,
         date_to: date,
         live: bool = False,
-    ) -> list[Match]:
+    ) -> list[Match] | list[EurosMatch]:
         code = league_code.strip().upper()
         if code not in TOURNAMENT_CATALOG_CODES:
             raise ValueError(
                 f"League '{code}' is not a tournament code "
                 f"(supported: {', '.join(sorted(TOURNAMENT_CATALOG_CODES))})."
             )
+        if code == EUROS_COMPETITION_CODE:
+            if self._euros is None:
+                raise ValueError(
+                    "Euros fixture ingest requires an EurosService "
+                    "(writes euros_matches, not Super Six matches)."
+                )
+            extractor = EurosMatchExtractor(
+                self._euros,
+                self._leagues,
+                football_data_token=self._football_data_token,
+                date_from=date_from,
+                date_to=date_to,
+                live=live,
+                http=self._http,
+            )
+            return await extractor.process()
         extractor = MatchExtractor(
             self._ingest,
             self._leagues,
