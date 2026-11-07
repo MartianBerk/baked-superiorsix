@@ -19,6 +19,21 @@ class PredictionRepository(Protocol):
         match_id: int,
     ) -> Prediction | None: ...
 
+    async def get_row(
+        self,
+        *,
+        round_id: int,
+        auth_id: UUID,
+        match_id: int,
+    ) -> Prediction | None: ...
+
+    async def list_active_for_matches(
+        self,
+        *,
+        round_id: int,
+        match_ids: list[int],
+    ) -> list[Prediction]: ...
+
     async def add(self, prediction: Prediction) -> Prediction: ...
 
     async def save(self, prediction: Prediction) -> Prediction: ...
@@ -49,6 +64,41 @@ class SqlAlchemyPredictionRepository:
         )
         record = result.scalar_one_or_none()
         return _to_domain(record) if record else None
+
+    async def get_row(
+        self,
+        *,
+        round_id: int,
+        auth_id: UUID,
+        match_id: int,
+    ) -> Prediction | None:
+        """Return the prediction row even when soft-dropped (unique key)."""
+        result = await self._session.execute(
+            select(PredictionRecord).where(
+                PredictionRecord.round_id == round_id,
+                PredictionRecord.auth_id == auth_id,
+                PredictionRecord.match_id == match_id,
+            )
+        )
+        record = result.scalar_one_or_none()
+        return _to_domain(record) if record else None
+
+    async def list_active_for_matches(
+        self,
+        *,
+        round_id: int,
+        match_ids: list[int],
+    ) -> list[Prediction]:
+        if not match_ids:
+            return []
+        result = await self._session.execute(
+            select(PredictionRecord).where(
+                PredictionRecord.round_id == round_id,
+                PredictionRecord.match_id.in_(match_ids),
+                PredictionRecord.dropped.is_(False),
+            )
+        )
+        return [_to_domain(record) for record in result.scalars().all()]
 
     async def add(self, prediction: Prediction) -> Prediction:
         record = PredictionRecord(

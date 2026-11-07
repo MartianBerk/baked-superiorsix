@@ -15,6 +15,12 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
   ``GET /admin/listmatches`` / ``GET /admin/getmatch`` include the same field.
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
+- Admin predictions (JWT `admin`; SS-17): `GET /admin/listpredictionsnew` —
+  flat `predictions` (SS-27 / `?matchdate=dd-mm-yyyy`) plus `players` with
+  `prediction_count` / slate size (`subroundId` or current open subround),
+  `GET /admin/listpredictions?authId=`, `POST /admin/addprediction` /
+  `POST /admin/addpredictions` (on behalf of a player; cutoff not enforced,
+  legacy parity), `GET /admin/dropprediction?id=` (soft-drop)
 - Roster (proxied to baked-user by auth `sub`):
   `GET /admin/listplayers`, `POST /admin/inviteplayer`, `POST /admin/addplayer`,
   `GET /admin/dropplayer?authId=`, `GET /admin/reactivateplayer?authId=`,

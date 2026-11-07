@@ -9,6 +9,14 @@ from baked.superiorsix.services.rounds import RoundService
 
 _CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
+_CHOICE_ALIASES = {
+    "h": PredictionChoice.HOME,
+    "home": PredictionChoice.HOME,
+    "a": PredictionChoice.AWAY,
+    "away": PredictionChoice.AWAY,
+    "d": PredictionChoice.DRAW,
+    "draw": PredictionChoice.DRAW,
+}
 
 
 class PredictionService:
@@ -37,6 +45,17 @@ class PredictionService:
             match_id=match_id,
         )
 
+    async def list_active_for_matches(
+        self,
+        *,
+        round_id: int,
+        match_ids: list[int],
+    ) -> list[Prediction]:
+        return await self._predictions.list_active_for_matches(
+            round_id=round_id,
+            match_ids=match_ids,
+        )
+
     async def submit(
         self,
         *,
@@ -44,6 +63,7 @@ class PredictionService:
         match_id: int,
         prediction: str,
         now: datetime | None = None,
+        enforce_cutoff: bool = True,
     ) -> Prediction:
         choice = _parse_user_choice(prediction)
         round_ = await self._require_current_round()
@@ -52,19 +72,21 @@ class PredictionService:
         if not match.use_match:
             raise PredictionError("Match is not selected for Super Six.")
 
-        slate_kickoff = await self._earliest_kickoff_for_match(match)
-        cutoff_at = (now or datetime.now(UTC)) + _CUTOFF
-        if cutoff_at >= slate_kickoff:
-            raise PredictionError("Past cutoff for prediction set.")
+        if enforce_cutoff:
+            slate_kickoff = await self._earliest_kickoff_for_match(match)
+            cutoff_at = (now or datetime.now(UTC)) + _CUTOFF
+            if cutoff_at >= slate_kickoff:
+                raise PredictionError("Past cutoff for prediction set.")
 
         assert round_.id is not None
-        existing = await self._predictions.get_active(
+        existing = await self._predictions.get_row(
             round_id=round_.id,
             auth_id=auth_id,
             match_id=match_id,
         )
         if existing is not None:
             existing.prediction = choice.value
+            existing.dropped = False
             return await self._predictions.save(existing)
 
         return await self._predictions.add(
@@ -75,6 +97,36 @@ class PredictionService:
                 prediction=choice.value,
             )
         )
+
+    async def submit_for_admin(
+        self,
+        *,
+        auth_id: UUID,
+        match_id: int,
+        prediction: str,
+        now: datetime | None = None,
+    ) -> Prediction:
+        """Admin submit on behalf of a player.
+
+        Legacy admin ``addprediction`` never enforced the player cutoff; keep that
+        convenience so ops can correct picks after lock.
+        """
+        return await self.submit(
+            auth_id=auth_id,
+            match_id=match_id,
+            prediction=prediction,
+            now=now,
+            enforce_cutoff=False,
+        )
+
+    async def drop(self, prediction_id: int) -> Prediction:
+        prediction = await self._predictions.get(prediction_id)
+        if prediction is None:
+            raise PredictionError(f"Prediction {prediction_id} not found.")
+        if prediction.dropped:
+            return prediction
+        prediction.dropped = True
+        return await self._predictions.save(prediction)
 
     async def _earliest_kickoff_for_match(self, match: Match) -> datetime:
         """Earliest kickoff among selected fixtures in the match's subround.
@@ -122,10 +174,8 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _parse_user_choice(value: str) -> PredictionChoice:
-    try:
-        choice = PredictionChoice(value)
-    except ValueError as exc:
-        raise PredictionError("prediction must be one of: home, away, draw.") from exc
-    if choice not in _USER_CHOICES:
-        raise PredictionError("prediction must be one of: home, away, draw.")
+    normalized = value.strip().lower()
+    choice = _CHOICE_ALIASES.get(normalized)
+    if choice is None or choice not in _USER_CHOICES:
+        raise PredictionError("prediction must be one of: home, away, draw (or H/D/A).")
     return choice

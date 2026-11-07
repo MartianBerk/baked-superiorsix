@@ -16,12 +16,20 @@ from baked.superiorsix.api.deps import (
     get_bearer_token,
     get_league_service,
     get_match_service,
+    get_prediction_service,
     get_round_service,
     get_subround_service,
     get_user_profiles,
 )
 from baked.superiorsix.api.schemas import (
     AddPlayerRequest,
+    AdminAddPredictionRequest,
+    AdminBulkAddPredictionItem,
+    AdminFlatPredictionResponse,
+    AdminPlayerPickResponse,
+    AdminPlayerPredictionsResponse,
+    AdminPredictionBoardResponse,
+    AdminPredictionsListResponse,
     BulkSelectMatchItem,
     CurrentRoundResponse,
     CurrentSubroundResponse,
@@ -36,6 +44,7 @@ from baked.superiorsix.api.schemas import (
     PlayerRolesResponse,
     PlayerResponse,
     PlayersResponse,
+    PredictionResponse,
     RoundResponse,
     SelectMatchRequest,
     SubroundResponse,
@@ -49,6 +58,7 @@ from baked.superiorsix.domain.exceptions import (
     AuthAdminError,
     MatchNotFoundError,
     MatchSelectionError,
+    PredictionError,
     RosterError,
     RosterNotFoundError,
     RoundError,
@@ -56,11 +66,13 @@ from baked.superiorsix.domain.exceptions import (
     SubroundError,
     SubroundNotFoundError,
 )
+from baked.superiorsix.domain.models import Match, Prediction
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService, day_bounds
+from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
-from baked.superiorsix.services.subrounds import SubroundService
+from baked.superiorsix.services.subrounds import SubroundService, SubroundStatus
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -72,6 +84,166 @@ def _roster_http_error(exc: RosterError) -> HTTPException:
     if "invite" in detail:
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+def _pick_from_prediction(
+    prediction: Prediction,
+    matches_by_id: dict[int, Match],
+) -> AdminPlayerPickResponse:
+    assert prediction.id is not None
+    match = matches_by_id.get(prediction.match_id)
+    return AdminPlayerPickResponse(
+        id=prediction.id,
+        match_id=prediction.match_id,
+        game_number=None if match is None else match.game_number,
+        prediction=prediction.prediction,
+        home_team=None if match is None else match.home_team,
+        away_team=None if match is None else match.away_team,
+        match_date=None if match is None else match.match_date,
+    )
+
+
+def _flat_from_prediction(
+    prediction: Prediction,
+    matches_by_id: dict[int, Match],
+    *,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    nickname: str | None = None,
+) -> AdminFlatPredictionResponse:
+    assert prediction.id is not None
+    match = matches_by_id.get(prediction.match_id)
+    return AdminFlatPredictionResponse(
+        id=prediction.id,
+        round_id=prediction.round_id,
+        auth_id=prediction.auth_id,
+        match_id=prediction.match_id,
+        prediction=prediction.prediction,
+        game_number=None if match is None else match.game_number,
+        home_team=None if match is None else match.home_team,
+        away_team=None if match is None else match.away_team,
+        match_date=None if match is None else match.match_date,
+        first_name=first_name,
+        last_name=last_name,
+        nickname=nickname,
+    )
+
+
+def _build_admin_board(
+    *,
+    status_: SubroundStatus | None,
+    matches: list[Match],
+    predictions: list[Prediction],
+    roster: list,
+) -> AdminPredictionBoardResponse:
+    match_count = len(matches)
+    matches_by_id = {match.id: match for match in matches if match.id is not None}
+    profiles_by_auth = {profile.auth_id: profile for profile in roster}
+
+    flat: list[AdminFlatPredictionResponse] = []
+    by_auth: dict[UUID, list[Prediction]] = {}
+    for prediction in predictions:
+        profile = profiles_by_auth.get(prediction.auth_id)
+        flat.append(
+            _flat_from_prediction(
+                prediction,
+                matches_by_id,
+                first_name=None if profile is None else profile.first_name,
+                last_name=None if profile is None else profile.last_name,
+                nickname=None if profile is None else profile.nickname,
+            )
+        )
+        by_auth.setdefault(prediction.auth_id, []).append(prediction)
+    flat.sort(
+        key=lambda row: (
+            (row.last_name or "").lower(),
+            (row.first_name or "").lower(),
+            row.game_number is None,
+            row.game_number or 0,
+            row.match_id,
+        )
+    )
+
+    players: list[AdminPlayerPredictionsResponse] = []
+    for profile in sorted(
+        roster,
+        key=lambda item: (
+            (item.last_name or "").lower(),
+            (item.first_name or "").lower(),
+            str(item.auth_id),
+        ),
+    ):
+        picks = [
+            _pick_from_prediction(prediction, matches_by_id)
+            for prediction in by_auth.get(profile.auth_id, [])
+        ]
+        picks.sort(
+            key=lambda pick: (pick.game_number is None, pick.game_number or 0, pick.match_id)
+        )
+        players.append(
+            AdminPlayerPredictionsResponse(
+                auth_id=profile.auth_id,
+                id=profile.id,
+                first_name=profile.first_name,
+                last_name=profile.last_name,
+                nickname=profile.nickname,
+                email=profile.email,
+                avatar_url=profile.avatar_url,
+                active=profile.active,
+                prediction_count=len(picks),
+                match_count=match_count,
+                predictions=picks,
+            )
+        )
+
+    return AdminPredictionBoardResponse(
+        predictions=flat,
+        subround=None if status_ is None else SubroundResponse.from_status(status_),
+        match_count=match_count,
+        matches=[MatchResponse.from_domain(match) for match in matches],
+        players=players,
+    )
+
+
+def _sorted_slate_matches(matches: list[Match]) -> list[Match]:
+    return sorted(
+        matches,
+        key=lambda match: (
+            match.game_number is None,
+            match.game_number or 0,
+            match.match_date,
+        ),
+    )
+
+
+async def _resolve_admin_slate(
+    *,
+    subround_service: SubroundService,
+    match_service: MatchService,
+    subround_id: int | None,
+) -> tuple[SubroundStatus | None, list[Match]]:
+    if subround_id is not None:
+        try:
+            subround = await subround_service.get(subround_id)
+            statuses = await subround_service.list_for_round(subround.round_id)
+        except SubroundNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        except (RoundNotFoundError, SubroundError) as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        status_ = next((item for item in statuses if item.subround.id == subround_id), None)
+        if status_ is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Subround {subround_id} not found.",
+            )
+        matches = await match_service.selected_matches_for_subround(subround_id)
+        return status_, _sorted_slate_matches(matches)
+
+    status_ = await subround_service.current_open_for_editing()
+    if status_ is None or status_.subround.id is None:
+        return None, []
+    matches = await match_service.selected_matches_for_subround(status_.subround.id)
+    return status_, _sorted_slate_matches(matches)
 
 
 @router.get("/listleagues", response_model=LeaguesResponse)
@@ -189,19 +361,155 @@ async def open_subround(
     return SubroundResponse.from_status(status_)
 
 
-@router.get("/listpredictions")
-async def list_predictions(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/listpredictions", response_model=AdminPredictionsListResponse)
+async def list_predictions(
+    _: RequireAdmin,
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    auth_id: Annotated[UUID | None, Query(alias="authId")] = None,
+    subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
+) -> AdminPredictionsListResponse:
+    """Flat picks for one player on the current (or given) subround slate.
+
+    Query ``authId`` is required (legacy ``playerid`` → roster ``auth_id``).
+    """
+    if auth_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing mandatory value for authId.",
+        )
+
+    status_, matches = await _resolve_admin_slate(
+        subround_service=subround_service,
+        match_service=match_service,
+        subround_id=subround_id,
+    )
+    if status_ is None:
+        return AdminPredictionsListResponse(predictions=[])
+    match_ids = [match.id for match in matches if match.id is not None]
+    if not match_ids:
+        return AdminPredictionsListResponse(predictions=[])
+
+    matches_by_id = {match.id: match for match in matches if match.id is not None}
+    predictions = await prediction_service.list_active_for_matches(
+        round_id=status_.subround.round_id,
+        match_ids=match_ids,
+    )
+    picks = [
+        _pick_from_prediction(prediction, matches_by_id)
+        for prediction in predictions
+        if prediction.auth_id == auth_id
+    ]
+    picks.sort(key=lambda pick: (pick.game_number is None, pick.game_number or 0, pick.match_id))
+    return AdminPredictionsListResponse(predictions=picks)
 
 
-@router.get("/listpredictionsnew")
-async def list_predictions_new(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/listpredictionsnew", response_model=AdminPredictionBoardResponse)
+async def list_predictions_new(
+    _: RequireAdmin,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
+    round_service: Annotated[RoundService, Depends(get_round_service)],
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
+    match_date: Annotated[str | None, Query(alias="matchdate")] = None,
+) -> AdminPredictionBoardResponse:
+    """Predictions for a match day or subround slate.
+
+    SS-27 reads the flat ``predictions`` array (``?matchdate=dd-mm-yyyy``).
+    ``players`` includes ``prediction_count`` / slate size for richer boards.
+    Without ``matchdate`` / ``subroundId``, uses the open-for-editing subround.
+    """
+    try:
+        roster = await profiles.list_profiles(token, active=True)
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+
+    if match_date is not None:
+        day = parse_legacy_date(match_date, field_name="matchdate")
+        matches = _sorted_slate_matches(
+            await match_service.list_on_date(day, available_only=True)
+        )
+        round_ = await round_service.current_or_none()
+        if round_ is None or round_.id is None or not matches:
+            return _build_admin_board(
+                status_=None,
+                matches=matches,
+                predictions=[],
+                roster=roster,
+            )
+        match_ids = [match.id for match in matches if match.id is not None]
+        predictions = await prediction_service.list_active_for_matches(
+            round_id=round_.id,
+            match_ids=match_ids,
+        )
+        status_: SubroundStatus | None = None
+        subround_ids = {match.subround_id for match in matches if match.subround_id is not None}
+        if len(subround_ids) == 1:
+            only_id = next(iter(subround_ids))
+            status_, _ = await _resolve_admin_slate(
+                subround_service=subround_service,
+                match_service=match_service,
+                subround_id=only_id,
+            )
+        return _build_admin_board(
+            status_=status_,
+            matches=matches,
+            predictions=predictions,
+            roster=roster,
+        )
+
+    status_, matches = await _resolve_admin_slate(
+        subround_service=subround_service,
+        match_service=match_service,
+        subround_id=subround_id,
+    )
+    if status_ is None:
+        return _build_admin_board(
+            status_=None,
+            matches=[],
+            predictions=[],
+            roster=roster,
+        )
+
+    match_ids = [match.id for match in matches if match.id is not None]
+    predictions = await prediction_service.list_active_for_matches(
+        round_id=status_.subround.round_id,
+        match_ids=match_ids,
+    )
+    return _build_admin_board(
+        status_=status_,
+        matches=matches,
+        predictions=predictions,
+        roster=roster,
+    )
 
 
-@router.post("/addprediction")
-async def add_prediction(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.post("/addprediction", response_model=PredictionResponse)
+async def add_prediction(
+    _: RequireAdmin,
+    payload: AdminAddPredictionRequest,
+    prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
+) -> PredictionResponse:
+    """Submit or update a Home/Draw/Away pick on behalf of a player.
+
+    Admin bypasses the player 10-minute cutoff (legacy admin behaviour).
+    ``prediction`` accepts ``home``/``draw``/``away`` or ``H``/``D``/``A``.
+    """
+    try:
+        prediction = await prediction_service.submit_for_admin(
+            auth_id=payload.auth_id,
+            match_id=payload.match_id,
+            prediction=payload.prediction,
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PredictionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return PredictionResponse.from_domain(prediction)
 
 
 @router.post(
@@ -585,14 +893,46 @@ async def drop_match(
     return MatchResponse.from_domain(match)
 
 
-@router.post("/addpredictions")
-async def add_predictions(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.post("/addpredictions", response_model=dict[str, list[PredictionResponse]])
+async def add_predictions(
+    _: RequireAdmin,
+    payload: Annotated[list[AdminBulkAddPredictionItem], Body()],
+    prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
+) -> dict[str, list[PredictionResponse]]:
+    """Bulk admin submit (legacy ``addpredictions``). Cutoff is not enforced."""
+    created: list[PredictionResponse] = []
+    try:
+        for item in payload:
+            prediction = await prediction_service.submit_for_admin(
+                auth_id=item.auth_id,
+                match_id=item.match_id,
+                prediction=item.prediction,
+            )
+            created.append(PredictionResponse.from_domain(prediction))
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PredictionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"predictions": created}
 
 
-@router.get("/dropprediction")
-async def drop_prediction(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/dropprediction", response_model=PredictionResponse)
+async def drop_prediction(
+    _: RequireAdmin,
+    prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
+    prediction_id: Annotated[int | None, Query(alias="id")] = None,
+) -> PredictionResponse:
+    """Soft-drop a prediction so admin can clear a mistaken pick."""
+    if prediction_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="missing id",
+        )
+    try:
+        prediction = await prediction_service.drop(prediction_id)
+    except PredictionError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return PredictionResponse.from_domain(prediction)
 
 
 @router.post("/setspecialmessage")

@@ -195,8 +195,29 @@ class _FakePredictions:
         self._by_key: dict[tuple[int, object, int], Prediction] = {}
         self._next_id = 1
 
+    async def get(self, prediction_id: int) -> Prediction | None:
+        for prediction in self._by_key.values():
+            if prediction.id == prediction_id:
+                return prediction
+        return None
+
     async def get_active(self, *, round_id: int, auth_id, match_id: int) -> Prediction | None:
+        prediction = self._by_key.get((round_id, auth_id, match_id))
+        if prediction is None or prediction.dropped:
+            return None
+        return prediction
+
+    async def get_row(self, *, round_id: int, auth_id, match_id: int) -> Prediction | None:
         return self._by_key.get((round_id, auth_id, match_id))
+
+    async def list_active_for_matches(
+        self, *, round_id: int, match_ids: list[int]
+    ) -> list[Prediction]:
+        return [
+            prediction
+            for (stored_round, _auth, match_id), prediction in self._by_key.items()
+            if stored_round == round_id and match_id in match_ids and not prediction.dropped
+        ]
 
     async def add(self, prediction: Prediction) -> Prediction:
         prediction.id = self._next_id
