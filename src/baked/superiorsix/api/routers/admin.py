@@ -41,7 +41,6 @@ from baked.superiorsix.api.schemas import (
     SubroundResponse,
     SubroundsResponse,
     UpdatePlayerRolesRequest,
-    merge_preserved_membership_roles,
     with_always_grant_invite_roles,
 )
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
@@ -332,26 +331,15 @@ async def update_player_roles(
     payload: UpdatePlayerRolesRequest,
     auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
 ) -> PlayerRolesResponse:
-    """Replace assignable membership roles; preserve bootstrap ``admin`` (SS-76).
+    """Replace assignable membership roles (SS-76 / SS-98).
 
     Uses server-side ``SUPERIORSIX_AUTH_ADMIN_*`` for baked-auth
-    ``PUT /v1/applications/{slug}/memberships/{email}``. Real ``admin`` is never
-    assignable from the app — only preserved when already present.
+    ``PUT /v1/applications/{slug}/memberships/{email}``. App-scoped ``admin``
+    is assignable via the same chip set as invite; ``user-profile`` is always
+    granted.
     """
     settings = request.app.state.settings
-    selected = with_always_grant_invite_roles(list(payload.roles))
-    existing_roles: list[str] = []
-    try:
-        existing = await auth_admin.get_membership(
-            email=payload.email,
-            application=settings.jwt_audience,
-        )
-        existing_roles = list(existing.roles)
-    except AuthAdminError:
-        # New / missing membership: set selected roles only.
-        existing_roles = []
-
-    roles = merge_preserved_membership_roles(selected, existing_roles)
+    roles = with_always_grant_invite_roles(list(payload.roles))
     try:
         membership = await auth_admin.set_membership(
             email=payload.email,

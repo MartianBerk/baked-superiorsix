@@ -269,12 +269,9 @@ class CurrentSubroundResponse(BaseModel):
 
 
 # Selectable permission chips (invite + roster role edit). `user-profile` is
-# always granted. Superiorsix ``admin`` is never assignable here — only via
-# bootstrap / direct auth membership PUT.
-INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros"})
+# always granted. App-scoped ``admin`` is assignable by any superiorsix admin.
+INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros", "admin"})
 ALWAYS_GRANT_INVITE_ROLES: tuple[str, ...] = ("user-profile",)
-# Roles the app must preserve on update but never offer as chips (bootstrap ops).
-PRESERVE_MEMBERSHIP_ROLES = frozenset({"admin"})
 # Tolerate legacy clients that still send always-grant roles in the request body.
 _INVITE_ROLE_INPUT_ALLOWED = INVITE_ALLOWED_ROLES | frozenset(ALWAYS_GRANT_INVITE_ROLES)
 
@@ -293,8 +290,7 @@ def with_always_grant_invite_roles(roles: list[str]) -> list[str]:
 def normalize_assignable_roles(value: list[str]) -> list[str]:
     """Validate selectable roles and merge always-granted ones.
 
-    Rejects ``admin`` and any other non-chip role. Callers that update an
-    existing membership should re-attach preserved roles separately.
+    Rejects any non-chip role (legacy ``game-master``, unknown strings, etc.).
     """
     seen: set[str] = set()
     out: list[str] = []
@@ -319,25 +315,6 @@ def normalize_assignable_roles(value: list[str]) -> list[str]:
             f"(plus always-granted: {', '.join(ALWAYS_GRANT_INVITE_ROLES)})."
         )
     return with_always_grant_invite_roles(out)
-
-
-def merge_preserved_membership_roles(
-    selected: list[str],
-    existing: list[str] | None,
-) -> list[str]:
-    """Keep bootstrap-only roles (e.g. ``admin``) when replacing assignable chips."""
-    merged = list(selected)
-    seen = {role.strip().lower() for role in merged if role and role.strip()}
-    for role in existing or []:
-        normalized = role.strip().lower()
-        if (
-            normalized
-            and normalized in PRESERVE_MEMBERSHIP_ROLES
-            and normalized not in seen
-        ):
-            merged.append(normalized)
-            seen.add(normalized)
-    return merged
 
 
 class InvitePlayerRequest(BaseModel):
