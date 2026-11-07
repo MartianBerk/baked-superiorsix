@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC, date, datetime, time, timedelta
 
 from baked.superiorsix.domain.exceptions import MatchNotFoundError, MatchSelectionError
+from baked.superiorsix.domain.match_status import coalesce_forward_status, is_status_regression
 from baked.superiorsix.domain.models import (
     LeagueTableEntry,
     Match,
@@ -12,6 +14,8 @@ from baked.superiorsix.domain.models import (
 from baked.superiorsix.repositories.matches import MatchRepository
 from baked.superiorsix.services.difficulty import calculate_match_difficulty
 from baked.superiorsix.services.leagues import LeagueService
+
+logger = logging.getLogger(__name__)
 
 
 class MatchService:
@@ -66,6 +70,10 @@ class MatchService:
 
         Preserves Super Six selection fields (``use_match`` / ``game_number`` /
         ``subround_id``) when an existing row is updated from a feed.
+
+        Match status only moves forward along the lifecycle (see
+        ``coalesce_forward_status``). Regressive feed statuses are ignored; when
+        that happens, null incoming scores / minute do not wipe stored values.
         """
         existing = await self._matches.get_by_external_id(match.external_id)
         if existing is None:
@@ -75,6 +83,21 @@ class MatchService:
         match.use_match = existing.use_match
         match.game_number = existing.game_number
         match.subround_id = existing.subround_id
+        incoming_status = match.status
+        if is_status_regression(existing.status, incoming_status):
+            logger.warning(
+                "rejecting regressive match status external_id=%s current=%s incoming=%s",
+                match.external_id,
+                existing.status,
+                incoming_status,
+            )
+            if match.home_score is None:
+                match.home_score = existing.home_score
+            if match.away_score is None:
+                match.away_score = existing.away_score
+            if match.match_minute is None:
+                match.match_minute = existing.match_minute
+        match.status = coalesce_forward_status(existing.status, incoming_status)
         return await self._matches.save(match)
 
     async def apply_score_update(
@@ -87,8 +110,24 @@ class MatchService:
         away_score: int | None = None,
         match_minute: int | None = None,
     ) -> Match:
-        """Process ingest path: live or final score updates."""
+        """Process ingest path: live or final score updates.
+
+        Status updates are forward-only; scores / minute still apply when the
+        incoming status would otherwise regress.
+        """
         match = await self._resolve(external_id=external_id, match_id=match_id)
+        if is_status_regression(match.status, status):
+            logger.warning(
+                "rejecting regressive score status match_id=%s external_id=%s "
+                "current=%s incoming=%s",
+                match.id,
+                match.external_id,
+                match.status,
+                status,
+            )
+            status = match.status
+        else:
+            status = coalesce_forward_status(match.status, status)
         match.status = status
         if home_score is not None:
             match.home_score = home_score
