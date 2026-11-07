@@ -40,7 +40,7 @@ def user_profiles() -> FakeUserProfileClient:
 def auth_admin() -> FakeAuthAdminClient:
     fake = FakeAuthAdminClient()
     fake.register("ops@example.com", "local-dev-change-me")
-    fake.memberships["ops@example.com"] = ["admin", "game-master", "user-profile"]
+    fake.memberships["ops@example.com"] = ["admin", "user-profile"]
     return fake
 
 

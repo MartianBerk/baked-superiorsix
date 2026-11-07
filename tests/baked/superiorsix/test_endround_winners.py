@@ -6,7 +6,7 @@ from tests.baked.superiorsix.tokens import auth_header, make_access_token
 
 
 def _admin_headers() -> dict[str, str]:
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     return auth_header(token)
 
 

@@ -37,9 +37,9 @@ password, then accepts the roster invite.
 1. As superiorsix `admin`, invite an email + roles:
    `POST /admin/inviteplayer`
    `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
-   Selectable: `player`, `worldcup`, `euros`, `game-master` (UI label “Admin”).
-   Real baked-auth `admin` is **not** assignable here. `user-profile` is
-   **always granted** server-side (not a selectable chip).
+   Selectable: `player`, `worldcup`, `euros`.
+   Superiorsix `admin` is **not** assignable here (bootstrap / direct auth only).
+   `user-profile` is **always granted** server-side (not a selectable chip).
    BFF (server-side `SUPERIORSIX_AUTH_ADMIN_*`, `aud=auth`):
    `POST` baked-auth `/v1/users` with membership → then baked-user roster invite.
    Edit rostered roles later via `GET /admin/getplayerroles?email=` and
@@ -164,7 +164,7 @@ Set `SUPERIORSIX_JWT_SECRET_KEY` to the same value as `AUTH_JWT_SECRET_KEY` (and
 keep previous secrets in `SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS` during rotation).
 Set `SUPERIORSIX_JWT_AUDIENCE=superiorsix` so bearer tokens must carry matching
 JWT `aud`. Roles are app-scoped and lowercase: `player`, `admin`,
-`game-master`, `user-profile`, `euros`, `worldcup`. Request tokens from baked-auth
+`user-profile`, `euros`, `worldcup`. Request tokens from baked-auth
 with `audience=superiorsix` after a membership has been granted.
 
 Point `SUPERIORSIX_USER_SERVICE_URL` at baked-user (default `http://127.0.0.1:8001`)

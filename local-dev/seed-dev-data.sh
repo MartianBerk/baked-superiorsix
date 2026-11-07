@@ -62,14 +62,6 @@ accept_invite_json() {
   python3 -c 'import json,sys; print(json.dumps({"email":sys.argv[1],"password":sys.argv[2],"first_name":sys.argv[3],"last_name":sys.argv[4],"nickname":sys.argv[5]}))' "$@"
 }
 
-membership_roles_json() {
-  python3 -c 'import json,sys; print(json.dumps({"roles":sys.argv[1:]}))' "$@"
-}
-
-urlencode() {
-  python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
-}
-
 invite_already_accepted() {
   python3 -c 'import json,sys; d=str(json.loads(sys.argv[1]).get("detail","")).lower(); raise SystemExit(0 if ("already accepted" in d or "already exists" in d) else 1)' "$1" 2>/dev/null
 }
@@ -182,27 +174,6 @@ seed_player() {
   log "created player $email"
 }
 
-# inviteplayer only allows player/worldcup/euros (+ always-grant user-profile).
-# game-master is granted via baked-auth membership PUT (aud=auth admin).
-grant_superiorsix_roles() {
-  local token="$1"
-  local email="$2"
-  shift 2
-  local encoded body code http
-  encoded="$(urlencode "$email")"
-  log "set superiorsix membership $email → $*"
-  body="$(curl -sS -w '\n%{http_code}' -X PUT \
-    "$AUTH_URL/v1/applications/superiorsix/memberships/$encoded" \
-    -H "Authorization: Bearer $token" \
-    -H 'Content-Type: application/json' \
-    -d "$(membership_roles_json "$@")")"
-  code="${body##*$'\n'}"
-  http="${body%$'\n'*}"
-  if [[ "$code" != "200" ]]; then
-    die "set membership failed for $email ($code): $http"
-  fi
-}
-
 run_extractors() {
   log "league extractor"
   docker compose exec -T baked-superiorsix baked-superiorsix-league-extractor
@@ -242,13 +213,6 @@ main() {
     seed_player "$ops_token" "$email" "$first" "$last" "$nick"
   done
 
-  # Bob is also a local game-master for admin/match-day testing (alice/cara stay players).
-  log "login ops ($OPS_EMAIL, audience=auth) for membership grant"
-  local auth_admin_token
-  auth_admin_token="$(auth_token "$OPS_EMAIL" "$OPS_PASSWORD" auth)"
-  grant_superiorsix_roles "$auth_admin_token" "bob@example.com" \
-    player game-master user-profile
-
   run_extractors
 
   log "done"
@@ -256,9 +220,10 @@ main() {
 
 Seeded players (password: $PLAYER_PASSWORD):
   alice@example.com  (player)
-  bob@example.com    (player, game-master)
+  bob@example.com    (player)
   cara@example.com   (player)
 
+Ops ($OPS_EMAIL) has superiorsix admin via bootstrap for match-day / roster admin.
 Fixtures: leagues [$LEAGUES] from $DATE_FROM to $DATE_TO (upsert).
 EOF
 }

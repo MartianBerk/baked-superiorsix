@@ -23,9 +23,7 @@ from baked.superiorsix.services.subrounds import SubroundService
 __all__ = [
     "RequireActivePlayer",
     "RequireAdmin",
-    "RequireAdminOrGameMaster",
     "RequireEuros",
-    "RequireGameMaster",
     "RequirePlayer",
     "RequireUserProfile",
     "RequireWorldcup",
@@ -117,15 +115,9 @@ def get_bearer_token(request: Request) -> str:
 # App-scoped Superior Six roles (JWT aud=superiorsix). Lowercase; hyphen for multi-word.
 RequirePlayer = Annotated[AuthPrincipal, Depends(require_roles("player"))]
 RequireAdmin = Annotated[AuthPrincipal, Depends(require_roles("admin"))]
-RequireGameMaster = Annotated[AuthPrincipal, Depends(require_roles("game-master"))]
 RequireUserProfile = Annotated[AuthPrincipal, Depends(require_roles("user-profile"))]
 RequireEuros = Annotated[AuthPrincipal, Depends(require_roles("euros"))]
 RequireWorldcup = Annotated[AuthPrincipal, Depends(require_roles("worldcup"))]
-# Roster/list views used by both user-admin and match-day operators.
-RequireAdminOrGameMaster = Annotated[
-    AuthPrincipal,
-    Depends(require_roles("admin", "game-master")),
-]
 
 
 async def require_active_player(

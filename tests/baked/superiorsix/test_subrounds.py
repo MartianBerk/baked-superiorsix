@@ -78,7 +78,7 @@ def _fmt(day: date) -> str:
 
 
 def _admin(client: TestClient) -> dict[str, str]:
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
     opened = client.post(
         "/admin/addround",
@@ -92,7 +92,7 @@ def _admin(client: TestClient) -> dict[str, str]:
 def test_no_round_listmatches_ok_subround_paths_clear(client: TestClient) -> None:
     """Fixtures list without a Round; subround open/create requires a Round."""
     sat_id, _, _, sat_day, _, _ = anyio.run(_seed_fixtures, client.app.state.session_factory)
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
 
     listed = client.get(

@@ -103,29 +103,10 @@ def test_addplayer_requires_admin(client: TestClient) -> None:
     assert response.status_code == 403
 
 
-def test_game_master_can_list_players(client: TestClient) -> None:
-    admin_token, _ = make_access_token(roles=["admin"])
-    auth_id = uuid4()
-    client.post(
-        "/admin/inviteplayer",
-        headers=auth_header(admin_token),
-        json={"email": "gmplayer", "email": "gm@example.com"},
-    )
-    created = client.post(
-        "/admin/addplayer",
-        headers=auth_header(admin_token),
-        json={
-            "auth_id": str(auth_id),
-            "first_name": "A",
-            "last_name": "B",
-            "email": "gm@example.com",
-        },
-    )
-    assert created.status_code == 201
-    gm_token, _ = make_access_token(roles=["game-master"])
-    listed = client.get("/admin/listplayers", headers=auth_header(gm_token))
-    assert listed.status_code == 200
-    assert listed.json()["players"][0]["auth_id"] == str(auth_id)
+def test_list_players_requires_admin(client: TestClient) -> None:
+    token, _ = make_access_token(roles=["player"])
+    listed = client.get("/admin/listplayers", headers=auth_header(token))
+    assert listed.status_code == 403
 
 
 def test_update_details_patches_profile(
@@ -386,7 +367,7 @@ def test_accept_invite_requires_pending_invite(
     assert response.status_code == 403
 
 
-def test_inviteplayer_allows_game_master_role(client: TestClient) -> None:
+def test_inviteplayer_rejects_game_master_role(client: TestClient) -> None:
     admin_token, _ = make_access_token(roles=["admin"])
     invited = client.post(
         "/admin/inviteplayer",
@@ -398,8 +379,7 @@ def test_inviteplayer_allows_game_master_role(client: TestClient) -> None:
             "roles": ["player", "game-master"],
         },
     )
-    assert invited.status_code == 201, invited.text
-    assert invited.json()["roles"] == ["player", "game-master", "user-profile"]
+    assert invited.status_code == 422
 
 
 def test_update_and_get_player_roles_preserves_admin(
@@ -425,15 +405,16 @@ def test_update_and_get_player_roles_preserves_admin(
     updated = client.post(
         "/admin/updateroles",
         headers=admin,
-        json={"email": email, "roles": ["player", "worldcup", "game-master"]},
+        json={"email": email, "roles": ["player", "worldcup", "euros"]},
     )
     assert updated.status_code == 200, updated.text
     roles = updated.json()["roles"]
     assert "admin" in roles
     assert "player" in roles
     assert "worldcup" in roles
-    assert "game-master" in roles
+    assert "euros" in roles
     assert "user-profile" in roles
+    assert "game-master" not in roles
     assert auth_admin.memberships[email] == roles
 
 

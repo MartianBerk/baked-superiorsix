@@ -60,7 +60,7 @@ def test_user_prediction_end_to_end(
     fixture = anyio.run(_seed_selected_fixture, client.app.state.session_factory)
     assert fixture.id is not None
 
-    admin_token, _ = make_access_token(roles=["game-master"])
+    admin_token, _ = make_access_token(roles=["admin"])
     admin = auth_header(admin_token)
 
     opened = client.post(
