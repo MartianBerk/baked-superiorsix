@@ -225,6 +225,8 @@ class SqlAlchemyMatchRepository:
             away_score=match.away_score,
             game_number=match.game_number,
             subround_id=match.subround_id,
+            difficulty_score=match.difficulty_score,
+            difficulty_band=match.difficulty_band,
             last_updated=now,
         )
         self._session.add(record)
@@ -250,6 +252,8 @@ class SqlAlchemyMatchRepository:
         record.away_score = match.away_score
         record.game_number = match.game_number
         record.subround_id = match.subround_id
+        record.difficulty_score = match.difficulty_score
+        record.difficulty_band = match.difficulty_band
         record.last_updated = _stamp_now()
         await self._session.commit()
         await self._session.refresh(record)
@@ -272,4 +276,6 @@ def _to_domain(record: MatchRecord) -> Match:
         game_number=record.game_number,
         last_updated=_as_utc(record.last_updated),
         subround_id=record.subround_id,
+        difficulty_score=record.difficulty_score,
+        difficulty_band=record.difficulty_band,
     )

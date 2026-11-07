@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -92,6 +93,9 @@ class MatchRecord(Base):
         nullable=True,
         index=True,
     )
+    # Frozen once first computed (SS-125); later ingest / recalc must not overwrite.
+    difficulty_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    difficulty_band: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

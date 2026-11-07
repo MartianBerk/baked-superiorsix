@@ -49,6 +49,9 @@ class Match:
     game_number: int | None = None
     last_updated: datetime | None = None
     subround_id: int | None = None
+    # Persisted prediction difficulty (SS-125). Once both are set they are immutable.
+    difficulty_score: float | None = None
+    difficulty_band: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
