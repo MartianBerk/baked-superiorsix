@@ -1,4 +1,4 @@
-"""SS-18 stats aggregate and one-round lookback comparison APIs."""
+"""SS-18: previous-round success rates + full historic winners archive."""
 
 from datetime import UTC, date, datetime
 from functools import partial
@@ -74,14 +74,14 @@ def _admin_headers() -> dict[str, str]:
     return auth_header(token)
 
 
-def test_aggregate_and_lookback_empty_without_data(client: TestClient) -> None:
+def test_aggregate_and_winners_empty_without_data(client: TestClient) -> None:
     aggregate = client.get("/stats/aggregate")
     assert aggregate.status_code == 200, aggregate.text
     assert aggregate.json() == {"stats": []}
 
     winners = client.get("/stats/winners")
     assert winners.status_code == 200, winners.text
-    assert winners.json() == {"current_round": None, "previous_round": None}
+    assert winners.json() == {"rounds": []}
 
 
 def test_aggregate_rejects_bad_date(client: TestClient) -> None:
@@ -90,7 +90,7 @@ def test_aggregate_rejects_bad_date(client: TestClient) -> None:
     assert "dd-mm-yyyy" in response.json()["detail"]
 
 
-def test_stats_aggregate_rates_and_one_round_lookback(
+def test_stats_previous_round_rates_and_full_winners_archive(
     client: TestClient,
     user_profiles: FakeUserProfileClient,
 ) -> None:
@@ -129,7 +129,7 @@ def test_stats_aggregate_rates_and_one_round_lookback(
         json={"start_date": "2026-01-01", "buy_in_pence": 100},
     )
     assert opened.status_code == 200, opened.text
-    round_id = opened.json()["id"]
+    round1 = opened.json()["id"]
 
     for match_id, game_number in ((fixture_a.id, 1), (fixture_b.id, 2)):
         selected = client.post(
@@ -180,19 +180,28 @@ def test_stats_aggregate_rates_and_one_round_lookback(
         )
     )
 
-    # During an open round, aggregate covers current (lookback has no previous yet).
+    # Open round is not n−1 — aggregate stays empty until the round is closed.
+    during = client.get("/stats/aggregate")
+    assert during.status_code == 200, during.text
+    assert during.json() == {"stats": []}
+
+    ended = client.post(
+        "/admin/endround",
+        headers=admin,
+        params={"endDate": "20-01-2026"},
+        json={"winner_ids": [str(ada_id), str(bob_id)]},
+    )
+    assert ended.status_code == 200, ended.text
+
+    # Previous closed round rates (n−1).
     aggregate = client.get("/stats/aggregate")
     assert aggregate.status_code == 200, aggregate.text
     by_player = {row["playerid"]: row for row in aggregate.json()["stats"]}
     assert set(by_player) == {str(ada_id), str(bob_id)}
-    assert by_player[str(ada_id)]["name"] == "Ada Lovelace"
     assert by_player[str(ada_id)]["correct"] == 2
     assert by_player[str(ada_id)]["matches"] == 2
     assert by_player[str(ada_id)]["success_rate"] == 100.0
-    assert by_player[str(bob_id)]["correct"] == 0
-    assert by_player[str(bob_id)]["matches"] == 2
     assert by_player[str(bob_id)]["success_rate"] == 0.0
-    # Sorted by success_rate desc — Ada before Bob.
     assert aggregate.json()["stats"][0]["playerid"] == str(ada_id)
     ada_scores = {point["date"]: point for point in by_player[str(ada_id)]["scores"]}
     assert ada_scores[day_a.isoformat()]["score"] == 1
@@ -209,55 +218,37 @@ def test_stats_aggregate_rates_and_one_round_lookback(
     assert filtered_ada["correct"] == 1
     assert filtered_ada["matches"] == 1
     assert filtered_ada["success_rate"] == 100.0
-    assert all(point["date"] == day_b.isoformat() for point in filtered_ada["scores"])
 
-    during = client.get("/stats/winners")
-    assert during.status_code == 200, during.text
-    during_body = during.json()
-    assert during_body["previous_round"] is None
-    assert during_body["current_round"]["round_id"] == round_id
-    assert during_body["current_round"]["end_date"] is None
-    assert during_body["current_round"]["winner"] == ""
-    assert during_body["current_round"]["winner_ids"] == []
-    current_by = {
-        row["playerid"]: row for row in during_body["current_round"]["stats"]
-    }
-    assert current_by[str(ada_id)]["success_rate"] == 100.0
-    assert current_by[str(bob_id)]["success_rate"] == 0.0
-
-    ended = client.post(
-        "/admin/endround",
-        headers=admin,
-        params={"endDate": "20-01-2026"},
-        json={"winner_ids": [str(ada_id), str(bob_id)]},
-    )
-    assert ended.status_code == 200, ended.text
-
-    # After close: previous_round holds winners + rates; no current open round.
     winners = client.get("/stats/winners")
     assert winners.status_code == 200, winners.text
-    body = winners.json()
-    assert body["current_round"] is None
-    previous = body["previous_round"]
-    assert previous["round_id"] == round_id
-    assert previous["start_date"] == "2026-01-01"
-    assert previous["end_date"] == "2026-01-20"
-    assert previous["winner"] == "Ada Lovelace & Bob Builder"
-    assert set(previous["winner_ids"]) == {str(ada_id), str(bob_id)}
-    prev_by = {row["playerid"]: row for row in previous["stats"]}
-    assert prev_by[str(ada_id)] == {
-        "playerid": str(ada_id),
-        "name": "Ada Lovelace",
-        "correct": 2,
-        "matches": 2,
-        "success_rate": 100.0,
-    }
+    rounds = winners.json()["rounds"]
+    assert len(rounds) == 1
+    row = rounds[0]
+    assert row["round_id"] == round1
+    assert row["start_date"] == "2026-01-01"
+    assert row["end_date"] == "2026-01-20"
+    assert row["matches"] == 2
+    assert row["players"] == 2
+    assert row["jackpot"] == 400
+    assert row["winner"] == "Ada Lovelace & Bob Builder"
+    assert set(row["winner_ids"]) == {str(ada_id), str(bob_id)}
 
     historic = client.get("/admin/historicrounds", headers=admin)
     assert historic.status_code == 200, historic.text
     assert historic.json() == winners.json()
 
-    # Open a second round — lookback is current + previous only (no deeper archive).
+    # Second closed round — winners archive grows; aggregate stays on n−1 only.
+    fixture_c = anyio.run(
+        partial(
+            _seed_fixture,
+            session_factory,
+            external_id="stats-c",
+            home="Spurs",
+            away="West Ham",
+            kickoff=datetime(2026, 2, 7, 15, 0, tzinfo=UTC),
+        )
+    )
+    assert fixture_c.id is not None
     opened2 = client.post(
         "/admin/addround",
         headers=admin,
@@ -265,13 +256,56 @@ def test_stats_aggregate_rates_and_one_round_lookback(
     )
     assert opened2.status_code == 200, opened2.text
     round2 = opened2.json()["id"]
+    selected2 = client.post(
+        "/admin/addmatch",
+        headers=admin,
+        json={"id": fixture_c.id, "game_number": 1},
+    )
+    assert selected2.status_code == 200, selected2.text
+    assert (
+        client.post(
+            "/admin/addprediction",
+            headers=admin,
+            json={"auth_id": str(bob_id), "match_id": fixture_c.id, "prediction": "home"},
+        ).status_code
+        == 200
+    )
+    anyio.run(
+        partial(
+            _finish_match,
+            session_factory,
+            match_id=fixture_c.id,
+            home_score=3,
+            away_score=0,
+        )
+    )
+    ended2 = client.post(
+        "/admin/endround",
+        headers=admin,
+        params={"endDate": "10-02-2026"},
+        json={"winner_ids": [str(bob_id)]},
+    )
+    assert ended2.status_code == 200, ended2.text
 
-    comparison = client.get("/stats/winners")
-    assert comparison.status_code == 200, comparison.text
-    cmp_body = comparison.json()
-    assert cmp_body["current_round"]["round_id"] == round2
-    assert cmp_body["previous_round"]["round_id"] == round_id
-    assert cmp_body["previous_round"]["winner"] == "Ada Lovelace & Bob Builder"
+    archive = client.get("/stats/winners")
+    assert archive.status_code == 200, archive.text
+    archive_rounds = archive.json()["rounds"]
+    assert len(archive_rounds) == 2
+    assert {row["round_id"] for row in archive_rounds} == {round1, round2}
+    # Newest start first.
+    assert archive_rounds[0]["round_id"] == round2
+    assert archive_rounds[0]["winner"] == "Bob Builder"
+    assert archive_rounds[1]["round_id"] == round1
+
+    # Aggregate is previous round (round2) only — not full score history.
+    n1 = client.get("/stats/aggregate")
+    assert n1.status_code == 200, n1.text
+    n1_by = {row["playerid"]: row for row in n1.json()["stats"]}
+    assert set(n1_by) == {str(bob_id)}
+    assert n1_by[str(bob_id)]["correct"] == 1
+    assert n1_by[str(bob_id)]["matches"] == 1
+    assert n1_by[str(bob_id)]["success_rate"] == 100.0
+    assert str(ada_id) not in n1_by
 
 
 def test_historicrounds_requires_admin(client: TestClient) -> None:

@@ -652,64 +652,34 @@ class AggregateStatsResponse(BaseModel):
     stats: list[AggregatePlayerStats]
 
 
-class RoundPlayerRate(BaseModel):
-    """Per-player success rate for one lookback round (FE renders as-is)."""
-
-    playerid: UUID
-    name: str
-    correct: int
-    matches: int
-    success_rate: float
-
-
-class RoundLookbackResponse(BaseModel):
-    """Current or previous round snapshot — not a full historic archive entry."""
+class HistoricRoundResponse(BaseModel):
+    """One closed round in the full winners archive."""
 
     round_id: int
     start_date: date
-    end_date: date | None = None
-    winner: str = ""
+    end_date: date
+    matches: int
+    players: int
+    jackpot: int
+    winner: str
     winner_ids: list[UUID] = Field(default_factory=list)
-    stats: list[RoundPlayerRate] = Field(default_factory=list)
 
     @classmethod
-    def from_domain(cls, row: object | None) -> "RoundLookbackResponse | None":
-        from baked.superiorsix.services.stats import RoundLookback
+    def from_domain(cls, row: object) -> "HistoricRoundResponse":
+        from baked.superiorsix.services.stats import HistoricRound
 
-        if row is None:
-            return None
-        assert isinstance(row, RoundLookback)
+        assert isinstance(row, HistoricRound)
         return cls(
             round_id=row.round_id,
             start_date=row.start_date,
             end_date=row.end_date,
+            matches=row.matches,
+            players=row.players,
+            jackpot=row.jackpot,
             winner=row.winner,
             winner_ids=list(row.winner_ids),
-            stats=[
-                RoundPlayerRate(
-                    playerid=item.auth_id,
-                    name=item.name,
-                    correct=item.correct,
-                    matches=item.matches,
-                    success_rate=item.success_rate,
-                )
-                for item in row.stats
-            ],
         )
 
 
-class LookbackComparisonResponse(BaseModel):
-    """One-round lookback: current open round vs most recently closed round."""
-
-    current_round: RoundLookbackResponse | None = None
-    previous_round: RoundLookbackResponse | None = None
-
-    @classmethod
-    def from_domain(cls, payload: object) -> "LookbackComparisonResponse":
-        from baked.superiorsix.services.stats import LookbackComparison
-
-        assert isinstance(payload, LookbackComparison)
-        return cls(
-            current_round=RoundLookbackResponse.from_domain(payload.current_round),
-            previous_round=RoundLookbackResponse.from_domain(payload.previous_round),
-        )
+class HistoricRoundsResponse(BaseModel):
+    rounds: list[HistoricRoundResponse]

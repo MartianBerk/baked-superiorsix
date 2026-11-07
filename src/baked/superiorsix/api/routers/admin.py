@@ -35,11 +35,12 @@ from baked.superiorsix.api.schemas import (
     CurrentRoundResponse,
     CurrentSubroundResponse,
     EndRoundRequest,
+    HistoricRoundResponse,
+    HistoricRoundsResponse,
     InvitePlayerRequest,
     InvitePlayerResponse,
     LeagueResponse,
     LeaguesResponse,
-    LookbackComparisonResponse,
     MatchesResponse,
     MatchResponse,
     OpenRoundRequest,
@@ -296,17 +297,17 @@ async def current_round(
     )
 
 
-@router.get("/historicrounds", response_model=LookbackComparisonResponse)
+@router.get("/historicrounds", response_model=HistoricRoundsResponse)
 async def historic_rounds(
     _: RequireAdmin,
     token: Annotated[str, Depends(get_bearer_token)],
     stats: Annotated[StatsService, Depends(get_stats_service)],
-) -> LookbackComparisonResponse:
-    """One-round lookback comparison (same payload as ``GET /stats/winners``).
-
-    Not a full historic archive — current vs previous round only.
-    """
-    return LookbackComparisonResponse.from_domain(await stats.lookback(bearer_token=token))
+) -> HistoricRoundsResponse:
+    """Full multi-round winners archive (same payload as ``GET /stats/winners``)."""
+    rounds = await stats.historic_rounds(bearer_token=token)
+    return HistoricRoundsResponse(
+        rounds=[HistoricRoundResponse.from_domain(row) for row in rounds]
+    )
 
 
 @router.get("/listsubrounds", response_model=SubroundsResponse)

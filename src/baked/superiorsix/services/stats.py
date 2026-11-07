@@ -1,4 +1,4 @@
-"""Player success-rate aggregates and one-round lookback comparison (SS-18)."""
+"""Player success-rate aggregates (n−1 round) and full historic winners (SS-18)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from baked.superiorsix.services.matches import day_bounds
 
 @dataclass(frozen=True, slots=True)
 class PlayerDayScore:
-    """One player's scored match-day within the lookback window."""
+    """One player's scored match-day within the previous round."""
 
     round_id: int
     auth_id: UUID
@@ -36,19 +36,8 @@ class PlayerDayScore:
 
 
 @dataclass(frozen=True, slots=True)
-class PlayerRate:
-    """Computed success rate for one player (FE renders; does not recalculate)."""
-
-    auth_id: UUID
-    name: str
-    correct: int
-    matches: int
-    success_rate: float
-
-
-@dataclass(frozen=True, slots=True)
 class PlayerAggregate:
-    """Aggregate row with totals + optional day breakdown."""
+    """Aggregate row with totals + optional day breakdown (previous round only)."""
 
     auth_id: UUID
     name: str
@@ -59,23 +48,17 @@ class PlayerAggregate:
 
 
 @dataclass(frozen=True, slots=True)
-class RoundLookback:
-    """Current or previous round snapshot for comparison UI."""
+class HistoricRound:
+    """Closed round winners summary (full multi-round archive)."""
 
     round_id: int
     start_date: date
-    end_date: date | None
+    end_date: date
+    matches: int
+    players: int
+    jackpot: int
     winner: str
     winner_ids: list[UUID]
-    stats: list[PlayerRate]
-
-
-@dataclass(frozen=True, slots=True)
-class LookbackComparison:
-    """One-round lookback: open/current round vs most recently closed round."""
-
-    current_round: RoundLookback | None
-    previous_round: RoundLookback | None
 
 
 def display_name(profile: RosterProfile) -> str:
@@ -110,9 +93,9 @@ class StatsService:
         end_date: date | None = None,
         bearer_token: str | None = None,
     ) -> list[PlayerAggregate]:
-        """Success-rate aggregates over the one-round lookback window.
+        """Success-rate aggregates for the previous closed round only (n−1).
 
-        Default window = current open round (if any) + previous closed round.
+        Not the full score history — only the most recently closed round.
         Optional ``start_date`` / ``end_date`` further filter match days.
         Inactive roster profiles are excluded.
         """
@@ -121,20 +104,19 @@ class StatsService:
         if not by_auth:
             return []
 
-        lookback_ids = await self._lookback_round_ids()
-        if not lookback_ids:
+        previous = await self._previous_closed_round()
+        if previous is None:
             return []
 
         day_rows = await self._day_scores(
             auth_ids=list(by_auth.keys()),
-            round_ids=lookback_ids,
+            round_ids=[previous.id],
             start_date=start_date,
             end_date=end_date,
         )
         grouped: dict[UUID, list[PlayerDayScore]] = {}
         for row in day_rows:
-            profile = by_auth[row.auth_id]
-            name = display_name(profile)
+            name = display_name(by_auth[row.auth_id])
             score = PlayerDayScore(
                 round_id=row.round_id,
                 auth_id=row.auth_id,
@@ -162,48 +144,57 @@ class StatsService:
         aggregates.sort(key=lambda row: (-row.success_rate, row.name.lower(), str(row.auth_id)))
         return aggregates
 
-    async def lookback(self, *, bearer_token: str | None = None) -> LookbackComparison:
-        """Current vs previous round success rates (not a full historic archive)."""
-        roster = await self._load_roster(bearer_token=bearer_token, active=True)
-        by_auth = {profile.auth_id: profile for profile in roster}
+    async def historic_rounds(self, *, bearer_token: str | None = None) -> list[HistoricRound]:
+        """Full closed-round winners archive (legacy HISTORIC_ROUNDS)."""
+        roster = await self._load_roster(bearer_token=bearer_token, active=None)
         names = {profile.auth_id: display_name(profile) for profile in roster}
 
-        current_record = await self._current_round()
-        previous_record = await self._previous_closed_round()
+        rounds_result = await self._session.execute(
+            select(RoundRecord)
+            .where(RoundRecord.end_date.is_not(None))
+            .order_by(RoundRecord.start_date.desc())
+        )
+        closed = list(rounds_result.scalars().all())
+        if not closed:
+            return []
 
-        current = None
-        if current_record is not None:
-            current = await self._round_lookback(
-                current_record,
-                by_auth=by_auth,
-                names=names,
-                include_winners=False,
+        round_ids = [record.id for record in closed]
+
+        winners_result = await self._session.execute(
+            select(RoundWinnerRecord.round_id, RoundWinnerRecord.auth_id).where(
+                RoundWinnerRecord.round_id.in_(round_ids)
             )
+        )
+        winners_by_round: dict[int, list[UUID]] = {}
+        for round_id, auth_id in winners_result.all():
+            winners_by_round.setdefault(int(round_id), []).append(auth_id)
 
-        previous = None
-        if previous_record is not None:
-            previous = await self._round_lookback(
-                previous_record,
-                by_auth=by_auth,
-                names=names,
-                include_winners=True,
+        players_result = await self._session.execute(
+            select(PredictionRecord.round_id, func.count(func.distinct(PredictionRecord.auth_id)))
+            .where(PredictionRecord.round_id.in_(round_ids))
+            .group_by(PredictionRecord.round_id)
+        )
+        players_by_round = {int(round_id): int(count) for round_id, count in players_result.all()}
+
+        match_day = func.date(MatchRecord.match_date)
+        match_days_by_round: dict[int, int] = {}
+        for record in closed:
+            assert record.end_date is not None
+            start, _ = day_bounds(record.start_date)
+            _, end = day_bounds(record.end_date)
+            day_count = await self._session.scalar(
+                select(func.count(func.distinct(match_day))).where(
+                    MatchRecord.use_match.is_(True),
+                    MatchRecord.match_date >= start,
+                    MatchRecord.match_date < end,
+                )
             )
+            match_days_by_round[record.id] = int(day_count or 0)
 
-        return LookbackComparison(current_round=current, previous_round=previous)
-
-    async def _round_lookback(
-        self,
-        record: RoundRecord,
-        *,
-        by_auth: dict[UUID, RosterProfile],
-        names: dict[UUID, str],
-        include_winners: bool,
-    ) -> RoundLookback:
-        rates = await self._round_rates(record.id, by_auth=by_auth)
-        winner_ids: list[UUID] = []
-        winner = ""
-        if include_winners:
-            winner_ids = await self._winner_ids(record.id)
+        historic: list[HistoricRound] = []
+        for record in closed:
+            assert record.end_date is not None
+            winner_ids = sorted(winners_by_round.get(record.id, []), key=str)
             winner_labels = [
                 names.get(auth_id) or str(auth_id)
                 for auth_id in sorted(
@@ -211,47 +202,21 @@ class StatsService:
                     key=lambda aid: (names.get(aid) or str(aid)).lower(),
                 )
             ]
-            winner = " & ".join(winner_labels)
-        return RoundLookback(
-            round_id=record.id,
-            start_date=record.start_date,
-            end_date=record.end_date,
-            winner=winner,
-            winner_ids=winner_ids,
-            stats=rates,
-        )
-
-    async def _round_rates(
-        self,
-        round_id: int,
-        *,
-        by_auth: dict[UUID, RosterProfile],
-    ) -> list[PlayerRate]:
-        if not by_auth:
-            return []
-        day_rows = await self._day_scores(
-            auth_ids=list(by_auth.keys()),
-            round_ids=[round_id],
-        )
-        totals: dict[UUID, list[int]] = {}
-        for row in day_rows:
-            bucket = totals.setdefault(row.auth_id, [0, 0])
-            bucket[0] += row.correct
-            bucket[1] += row.matches
-
-        rates: list[PlayerRate] = []
-        for auth_id, (correct, matches) in totals.items():
-            rates.append(
-                PlayerRate(
-                    auth_id=auth_id,
-                    name=display_name(by_auth[auth_id]),
-                    correct=correct,
+            players = players_by_round.get(record.id, 0)
+            matches = match_days_by_round.get(record.id, 0)
+            historic.append(
+                HistoricRound(
+                    round_id=record.id,
+                    start_date=record.start_date,
+                    end_date=record.end_date,
                     matches=matches,
-                    success_rate=success_rate(correct=correct, matches=matches),
+                    players=players,
+                    jackpot=record.buy_in_pence * matches * players,
+                    winner=" & ".join(winner_labels),
+                    winner_ids=winner_ids,
                 )
             )
-        rates.sort(key=lambda row: (-row.success_rate, row.name.lower(), str(row.auth_id)))
-        return rates
+        return historic
 
     async def _day_scores(
         self,
@@ -324,24 +289,6 @@ class StatsService:
             )
         return rows
 
-    async def _lookback_round_ids(self) -> list[int]:
-        ids: list[int] = []
-        current = await self._current_round()
-        if current is not None:
-            ids.append(current.id)
-        previous = await self._previous_closed_round()
-        if previous is not None and previous.id not in ids:
-            ids.append(previous.id)
-        return ids
-
-    async def _current_round(self) -> RoundRecord | None:
-        result = await self._session.execute(
-            select(RoundRecord)
-            .where(RoundRecord.end_date.is_(None))
-            .order_by(RoundRecord.start_date.desc())
-        )
-        return result.scalars().first()
-
     async def _previous_closed_round(self) -> RoundRecord | None:
         result = await self._session.execute(
             select(RoundRecord)
@@ -349,14 +296,6 @@ class StatsService:
             .order_by(RoundRecord.end_date.desc(), RoundRecord.id.desc())
         )
         return result.scalars().first()
-
-    async def _winner_ids(self, round_id: int) -> list[UUID]:
-        result = await self._session.execute(
-            select(RoundWinnerRecord.auth_id)
-            .where(RoundWinnerRecord.round_id == round_id)
-            .order_by(RoundWinnerRecord.auth_id)
-        )
-        return list(result.scalars().all())
 
     async def _load_roster(
         self,
