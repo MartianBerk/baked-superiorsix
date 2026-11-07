@@ -35,12 +35,11 @@ from baked.superiorsix.api.schemas import (
     CurrentRoundResponse,
     CurrentSubroundResponse,
     EndRoundRequest,
-    HistoricRoundResponse,
-    HistoricRoundsResponse,
     InvitePlayerRequest,
     InvitePlayerResponse,
     LeagueResponse,
     LeaguesResponse,
+    LookbackComparisonResponse,
     MatchesResponse,
     MatchResponse,
     OpenRoundRequest,
@@ -297,29 +296,17 @@ async def current_round(
     )
 
 
-@router.get("/historicrounds", response_model=HistoricRoundsResponse)
+@router.get("/historicrounds", response_model=LookbackComparisonResponse)
 async def historic_rounds(
     _: RequireAdmin,
     token: Annotated[str, Depends(get_bearer_token)],
     stats: Annotated[StatsService, Depends(get_stats_service)],
-) -> HistoricRoundsResponse:
-    """Closed rounds with winners and jackpots (same payload as ``GET /stats/winners``)."""
-    rounds = await stats.historic_rounds(bearer_token=token)
-    return HistoricRoundsResponse(
-        rounds=[
-            HistoricRoundResponse(
-                round_id=row.round_id,
-                start_date=row.start_date,
-                end_date=row.end_date,
-                matches=row.matches,
-                players=row.players,
-                jackpot=row.jackpot,
-                winner=row.winner,
-                winner_ids=list(row.winner_ids),
-            )
-            for row in rounds
-        ]
-    )
+) -> LookbackComparisonResponse:
+    """One-round lookback comparison (same payload as ``GET /stats/winners``).
+
+    Not a full historic archive — current vs previous round only.
+    """
+    return LookbackComparisonResponse.from_domain(await stats.lookback(bearer_token=token))
 
 
 @router.get("/listsubrounds", response_model=SubroundsResponse)

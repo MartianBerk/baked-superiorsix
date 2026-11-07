@@ -607,7 +607,7 @@ class PlayersResponse(BaseModel):
 
 
 class AggregateScorePoint(BaseModel):
-    """One scored match-day for a player (legacy ``scores[]`` entry)."""
+    """One scored match-day for a player."""
 
     name: str
     date: date
@@ -616,29 +616,100 @@ class AggregateScorePoint(BaseModel):
 
 
 class AggregatePlayerStats(BaseModel):
-    """Legacy ``/stats/aggregate`` player row. ``playerid`` is roster ``auth_id``."""
+    """Player success-rate row. ``playerid`` is roster ``auth_id``."""
 
     playerid: UUID
     name: str
-    scores: list[AggregateScorePoint]
+    correct: int
+    matches: int
+    success_rate: float
+    scores: list[AggregateScorePoint] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, row: object) -> "AggregatePlayerStats":
+        from baked.superiorsix.services.stats import PlayerAggregate
+
+        assert isinstance(row, PlayerAggregate)
+        return cls(
+            playerid=row.auth_id,
+            name=row.name,
+            correct=row.correct,
+            matches=row.matches,
+            success_rate=row.success_rate,
+            scores=[
+                AggregateScorePoint(
+                    name=score.name,
+                    date=score.match_date,
+                    score=score.correct,
+                    matches=score.matches,
+                )
+                for score in row.scores
+            ],
+        )
 
 
 class AggregateStatsResponse(BaseModel):
     stats: list[AggregatePlayerStats]
 
 
-class HistoricRoundResponse(BaseModel):
-    """Legacy HISTORIC_ROUNDS row; ``winner_ids`` added for auth-keyed FE."""
+class RoundPlayerRate(BaseModel):
+    """Per-player success rate for one lookback round (FE renders as-is)."""
+
+    playerid: UUID
+    name: str
+    correct: int
+    matches: int
+    success_rate: float
+
+
+class RoundLookbackResponse(BaseModel):
+    """Current or previous round snapshot — not a full historic archive entry."""
 
     round_id: int
     start_date: date
-    end_date: date
-    matches: int
-    players: int
-    jackpot: int
-    winner: str
+    end_date: date | None = None
+    winner: str = ""
     winner_ids: list[UUID] = Field(default_factory=list)
+    stats: list[RoundPlayerRate] = Field(default_factory=list)
+
+    @classmethod
+    def from_domain(cls, row: object | None) -> "RoundLookbackResponse | None":
+        from baked.superiorsix.services.stats import RoundLookback
+
+        if row is None:
+            return None
+        assert isinstance(row, RoundLookback)
+        return cls(
+            round_id=row.round_id,
+            start_date=row.start_date,
+            end_date=row.end_date,
+            winner=row.winner,
+            winner_ids=list(row.winner_ids),
+            stats=[
+                RoundPlayerRate(
+                    playerid=item.auth_id,
+                    name=item.name,
+                    correct=item.correct,
+                    matches=item.matches,
+                    success_rate=item.success_rate,
+                )
+                for item in row.stats
+            ],
+        )
 
 
-class HistoricRoundsResponse(BaseModel):
-    rounds: list[HistoricRoundResponse]
+class LookbackComparisonResponse(BaseModel):
+    """One-round lookback: current open round vs most recently closed round."""
+
+    current_round: RoundLookbackResponse | None = None
+    previous_round: RoundLookbackResponse | None = None
+
+    @classmethod
+    def from_domain(cls, payload: object) -> "LookbackComparisonResponse":
+        from baked.superiorsix.services.stats import LookbackComparison
+
+        assert isinstance(payload, LookbackComparison)
+        return cls(
+            current_round=RoundLookbackResponse.from_domain(payload.current_round),
+            previous_round=RoundLookbackResponse.from_domain(payload.previous_round),
+        )

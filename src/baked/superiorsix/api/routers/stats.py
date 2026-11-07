@@ -8,12 +8,10 @@ from baked.superiorsix.api.dates import parse_legacy_date
 from baked.superiorsix.api.deps import get_stats_service
 from baked.superiorsix.api.schemas import (
     AggregatePlayerStats,
-    AggregateScorePoint,
     AggregateStatsResponse,
-    HistoricRoundResponse,
-    HistoricRoundsResponse,
+    LookbackComparisonResponse,
 )
-from baked.superiorsix.services.stats import HistoricRound, PlayerAggregate, StatsService
+from baked.superiorsix.services.stats import StatsService
 
 router = APIRouter(prefix="/stats", tags=["stats"])
 
@@ -24,50 +22,24 @@ async def aggregate_stats(
     start_date: Annotated[str | None, Query()] = None,
     end_date: Annotated[str | None, Query()] = None,
 ) -> AggregateStatsResponse:
-    """Player correct-pick aggregates by match day (legacy ``PLAYER_STATS_AGG``).
+    """Computed success rates over the one-round lookback window.
 
-    Optional ``start_date`` / ``end_date`` use legacy ``dd-mm-yyyy``.
-    ``playerid`` is the roster ``auth_id`` UUID (replaces legacy numeric player id).
+    Default window = current open round + previous closed round. Optional
+    ``start_date`` / ``end_date`` (``dd-mm-yyyy``) further filter match days.
+    ``playerid`` is roster ``auth_id``. FE renders ``success_rate`` as-is.
     """
     start = None if not start_date else parse_legacy_date(start_date, field_name="start_date")
     end = None if not end_date else parse_legacy_date(end_date, field_name="end_date")
     rows = await stats.aggregate(start_date=start, end_date=end)
-    return AggregateStatsResponse(stats=[_aggregate_player(row) for row in rows])
+    return AggregateStatsResponse(stats=[AggregatePlayerStats.from_domain(row) for row in rows])
 
 
-@router.get("/winners", response_model=HistoricRoundsResponse)
+@router.get("/winners", response_model=LookbackComparisonResponse)
 async def winners(
     stats: Annotated[StatsService, Depends(get_stats_service)],
-) -> HistoricRoundsResponse:
-    """Historic closed rounds with winners and jackpots (newest start first)."""
-    rounds = await stats.historic_rounds()
-    return HistoricRoundsResponse(rounds=[_historic_round(row) for row in rounds])
+) -> LookbackComparisonResponse:
+    """Current vs previous round comparison (not a full winners archive).
 
-
-def _aggregate_player(row: PlayerAggregate) -> AggregatePlayerStats:
-    return AggregatePlayerStats(
-        playerid=row.auth_id,
-        name=row.name,
-        scores=[
-            AggregateScorePoint(
-                name=score.name,
-                date=score.match_date,
-                score=score.correct,
-                matches=score.matches,
-            )
-            for score in row.scores
-        ],
-    )
-
-
-def _historic_round(row: HistoricRound) -> HistoricRoundResponse:
-    return HistoricRoundResponse(
-        round_id=row.round_id,
-        start_date=row.start_date,
-        end_date=row.end_date,
-        matches=row.matches,
-        players=row.players,
-        jackpot=row.jackpot,
-        winner=row.winner,
-        winner_ids=list(row.winner_ids),
-    )
+    ``previous_round`` includes winners of the just-ended / last closed round.
+    """
+    return LookbackComparisonResponse.from_domain(await stats.lookback())
