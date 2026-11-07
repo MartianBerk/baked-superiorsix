@@ -83,6 +83,9 @@ class MatchService:
         match.use_match = existing.use_match
         match.game_number = existing.game_number
         match.subround_id = existing.subround_id
+        # Difficulty is immutable once computed (SS-125); never overwrite from feeds.
+        match.difficulty_score = existing.difficulty_score
+        match.difficulty_band = existing.difficulty_band
         incoming_status = match.status
         if is_status_regression(existing.status, incoming_status):
             logger.warning(
@@ -185,6 +188,8 @@ class MatchService:
         match.use_match = True
         match.game_number = game_number
         match.subround_id = subround_id
+        # Freeze difficulty at selection so later table/form changes cannot rewrite pips.
+        match = await self._ensure_difficulty_persisted(match)
         return await self._matches.save(match)
 
     async def deselect_from_round(self, match_id: int) -> Match:
@@ -253,6 +258,7 @@ class MatchService:
             match.use_match = True
             match.game_number = game_number
             match.subround_id = subround_id
+            match = await self._ensure_difficulty_persisted(match)
             updated.append(await self._matches.save(match))
         return sorted(updated, key=lambda match: match.game_number or 0)
 
@@ -295,15 +301,7 @@ class MatchService:
         away_form = await self.team_performance(away_team, before)
         home_position = positions.get(home_team)
         away_position = positions.get(away_team)
-        difficulty = calculate_match_difficulty(
-            home_performance=home_form,
-            away_performance=away_form,
-            home_position=home_position,
-            away_position=away_position,
-            home_head_to_head=home_h2h,
-            away_head_to_head=away_h2h,
-            league_size=len(table) or None,
-        )
+        difficulty = await self.difficulty_for_match(match)
 
         return MatchDetail(
             league_position={
@@ -318,13 +316,85 @@ class MatchService:
                 home_team: home_h2h,
                 away_team: away_h2h,
             },
-            difficulty=MatchDifficultyScore(score=difficulty.score, band=difficulty.band),
+            difficulty=difficulty,
         )
 
     async def difficulty_for_match(self, match: Match) -> MatchDifficultyScore:
-        """Compute difficulty for a stored fixture (admin list/get enrichment)."""
-        league = await self._leagues.get(match.league_id)
-        table = await self._leagues.league_table(league.code)
+        """Return frozen difficulty for a fixture, computing and persisting once."""
+        frozen = _frozen_difficulty(match)
+        if frozen is not None:
+            return frozen
+        computed = await self._compute_difficulty(match)
+        await self._persist_difficulty(match, computed)
+        return computed
+
+    async def difficulties_for_matches(
+        self,
+        matches: list[Match],
+    ) -> dict[int, MatchDifficultyScore]:
+        """Batch difficulty for admin list payloads (caches league tables).
+
+        Persists on first computation; later calls return the frozen values.
+        """
+        if not matches:
+            return {}
+
+        tables_by_league: dict[int, list[LeagueTableEntry]] = {}
+        out: dict[int, MatchDifficultyScore] = {}
+        for match in matches:
+            if match.id is None:
+                continue
+            frozen = _frozen_difficulty(match)
+            if frozen is not None:
+                out[match.id] = frozen
+                continue
+            if match.league_id not in tables_by_league:
+                league = await self._leagues.get(match.league_id)
+                tables_by_league[match.league_id] = await self._leagues.league_table(league.code)
+            table = tables_by_league[match.league_id]
+            difficulty = await self._compute_difficulty(match, table=table)
+            await self._persist_difficulty(match, difficulty)
+            out[match.id] = difficulty
+        return out
+
+    async def _ensure_difficulty_persisted(self, match: Match) -> Match:
+        """Compute and attach difficulty when missing; leave an existing freeze alone."""
+        if _frozen_difficulty(match) is not None:
+            return match
+        computed = await self._compute_difficulty(match)
+        match.difficulty_score = computed.score
+        match.difficulty_band = computed.band
+        return match
+
+    async def _persist_difficulty(
+        self,
+        match: Match,
+        difficulty: MatchDifficultyScore,
+    ) -> Match:
+        """Write difficulty onto the match row if it is not already frozen."""
+        if _frozen_difficulty(match) is not None:
+            return match
+        match.difficulty_score = difficulty.score
+        match.difficulty_band = difficulty.band
+        if match.id is None:
+            return match
+        return await self._matches.save(match)
+
+    async def _compute_difficulty(
+        self,
+        match: Match,
+        *,
+        table: list[LeagueTableEntry] | None = None,
+    ) -> MatchDifficultyScore:
+        """Score difficulty from pre-kickoff form/H2H and the current league table.
+
+        Form and H2H are already capped to matches before the fixture's calendar
+        day. Callers must persist the result so later table updates cannot
+        rewrite the band.
+        """
+        if table is None:
+            league = await self._leagues.get(match.league_id)
+            table = await self._leagues.league_table(league.code)
         positions = {entry.team: entry.position for entry in table}
         before = day_bounds(match.match_date.astimezone(UTC).date())[0]
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
@@ -341,47 +411,6 @@ class MatchService:
         )
         return MatchDifficultyScore(score=difficulty.score, band=difficulty.band)
 
-    async def difficulties_for_matches(
-        self,
-        matches: list[Match],
-    ) -> dict[int, MatchDifficultyScore]:
-        """Batch difficulty for admin list payloads (caches league tables)."""
-        if not matches:
-            return {}
-
-        tables_by_league: dict[int, list[LeagueTableEntry]] = {}
-        out: dict[int, MatchDifficultyScore] = {}
-        for match in matches:
-            if match.id is None:
-                continue
-            if match.league_id not in tables_by_league:
-                league = await self._leagues.get(match.league_id)
-                tables_by_league[match.league_id] = await self._leagues.league_table(league.code)
-            table = tables_by_league[match.league_id]
-            positions = {entry.team: entry.position for entry in table}
-            before = day_bounds(match.match_date.astimezone(UTC).date())[0]
-            home_h2h, away_h2h = await self.head_to_head(
-                match.home_team,
-                match.away_team,
-                before,
-            )
-            home_form = await self.team_performance(match.home_team, before)
-            away_form = await self.team_performance(match.away_team, before)
-            difficulty = calculate_match_difficulty(
-                home_performance=home_form,
-                away_performance=away_form,
-                home_position=positions.get(match.home_team),
-                away_position=positions.get(match.away_team),
-                home_head_to_head=home_h2h,
-                away_head_to_head=away_h2h,
-                league_size=len(table) or None,
-            )
-            out[match.id] = MatchDifficultyScore(
-                score=difficulty.score,
-                band=difficulty.band,
-            )
-        return out
-
     async def _resolve(
         self,
         *,
@@ -396,6 +425,13 @@ class MatchService:
                 raise MatchNotFoundError(f"Match '{external_id}' not found.")
             return match
         raise MatchNotFoundError("Match id or external_id is required.")
+
+
+def _frozen_difficulty(match: Match) -> MatchDifficultyScore | None:
+    """Return persisted difficulty when both score and band are set."""
+    if match.difficulty_score is None or match.difficulty_band is None:
+        return None
+    return MatchDifficultyScore(score=match.difficulty_score, band=match.difficulty_band)
 
 
 def day_bounds(match_date: date) -> tuple[datetime, datetime]:

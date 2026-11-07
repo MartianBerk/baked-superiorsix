@@ -22,6 +22,8 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions,
   and prediction ``difficulty`` (`score` 0–1 higher=harder, `band` 1–5). Admin
   ``GET /admin/listmatches`` / ``GET /admin/getmatch`` include the same field.
+  Difficulty is persisted on the match and frozen after first compute / selection
+  (later FINISHED ingest does not recalculate).
 - `POST /user/addprediction` / `GET /user/getprediction?gameId=` — player submissions
   (JWT role `player`, aud=`superiorsix`; needs an open round + selected match; 10m cutoff)
 - Admin predictions (JWT `admin`; SS-17): `GET /admin/listpredictionsnew` —
