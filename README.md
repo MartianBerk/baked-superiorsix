@@ -80,8 +80,10 @@ invite already exists.
 | `poetry run baked-superiorsix-league-extractor` | Upsert league catalog (name / code / start date) |
 | `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
 | `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
-| `poetry run baked-superiorsix-tournament-extractor` | Upsert tournament catalog (`FAC`, `EC`, `WC`) from football-data |
-| `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert fixtures for one tournament code |
+| `poetry run baked-superiorsix-tournament-extractor` | Upsert tournament catalog (`FAC`, `EC`, `WC`) into shared `leagues` |
+| `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert fixtures for one tournament code into shared `matches` |
+| `poetry run baked-superiorsix-worldcup-extractor` | Upsert WC into shared `leagues` (catalog); fixtures go to `worldcup_matches` |
+| `poetry run baked-superiorsix-worldcup-extractor --from 2026-06-01 [--to …]` | Pull WC fixtures into `worldcup_*` (not Super Six `matches`) |
 | `poetry run baked-superiorsix-auto-score` | Smart live-score pass (selected fixtures by default) |
 | `poetry run baked-superiorsix-db leagues` | List leagues in the DB (TSV) |
 | `poetry run baked-superiorsix-db matches [-l PL] [-d 14-03-2026] …` | List matches with optional filters (TSV) |
@@ -113,9 +115,13 @@ poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 --to 
 poetry run baked-superiorsix-tournament-extractor -l EC --live
 ```
 
-Side-game World Cup / Euros prediction tables and Flashscore agents are **not**
-ported here (SS-19 / SS-20). Tournament ingest writes into the shared
-`leagues` / `matches` tables via football-data only.
+**World Cup side game (SS-20):** isolated `worldcup_matches` /
+`worldcup_predictions` / `worldcup_settings` tables (static buy-in pot; ET/pens
+scoring). Player routes under `/worldcup/*` (+ `/qatarhero/listpredictions`);
+admin pot settings under `/admin/worldcup/*`. Role gate: JWT `worldcup`.
+Use `baked-superiorsix-worldcup-extractor` for WC fixtures — do **not** rely on
+`tournament-extractor -l WC` for the side game (that path still writes shared
+`matches`). Euros side game remains SS-19. No Flashscore.
 
 #### Auto-score (SS-11)
 

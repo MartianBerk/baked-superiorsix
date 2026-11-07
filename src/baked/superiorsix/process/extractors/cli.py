@@ -20,11 +20,14 @@ from baked.superiorsix.process.extractors.connectors.football_data import (
 from baked.superiorsix.process.extractors.league import LeagueExtractor
 from baked.superiorsix.process.extractors.match import MatchExtractor
 from baked.superiorsix.process.extractors.tournament import TournamentExtractor
+from baked.superiorsix.process.extractors.worldcup import WorldcupExtractor
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
+from baked.superiorsix.repositories.worldcup_matches import SqlAlchemyWorldcupMatchRepository
 from baked.superiorsix.services.ingest import MatchIngestService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
+from baked.superiorsix.services.worldcup_ingest import WorldcupIngestService
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -366,6 +369,130 @@ def tournament_main(argv: list[str] | None = None) -> None:
     raise SystemExit(asyncio.run(_run_tournament_catalog(get_settings(), codes=codes)))
 
 
+async def _run_worldcup_catalog(settings: Settings) -> int:
+    engine = create_engine(settings.database_url)
+    await init_db(engine)
+    session_factory = create_session_factory(engine)
+    async with session_scope(session_factory) as session:
+        _, leagues, _ = _build_services(session)
+        wc_ingest = WorldcupIngestService(
+            SqlAlchemyWorldcupMatchRepository(session),
+            leagues,
+        )
+        extractor = WorldcupExtractor(
+            wc_ingest,
+            leagues,
+            football_data_token=_secret(settings.football_data_api_token),
+        )
+        league = await extractor.process_catalog()
+        await session.commit()
+    logging.getLogger(__name__).info(
+        "worldcup catalog finished code=%s",
+        None if league is None else league.code,
+    )
+    return 0
+
+
+async def _run_worldcup_matches(
+    settings: Settings,
+    *,
+    date_from: date,
+    date_to: date,
+    live: bool,
+    matchday: int | None,
+) -> int:
+    engine = create_engine(settings.database_url)
+    await init_db(engine)
+    session_factory = create_session_factory(engine)
+    async with session_scope(session_factory) as session:
+        _, leagues, _ = _build_services(session)
+        wc_ingest = WorldcupIngestService(
+            SqlAlchemyWorldcupMatchRepository(session),
+            leagues,
+        )
+        extractor = WorldcupExtractor(
+            wc_ingest,
+            leagues,
+            football_data_token=_secret(settings.football_data_api_token),
+            matchday_override=matchday,
+        )
+        matches = await extractor.process_matches(
+            date_from=date_from,
+            date_to=date_to,
+            live=live,
+        )
+        await session.commit()
+    logging.getLogger(__name__).info(
+        "worldcup match extractor finished live=%s from=%s to=%s count=%s",
+        live,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        len(matches),
+    )
+    return 0
+
+
+def worldcup_main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "World Cup side-game ingest via football-data.org (code WC). "
+            "Writes worldcup_matches only — never Super Six matches or euros_*. "
+            "Default: upsert WC into shared leagues catalog. "
+            "With --from (or --live): pull fixtures into worldcup_matches."
+        ),
+    )
+    parser.add_argument(
+        "--from",
+        type=_parse_iso_date,
+        dest="date_from",
+        metavar="YYYY-MM-DD",
+        help="Inclusive start date (UTC). Required for fixture pull unless --live.",
+    )
+    parser.add_argument(
+        "--to",
+        type=_parse_iso_date,
+        dest="date_to",
+        metavar="YYYY-MM-DD",
+        help="Inclusive end date (UTC); defaults to --from",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Pull live/in-play WC fixtures (football-data status=LIVE).",
+    )
+    parser.add_argument(
+        "--matchday",
+        type=int,
+        help="Override matchday when football-data omits it (legacy LAST_32 quirk).",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    _configure_logging(args.verbose)
+
+    if args.live or args.date_from is not None:
+        if args.live:
+            today = datetime.now(UTC).date()
+            date_from = date_to = today
+        else:
+            date_from = args.date_from
+            date_to = args.date_to or args.date_from
+            if date_to < date_from:
+                parser.error("--to must be on or after --from")
+        raise SystemExit(
+            asyncio.run(
+                _run_worldcup_matches(
+                    get_settings(),
+                    date_from=date_from,
+                    date_to=date_to,
+                    live=args.live,
+                    matchday=args.matchday,
+                )
+            )
+        )
+
+    raise SystemExit(asyncio.run(_run_worldcup_catalog(get_settings())))
+
+
 def auto_score_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -412,7 +539,8 @@ if __name__ == "__main__":
     sys.stderr.write(
         "Use baked-superiorsix-league-extractor, "
         "baked-superiorsix-match-extractor, "
-        "baked-superiorsix-tournament-extractor, or "
+        "baked-superiorsix-tournament-extractor, "
+        "baked-superiorsix-worldcup-extractor, or "
         "baked-superiorsix-auto-score.\n"
     )
     raise SystemExit(2)

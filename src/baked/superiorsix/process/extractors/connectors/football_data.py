@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from baked.superiorsix.domain.models import MatchStatus
 from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
 from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload, MatchPayload
 from baked.superiorsix.process.extractors.connectors.http import HttpxJsonClient
@@ -72,6 +73,79 @@ def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
         away_team=away,
         home_score=int(home_score) if home_score is not None else None,
         away_score=int(away_score) if away_score is not None else None,
+    )
+
+
+def fold_side_game_full_time_scores(
+    *,
+    duration: str | None,
+    full_time_home: int | None,
+    full_time_away: int | None,
+    penalties_home: int | None,
+    penalties_away: int | None,
+) -> tuple[int | None, int | None]:
+    """Legacy WorldCupConnector fold for finished penalty shootouts.
+
+    Strip penalty goals from fullTime, then add 1 to the shootout winner so
+    home/away/draw predictions resolve against the knockout winner rather than
+    the aggregated football-data fullTime totals.
+    """
+    if duration != "PENALTY_SHOOTOUT":
+        return full_time_home, full_time_away
+    if (
+        full_time_home is None
+        or full_time_away is None
+        or penalties_home is None
+        or penalties_away is None
+    ):
+        return full_time_home, full_time_away
+    winner = "home" if full_time_home > full_time_away else "away"
+    home = full_time_home - penalties_home
+    away = full_time_away - penalties_away
+    return home + (1 if winner == "home" else 0), away + (1 if winner == "away" else 0)
+
+
+def parse_football_data_side_game_match(raw: dict[str, Any]) -> MatchPayload | None:
+    """Parse a WC/Euros fixture including matchday + ET/pens flags.
+
+    Used by side-game ingest only — Super Six match ingest keeps
+    :func:`parse_football_data_match`.
+    """
+    base = parse_football_data_match(raw)
+    if base is None:
+        return None
+    score_block = raw.get("score") or {}
+    duration = score_block.get("duration")
+    status = map_football_data_status(raw.get("status"))
+    extra_time: bool | None = None
+    penalties: bool | None = None
+    home_score = base.home_score
+    away_score = base.away_score
+    if status == MatchStatus.FINISHED:
+        extra_time = duration == "EXTRA_TIME"
+        penalties = duration == "PENALTY_SHOOTOUT"
+        pens = score_block.get("penalties") or {}
+        home_score, away_score = fold_side_game_full_time_scores(
+            duration=duration,
+            full_time_home=home_score,
+            full_time_away=away_score,
+            penalties_home=pens.get("home"),
+            penalties_away=pens.get("away"),
+        )
+    matchday_raw = raw.get("matchday")
+    matchday = int(matchday_raw) if matchday_raw is not None else None
+    return MatchPayload(
+        external_id=base.external_id,
+        match_date=base.match_date,
+        status=status,
+        home_team=base.home_team,
+        away_team=base.away_team,
+        home_score=home_score,
+        away_score=away_score,
+        match_minute=base.match_minute,
+        matchday=matchday,
+        extra_time=extra_time,
+        penalties=penalties,
     )
 
 
@@ -168,6 +242,7 @@ class FootballDataConnector:
         date_to: date,
         season_start: date | None = None,
         live: bool = False,
+        side_game: bool = False,
     ) -> list[MatchPayload]:
         del season_start
         if not self._token:
@@ -187,9 +262,11 @@ class FootballDataConnector:
             headers=self._headers(),
             params=params,
         )
+        parse = parse_football_data_side_game_match if side_game else parse_football_data_match
         matches: list[MatchPayload] = []
         for item in payload.get("matches") or []:
-            parsed = parse_football_data_match(item)
+            parsed = parse(item)
             if parsed is not None:
                 matches.append(parsed)
         return matches
+

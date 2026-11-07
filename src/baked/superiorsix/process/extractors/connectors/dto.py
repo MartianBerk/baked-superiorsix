@@ -21,3 +21,7 @@ class MatchPayload:
     home_score: int | None = None
     away_score: int | None = None
     match_minute: int | None = None
+    # Side-game (WC / Euros) fields — unused by Super Six match ingest.
+    matchday: int | None = None
+    extra_time: bool | None = None
+    penalties: bool | None = None

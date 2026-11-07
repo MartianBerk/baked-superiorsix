@@ -48,3 +48,11 @@ class NotOnRosterError(RosterError):
 
 class AuthAdminError(SuperiorSixError):
     """Raised when a server-side baked-auth admin call fails."""
+
+
+class WorldcupMatchNotFoundError(SuperiorSixError):
+    """Raised when a World Cup side-game match cannot be found."""
+
+
+class WorldcupError(SuperiorSixError):
+    """Raised when a World Cup side-game operation fails."""

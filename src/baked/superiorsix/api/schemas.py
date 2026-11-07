@@ -690,3 +690,123 @@ class HistoricRoundResponse(BaseModel):
 
 class HistoricRoundsResponse(BaseModel):
     rounds: list[HistoricRoundResponse]
+
+
+# --- World Cup / Qatar Hero (SS-20) ---
+
+
+class WorldcupMatchResponse(BaseModel):
+    id: int
+    home_team: str
+    away_team: str
+    home_score: int | None = None
+    away_score: int | None = None
+    status: str
+    match_minute: int | None = None
+    extra_time: bool = False
+    penalties: bool = False
+    match_date: datetime
+    matchday: int | None = None
+
+    @classmethod
+    def from_domain(cls, match: object) -> "WorldcupMatchResponse":
+        from baked.superiorsix.domain.worldcup import WorldcupMatch
+
+        assert isinstance(match, WorldcupMatch)
+        assert match.id is not None
+        return cls(
+            id=match.id,
+            home_team=match.home_team,
+            away_team=match.away_team,
+            home_score=match.home_score,
+            away_score=match.away_score,
+            status=match.status,
+            match_minute=match.match_minute,
+            extra_time=match.extra_time,
+            penalties=match.penalties,
+            match_date=match.match_date,
+            matchday=match.matchday,
+        )
+
+
+class WorldcupMatchesResponse(BaseModel):
+    matches: list[WorldcupMatchResponse]
+
+
+class WorldcupScoreResponse(BaseModel):
+    auth_id: UUID | None = None
+    player: str
+    score: int
+    bonus: int
+    total: int
+
+    @classmethod
+    def from_domain(cls, row: object) -> "WorldcupScoreResponse":
+        from baked.superiorsix.domain.worldcup import WorldcupScoreRow
+
+        assert isinstance(row, WorldcupScoreRow)
+        return cls(
+            auth_id=row.auth_id,
+            player=row.player,
+            score=row.score,
+            bonus=row.bonus,
+            total=row.total,
+        )
+
+
+class WorldcupScoresResponse(BaseModel):
+    scores: list[WorldcupScoreResponse]
+
+
+class WorldcupPredictionResponse(BaseModel):
+    id: int
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    plus_ninety: bool = False
+    extra_time: bool = False
+    penalties: bool = False
+    dropped: bool = False
+
+    @classmethod
+    def from_domain(cls, prediction: object) -> "WorldcupPredictionResponse":
+        from baked.superiorsix.domain.worldcup import WorldcupPrediction
+
+        assert isinstance(prediction, WorldcupPrediction)
+        assert prediction.id is not None
+        return cls(
+            id=prediction.id,
+            auth_id=prediction.auth_id,
+            match_id=prediction.match_id,
+            prediction=prediction.prediction,
+            plus_ninety=prediction.plus_ninety,
+            extra_time=prediction.extra_time,
+            penalties=prediction.penalties,
+            dropped=prediction.dropped,
+        )
+
+
+class WorldcupPredictionsResponse(BaseModel):
+    predictions: list[WorldcupPredictionResponse]
+
+
+class WorldcupGetPredictionResponse(BaseModel):
+    prediction: WorldcupPredictionResponse | None
+
+
+class WorldcupAddPredictionRequest(BaseModel):
+    game_id: int
+    prediction: str
+    extra_time: bool | None = None
+    penalties: bool | None = None
+
+
+class WorldcupMetaResponse(BaseModel):
+    buy_in_pence: int
+    participant_count: int
+    pot_pence: int
+
+
+class WorldcupSettingsUpdateRequest(BaseModel):
+    buy_in_pence: int | None = Field(default=None, ge=0)
+    participant_count: int | None = Field(default=None, ge=0)

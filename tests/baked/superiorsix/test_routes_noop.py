@@ -10,11 +10,6 @@ PUBLIC_NOOP = [
     ("GET", "/euros/listpredictions"),
     ("GET", "/eurowizard/listpredictions"),
     ("GET", "/euros/getpredictions"),
-    ("GET", "/worldcup/matches"),
-    ("GET", "/worldcup/scores"),
-    ("GET", "/worldcup/listpredictions"),
-    ("GET", "/qatarhero/listpredictions"),
-    ("GET", "/worldcup/getpredictions"),
 ]
 
 IMPLEMENTED_PUBLIC = [
@@ -26,6 +21,12 @@ IMPLEMENTED_PUBLIC = [
     ("GET", "/game/listsubrounds"),
     ("GET", "/stats/aggregate"),
     ("GET", "/stats/winners"),
+    ("GET", "/worldcup/meta"),
+    ("GET", "/worldcup/matches"),
+    ("GET", "/worldcup/scores"),
+    ("GET", "/worldcup/listpredictions"),
+    ("GET", "/qatarhero/listpredictions"),
+    ("GET", "/worldcup/getpredictions"),
 ]
 
 PROTECTED_NOOP = [
@@ -35,8 +36,14 @@ PROTECTED_NOOP = [
     ("GET", "/admin/endspecialmessage", "admin"),
     ("GET", "/euros/getprediction", "euros"),
     ("POST", "/euros/addprediction", "euros"),
+]
+
+PROTECTED_WORLDCUP = [
     ("GET", "/worldcup/getprediction", "worldcup"),
     ("POST", "/worldcup/addprediction", "worldcup"),
+    ("GET", "/admin/worldcup/settings", "admin"),
+    ("POST", "/admin/worldcup/settings", "admin"),
+    ("GET", "/admin/worldcup/matches", "admin"),
 ]
 
 PROTECTED_IMPLEMENTED = [
@@ -81,6 +88,14 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
         get_kwargs["params"] = {"authId": "00000000-0000-0000-0000-000000000001"}
     elif path == "/admin/dropprediction":
         get_kwargs["params"] = {"id": 1}
+    if path == "/worldcup/getprediction":
+        get_kwargs["params"] = {"gameId": 1}
+    if path == "/admin/worldcup/settings" and method == "POST":
+        return client.post(
+            path,
+            json={"buy_in_pence": 200, "participant_count": 14},
+            headers=headers,
+        )
     if method == "GET":
         return client.get(path, headers=headers, **get_kwargs)
     if path == "/admin/addprediction":
@@ -95,6 +110,12 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
         )
     if path == "/admin/addpredictions":
         return client.post(path, json=[], headers=headers)
+    if path == "/worldcup/addprediction":
+        return client.post(
+            path,
+            json={"game_id": 1, "prediction": "home"},
+            headers=headers,
+        )
     return client.post(path, json={}, headers=headers)
 
 
@@ -107,7 +128,7 @@ def test_public_noop_routes(client: TestClient) -> None:
 
 
 def test_protected_noop_routes_require_auth(client: TestClient) -> None:
-    for method, path, _role in PROTECTED_NOOP + PROTECTED_IMPLEMENTED:
+    for method, path, _role in PROTECTED_NOOP + PROTECTED_IMPLEMENTED + PROTECTED_WORLDCUP:
         response = _request(client, method, path)
         assert response.status_code == 401, f"{method} {path} -> {response.status_code}"
 
@@ -120,9 +141,21 @@ def test_protected_noop_routes_with_role(client: TestClient) -> None:
         assert response.json() == {"noop": True}, path
 
 
+def test_worldcup_protected_routes_accept_role(client: TestClient) -> None:
+    """World Cup gated routes are implemented (not noop) but still role-gated."""
+    for method, path, role in PROTECTED_WORLDCUP:
+        token, _ = make_access_token(roles=[role])
+        response = _request(client, method, path, headers=auth_header(token))
+        # Missing query/body → 400/422; auth must succeed first.
+        assert response.status_code != 401, f"{method} {path} -> {response.status_code}"
+        assert response.status_code != 403, f"{method} {path} -> {response.status_code}"
+        assert response.json() != {"noop": True}, path
+
+
 def test_openapi_lists_expected_paths(client: TestClient) -> None:
     paths = client.get("/openapi.json").json()["paths"]
-    implemented = [(m, p) for m, p, _ in PROTECTED_NOOP + PROTECTED_IMPLEMENTED]
+    protected = PROTECTED_NOOP + PROTECTED_IMPLEMENTED + PROTECTED_WORLDCUP
+    implemented = [(m, p) for m, p, _ in protected]
     for method, path in PUBLIC_NOOP + IMPLEMENTED_PUBLIC + implemented:
         assert path in paths, f"missing {path}"
         assert method.lower() in paths[path], f"missing {method} {path}"

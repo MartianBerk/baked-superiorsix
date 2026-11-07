@@ -22,6 +22,7 @@ baked-superiorsix = "baked.superiorsix.__main__:main"
 baked-superiorsix-league-extractor = "baked.superiorsix.process.extractors.cli:league_main"
 baked-superiorsix-match-extractor = "baked.superiorsix.process.extractors.cli:match_main"
 baked-superiorsix-tournament-extractor = "baked.superiorsix.process.extractors.cli:tournament_main"
+baked-superiorsix-worldcup-extractor = "baked.superiorsix.process.extractors.cli:worldcup_main"
 baked-superiorsix-auto-score = "baked.superiorsix.process.extractors.cli:auto_score_main"
 baked-superiorsix-db = "baked.superiorsix.cli.db_view:main"
 
