@@ -269,9 +269,9 @@ class CurrentSubroundResponse(BaseModel):
 
 
 # Selectable permission chips (invite + roster role edit). `user-profile` is
-# always granted. Real baked-auth ``admin`` is never assignable here — only via
-# bootstrap / direct auth. ``game-master`` is labeled "Admin" in the app UI.
-INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros", "game-master"})
+# always granted. Superiorsix ``admin`` is never assignable here — only via
+# bootstrap / direct auth membership PUT.
+INVITE_ALLOWED_ROLES = frozenset({"player", "worldcup", "euros"})
 ALWAYS_GRANT_INVITE_ROLES: tuple[str, ...] = ("user-profile",)
 # Roles the app must preserve on update but never offer as chips (bootstrap ops).
 PRESERVE_MEMBERSHIP_ROLES = frozenset({"admin"})

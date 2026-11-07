@@ -104,7 +104,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
     _open_round(client, headers)
 
@@ -230,7 +230,7 @@ def test_match_writes_stamp_last_updated_utc(
 
     anyio.run(run)
 
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     listed = client.get(
         "/admin/listmatches",
         headers=auth_header(token),
@@ -259,7 +259,7 @@ def test_drop_get_and_listmatches_range(client: TestClient) -> None:
     fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
     _open_round(client, headers)
 
@@ -352,7 +352,7 @@ def test_addmatches_replaces_day_selections(client: TestClient) -> None:
     fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
     _open_round(client, headers)
 
@@ -459,7 +459,7 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
     assert fixture.id is not None
 
-    token, _ = make_access_token(roles=["game-master"])
+    token, _ = make_access_token(roles=["admin"])
     headers = auth_header(token)
     _open_round(client, headers)
 

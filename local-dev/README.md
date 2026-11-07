@@ -84,7 +84,7 @@ The CLI:
 
 1. Creates the auth-audience `admin` user (skips if one already exists).
 2. Grants that user an active `superiorsix` AppMembership with
-   `admin`, `game-master`, and `user-profile` (creates/merges if missing;
+   `admin` and `user-profile` (creates/merges if missing;
    no-ops when already present).
 
 Safe to re-run on an existing volume where `ops` already exists — the
@@ -102,15 +102,15 @@ Superior Six roster is **invite-only** (baked-user). baked-auth provides
 invite-ready users + set-password claim (SS-66 / baked-auth#14). Roles and
 membership are applied **at invite**; acceptinvite only creates the roster.
 
-1. **Bootstrap** (above) — ops already has superiorsix `admin` / `game-master` /
+1. **Bootstrap** (above) — ops already has superiorsix `admin` /
    `user-profile`. The same bootstrap credentials are passed to superiorsix as
    `SUPERIORSIX_AUTH_ADMIN_*` so **inviteplayer** can call baked-auth
    `POST /v1/users` with `aud=auth` (passwordless create + membership).
 2. **Invite** (superiorsix `admin` token, `audience=superiorsix`):
    `POST http://127.0.0.1:8030/admin/inviteplayer`
    `{"email":"martin@example.com","first_name":"…","last_name":"…","roles":["player"]}`
-   Selectable roles: `player`, `worldcup`, `euros`, `game-master` (app UI: “Admin”).
-   Real baked-auth `admin` is never assignable from the app.
+   Selectable roles: `player`, `worldcup`, `euros`.
+   Superiorsix `admin` is never assignable from the app (bootstrap / direct auth).
    `user-profile` is always merged server-side (not selectable).
    Roster role edit: `GET /admin/getplayerroles?email=` /
    `POST /admin/updateroles` (preserves bootstrap `admin`).
@@ -141,9 +141,9 @@ The script:
 1. Waits for auth + superiorsix health on host ports `8010` / `8030`.
 2. Runs `docker compose exec baked-auth baked-auth-bootstrap`.
 3. Invites / claims / accepts **three players** (`alice@`, `bob@`, `cara@example.com`)
-   with role `player` (password `local-dev-player`). Then grants bob
-   `game-master` via baked-auth membership PUT (alice/cara stay players only).
-   Skips emails already on the roster; bob’s membership grant is re-applied.
+   with role `player` (password `local-dev-player`). All three stay players only;
+   match-day / roster admin uses bootstrap ops (`admin`). Skips emails already
+   on the roster.
 4. Runs the in-container extractors (same CLIs as the root README):
    - `baked-superiorsix-league-extractor`
    - `baked-superiorsix-match-extractor -l PL --from 2026-10-31 --to 2026-11-07`
