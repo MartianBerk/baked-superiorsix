@@ -5,26 +5,56 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from baked.superiorsix.api.dates import parse_legacy_date
-from baked.superiorsix.api.deps import get_match_service, get_subround_service
+from baked.superiorsix.api.deps import (
+    get_gameday_service,
+    get_match_service,
+    get_subround_service,
+)
 from baked.superiorsix.api.schemas import (
     AvailableMatchesResponse,
     AvailableMatchResponse,
+    GameMetaEnvelope,
+    GameMetaResponse,
+    LiveScoreMatchResponse,
+    LiveScorePlayerResponse,
+    LiveScoresResponse,
     MatchDetailPayload,
     MatchDetailResponse,
+    MatchResponse,
+    PublicCurrentRoundEnvelope,
+    PublicCurrentRoundPayload,
+    RoundResponse,
     SubroundResponse,
     SubroundsResponse,
 )
-from baked.superiorsix.domain.exceptions import MatchNotFoundError
+from baked.superiorsix.domain.exceptions import MatchNotFoundError, SubroundNotFoundError
 from baked.superiorsix.noop import noop
+from baked.superiorsix.services.gameday import GamedayService, LiveScoresBoard
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.subrounds import SubroundService
 
 router = APIRouter(prefix="/game", tags=["game"])
 
 
-@router.get("/meta")
-async def game_meta() -> dict[str, Any]:
-    return noop()
+@router.get("/meta", response_model=GameMetaEnvelope)
+async def game_meta(
+    gameday: Annotated[GamedayService, Depends(get_gameday_service)],
+) -> GameMetaEnvelope:
+    """Header round number + prize pot, plus slate / match-day navigation."""
+    meta = await gameday.meta()
+    latest = meta.latest_subround
+    return GameMetaEnvelope(
+        meta=GameMetaResponse(
+            round_number=meta.round_number,
+            prize_pot_pence=meta.prize_pot_pence,
+            buy_in_pence=meta.buy_in_pence,
+            n_players=meta.n_players,
+            round=None if meta.round_ is None else RoundResponse.from_domain(meta.round_),
+            subround=None if latest is None else SubroundResponse.from_status(latest),
+            subrounds=[SubroundResponse.from_status(item) for item in meta.subrounds],
+            match_days=list(meta.match_days),
+        )
+    )
 
 
 @router.get("/livematches", response_model=AvailableMatchesResponse)
@@ -44,14 +74,47 @@ async def game_live_matches(
     )
 
 
-@router.get("/livescores")
-async def game_live_scores() -> dict[str, Any]:
-    return noop()
+@router.get("/livescores", response_model=LiveScoresResponse)
+async def game_live_scores(
+    gameday: Annotated[GamedayService, Depends(get_gameday_service)],
+    match_date: Annotated[str | None, Query(alias="matchDate")] = None,
+    subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
+) -> LiveScoresResponse:
+    """Aggregate Super Six scoreboard for one slate (or legacy match day).
+
+    Default = latest subround on the open parent round. FE should poll this
+    endpoint in batch (~2 min) while fixtures are live — not per match.
+    """
+    day = None if not match_date else parse_legacy_date(match_date, field_name="matchDate")
+    try:
+        board = await gameday.live_scores(match_date=day, subround_id=subround_id)
+    except SubroundNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return _live_scores_response(board)
 
 
-@router.get("/currentround")
-async def game_current_round() -> dict[str, Any]:
-    return noop()
+@router.get("/currentround", response_model=PublicCurrentRoundEnvelope)
+async def game_current_round(
+    gameday: Annotated[GamedayService, Depends(get_gameday_service)],
+) -> PublicCurrentRoundEnvelope:
+    """Public pot / round summary. Empty object when no round is open."""
+    summary = await gameday.current_round_summary()
+    if summary is None:
+        return PublicCurrentRoundEnvelope(current_round=None)
+    return PublicCurrentRoundEnvelope(
+        current_round=PublicCurrentRoundPayload(
+            round_id=summary.round_id,
+            start_date=summary.start_date,
+            round_number=summary.round_number,
+            buy_in_pence=summary.buy_in_pence,
+            players=summary.players,
+            jackpot=summary.jackpot,
+            prize_pot_pence=summary.prize_pot_pence,
+            subround_id=summary.subround_id,
+            current_match_date=summary.current_match_date,
+            matches=summary.matches,
+        )
+    )
 
 
 @router.get("/listsubrounds", response_model=SubroundsResponse)
@@ -67,9 +130,7 @@ async def game_list_subrounds(
         statuses = await subround_service.list_for_current_round()
     else:
         statuses = await subround_service.list_for_round(round_id)
-    return SubroundsResponse(
-        subrounds=[SubroundResponse.from_status(item) for item in statuses]
-    )
+    return SubroundsResponse(subrounds=[SubroundResponse.from_status(item) for item in statuses])
 
 
 @router.get("/specialmessage")
@@ -105,3 +166,43 @@ async def game_match_detail(
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return MatchDetailResponse(match_detail=MatchDetailPayload.from_domain(detail))
+
+
+def _live_scores_response(board: LiveScoresBoard) -> LiveScoresResponse:
+    return LiveScoresResponse(
+        scores=[
+            LiveScorePlayerResponse(
+                auth_id=player.auth_id,
+                id=player.id,
+                name=player.name,
+                first_name=player.first_name,
+                last_name=player.last_name,
+                nickname=player.nickname,
+                score=player.score,
+                matches=[
+                    LiveScoreMatchResponse(
+                        match_id=pick.match_id,
+                        game_number=pick.game_number,
+                        home_team=pick.home_team,
+                        away_team=pick.away_team,
+                        home_score=pick.home_score,
+                        away_score=pick.away_score,
+                        status=pick.status,
+                        match_date=pick.match_date,
+                        match_minute=pick.match_minute,
+                        prediction=pick.prediction,
+                        correct=pick.correct,
+                    )
+                    for pick in player.matches
+                ],
+            )
+            for player in board.scores
+        ],
+        subround=(None if board.subround is None else SubroundResponse.from_status(board.subround)),
+        matches=[MatchResponse.from_domain(match) for match in board.matches],
+        match_count=board.match_count,
+        live=board.live,
+        min_kickoff=board.min_kickoff,
+        max_kickoff=board.max_kickoff,
+        next_kickoff=board.next_kickoff,
+    )

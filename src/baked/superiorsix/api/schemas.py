@@ -274,6 +274,89 @@ class SubroundResponse(BaseModel):
         )
 
 
+class GameMetaResponse(BaseModel):
+    """Player shell header + slate navigation (SS-16).
+
+    ``round_number`` is the latest subround/slate sequence (Martin). Prize pot is
+    ``buy_in_pence * n_players * round_number``.
+    """
+
+    round_number: int = 0
+    prize_pot_pence: int = 0
+    buy_in_pence: int = 0
+    n_players: int = 0
+    round: RoundResponse | None = None
+    subround: SubroundResponse | None = None
+    subrounds: list[SubroundResponse] = Field(default_factory=list)
+    match_days: list[datetime] = Field(default_factory=list)
+
+
+class GameMetaEnvelope(BaseModel):
+    meta: GameMetaResponse
+
+
+class PublicCurrentRoundPayload(BaseModel):
+    """Public ``GET /game/currentround`` body (legacy CURRENT_ROUND + pot rules)."""
+
+    round_id: int
+    start_date: date
+    round_number: int
+    buy_in_pence: int
+    players: int
+    jackpot: int
+    prize_pot_pence: int
+    subround_id: int | None = None
+    current_match_date: datetime | None = None
+    matches: int = 0
+
+
+class PublicCurrentRoundEnvelope(BaseModel):
+    current_round: PublicCurrentRoundPayload | None = None
+
+
+class LiveScoreMatchResponse(BaseModel):
+    match_id: int
+    game_number: int | None = None
+    home_team: str
+    away_team: str
+    home_score: int | None = None
+    away_score: int | None = None
+    status: str
+    match_date: datetime
+    match_minute: int | None = None
+    prediction: str | None = None
+    correct: bool = False
+
+
+class LiveScorePlayerResponse(BaseModel):
+    auth_id: UUID
+    id: UUID
+    name: str
+    first_name: str
+    last_name: str
+    nickname: str | None = None
+    score: int
+    matches: list[LiveScoreMatchResponse] = Field(default_factory=list)
+
+
+class LiveScoresResponse(BaseModel):
+    """Aggregate scoreboard for one slate / match day (SS-16).
+
+    FE polls this (not per-match). ``live`` is true while any fixture is
+    ``IN PLAY`` / ``HALF TIME``. ``next_kickoff`` helps FE wait without polling
+    between finished and upcoming sets.
+    """
+
+    scores: list[LiveScorePlayerResponse] = Field(default_factory=list)
+    subround: SubroundResponse | None = None
+    matches: list[MatchResponse] = Field(default_factory=list)
+    match_count: int = 0
+    live: bool = False
+    min_kickoff: datetime | None = None
+    max_kickoff: datetime | None = None
+    next_kickoff: datetime | None = None
+
+
 class SubroundsResponse(BaseModel):
     subrounds: list[SubroundResponse]
 
@@ -493,6 +576,7 @@ class AddPlayerRequest(BaseModel):
     @classmethod
     def normalize_email(cls, value: str) -> str:
         return value.strip().lower()
+
 
 class UpdateDetailsRequest(BaseModel):
     nickname: str | None = Field(default=None, min_length=1, max_length=80)

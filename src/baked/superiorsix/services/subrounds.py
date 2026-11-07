@@ -95,6 +95,48 @@ class SubroundService:
         clock = now or datetime.now(UTC)
         return await self._open_editing_for_round(round_.id, clock)
 
+    async def latest_for_current_round(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> SubroundStatus | None:
+        """Highest-sequence subround for the open parent round (even if over)."""
+        round_ = await self._rounds.current_or_none()
+        if round_ is None or round_.id is None:
+            return None
+        return await self.latest_status_for_round(round_.id, now=now)
+
+    async def latest_status_for_round(
+        self,
+        round_id: int,
+        *,
+        now: datetime | None = None,
+    ) -> SubroundStatus | None:
+        clock = now or datetime.now(UTC)
+        latest = await self._subrounds.latest_for_round(round_id)
+        if latest is None or latest.id is None:
+            return None
+        return await self.status_for_id(latest.id, now=clock)
+
+    async def status_for_id(
+        self,
+        subround_id: int,
+        *,
+        now: datetime | None = None,
+    ) -> SubroundStatus:
+        clock = now or datetime.now(UTC)
+        subround = await self.get(subround_id)
+        assert subround.id is not None
+        selected = await self._matches.list_selected_for_subround(subround.id)
+        editing = await self._open_editing_for_round(subround.round_id, clock)
+        editing_id = None if editing is None else editing.subround.id
+        return _status_for(
+            subround,
+            selected,
+            now=clock,
+            is_open_for_editing=subround.id == editing_id,
+        )
+
     async def current_or_create_open(
         self,
         *,

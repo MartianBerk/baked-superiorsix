@@ -9,6 +9,15 @@ profiles / roster in **baked-user**. This service owns the game itself and does
 FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 `matches` tables are live. Public game reads:
 
+- `GET /game/meta` — header ``round_number`` (latest slate sequence) +
+  ``prize_pot_pence`` (`buy_in × full active roster × sequence`), plus subrounds /
+  match-day list for navigation
+- `GET /game/currentround` — public pot summary (`jackpot` / `prize_pot_pence`);
+  empty when no open parent round
+- `GET /game/livescores` — aggregate scoreboard for latest slate (or
+  `?subroundId=` / legacy `?matchDate=dd-mm-yyyy`); includes per-player picks,
+  ``correct`` flags, top-level ``matches`` with live scores, ``live`` /
+  ``next_kickoff`` for FE polling
 - `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions,
   and prediction ``difficulty`` (`score` 0–1 higher=harder, `band` 1–5). Admin
