@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from baked.superiorsix.domain.match_clock import resolve_match_minute
 from baked.superiorsix.domain.models import (
     League,
     Match,
@@ -30,7 +31,12 @@ class AvailableMatchResponse(BaseModel):
     subround_id: int | None = None
 
     @classmethod
-    def from_domain(cls, match: Match) -> "AvailableMatchResponse":
+    def from_domain(
+        cls,
+        match: Match,
+        *,
+        now: datetime | None = None,
+    ) -> "AvailableMatchResponse":
         assert match.id is not None
         return cls(
             id=match.id,
@@ -39,7 +45,7 @@ class AvailableMatchResponse(BaseModel):
             home_score=match.home_score,
             away_score=match.away_score,
             status=match.status,
-            match_minute=match.match_minute,
+            match_minute=resolve_match_minute(match, now=now),
             game_number=match.game_number,
             match_date=match.match_date,
             subround_id=match.subround_id,
@@ -139,6 +145,7 @@ class MatchResponse(BaseModel):
         match: Match,
         *,
         difficulty: MatchDifficultyScore | None = None,
+        now: datetime | None = None,
     ) -> "MatchResponse":
         assert match.id is not None
         return cls(
@@ -146,7 +153,7 @@ class MatchResponse(BaseModel):
             external_id=match.external_id,
             league_id=match.league_id,
             match_date=match.match_date,
-            match_minute=match.match_minute,
+            match_minute=resolve_match_minute(match, now=now),
             status=match.status,
             home_team=match.home_team,
             away_team=match.away_team,
