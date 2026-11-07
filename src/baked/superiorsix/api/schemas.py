@@ -171,6 +171,20 @@ class AddPredictionRequest(BaseModel):
     prediction: str
 
 
+class AdminAddPredictionRequest(BaseModel):
+    """Admin submit/update on behalf of a rostered player (``auth_id``)."""
+
+    auth_id: UUID
+    match_id: int
+    prediction: str
+
+
+class AdminBulkAddPredictionItem(BaseModel):
+    auth_id: UUID
+    match_id: int
+    prediction: str
+
+
 class GetPredictionResponse(BaseModel):
     prediction: str | None
 
@@ -266,6 +280,71 @@ class SubroundsResponse(BaseModel):
 
 class CurrentSubroundResponse(BaseModel):
     current_subround: SubroundResponse | None
+
+
+class AdminPlayerPickResponse(BaseModel):
+    """One active pick for a player on the current slate."""
+
+    id: int
+    match_id: int
+    game_number: int | None = None
+    prediction: str
+    home_team: str | None = None
+    away_team: str | None = None
+    match_date: datetime | None = None
+
+
+class AdminFlatPredictionResponse(BaseModel):
+    """Flat admin prediction row (SS-27 ``listAdminPredictions`` / legacy view)."""
+
+    id: int
+    round_id: int
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    game_number: int | None = None
+    home_team: str | None = None
+    away_team: str | None = None
+    match_date: datetime | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    nickname: str | None = None
+
+
+class AdminPlayerPredictionsResponse(BaseModel):
+    """Roster player plus picks for the admin prediction board (SS-17)."""
+
+    auth_id: UUID
+    id: UUID
+    first_name: str
+    last_name: str
+    nickname: str | None = None
+    email: str | None = None
+    avatar_url: str | None = None
+    active: bool = True
+    prediction_count: int
+    match_count: int
+    predictions: list[AdminPlayerPickResponse]
+
+
+class AdminPredictionBoardResponse(BaseModel):
+    """Admin prediction payload for a subround or match day.
+
+    ``predictions`` is the flat list SS-27 reads. ``players`` adds
+    ``prediction_count`` / slate size for richer admin boards.
+    """
+
+    predictions: list[AdminFlatPredictionResponse] = Field(default_factory=list)
+    subround: SubroundResponse | None = None
+    match_count: int = 0
+    matches: list[MatchResponse] = Field(default_factory=list)
+    players: list[AdminPlayerPredictionsResponse] = Field(default_factory=list)
+
+
+class AdminPredictionsListResponse(BaseModel):
+    """Flat prediction rows for one player (legacy ``listpredictions`` shape)."""
+
+    predictions: list[AdminPlayerPickResponse]
 
 
 # Selectable permission chips (invite + roster role edit). `user-profile` is

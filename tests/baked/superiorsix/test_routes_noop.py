@@ -30,12 +30,7 @@ IMPLEMENTED_PUBLIC = [
 
 PROTECTED_NOOP = [
     ("GET", "/admin/historicrounds", "admin"),
-    ("GET", "/admin/listpredictions", "admin"),
-    ("GET", "/admin/listpredictionsnew", "admin"),
-    ("POST", "/admin/addprediction", "admin"),
     ("GET", "/admin/getround", "admin"),
-    ("POST", "/admin/addpredictions", "admin"),
-    ("GET", "/admin/dropprediction", "admin"),
     ("POST", "/admin/setspecialmessage", "admin"),
     ("GET", "/admin/getspecialmessage", "admin"),
     ("GET", "/admin/endspecialmessage", "admin"),
@@ -62,6 +57,11 @@ PROTECTED_IMPLEMENTED = [
     ("POST", "/admin/addmatch", "admin"),
     ("POST", "/admin/addmatches", "admin"),
     ("GET", "/admin/dropmatch", "admin"),
+    ("GET", "/admin/listpredictions", "admin"),
+    ("GET", "/admin/listpredictionsnew", "admin"),
+    ("POST", "/admin/addprediction", "admin"),
+    ("POST", "/admin/addpredictions", "admin"),
+    ("GET", "/admin/dropprediction", "admin"),
     ("GET", "/admin/listplayers", "admin"),
     ("POST", "/admin/inviteplayer", "admin"),
     ("GET", "/admin/getplayerroles", "admin"),
@@ -73,12 +73,28 @@ PROTECTED_IMPLEMENTED = [
 
 
 def _request(client: TestClient, method: str, path: str, headers: dict[str, str] | None = None):
-    # Required query for getplayerroles so auth gating is exercised (not 422).
+    # Required query for getplayerroles / listpredictions so auth gating is exercised (not 422).
     get_kwargs: dict[str, object] = {}
     if path == "/admin/getplayerroles":
         get_kwargs["params"] = {"email": "roles@example.com"}
+    elif path == "/admin/listpredictions":
+        get_kwargs["params"] = {"authId": "00000000-0000-0000-0000-000000000001"}
+    elif path == "/admin/dropprediction":
+        get_kwargs["params"] = {"id": 1}
     if method == "GET":
         return client.get(path, headers=headers, **get_kwargs)
+    if path == "/admin/addprediction":
+        return client.post(
+            path,
+            json={
+                "auth_id": "00000000-0000-0000-0000-000000000001",
+                "match_id": 1,
+                "prediction": "home",
+            },
+            headers=headers,
+        )
+    if path == "/admin/addpredictions":
+        return client.post(path, json=[], headers=headers)
     return client.post(path, json={}, headers=headers)
 
 
