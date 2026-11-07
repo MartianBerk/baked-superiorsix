@@ -18,6 +18,7 @@ from baked.superiorsix.api.deps import (
     get_match_service,
     get_prediction_service,
     get_round_service,
+    get_stats_service,
     get_subround_service,
     get_user_profiles,
 )
@@ -34,6 +35,8 @@ from baked.superiorsix.api.schemas import (
     CurrentRoundResponse,
     CurrentSubroundResponse,
     EndRoundRequest,
+    HistoricRoundResponse,
+    HistoricRoundsResponse,
     InvitePlayerRequest,
     InvitePlayerResponse,
     LeagueResponse,
@@ -41,8 +44,8 @@ from baked.superiorsix.api.schemas import (
     MatchesResponse,
     MatchResponse,
     OpenRoundRequest,
-    PlayerRolesResponse,
     PlayerResponse,
+    PlayerRolesResponse,
     PlayersResponse,
     PredictionResponse,
     RoundResponse,
@@ -72,6 +75,7 @@ from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService, day_bounds
 from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
+from baked.superiorsix.services.stats import StatsService
 from baked.superiorsix.services.subrounds import SubroundService, SubroundStatus
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -293,9 +297,29 @@ async def current_round(
     )
 
 
-@router.get("/historicrounds")
-async def historic_rounds(_: RequireAdmin) -> dict[str, Any]:
-    return noop()
+@router.get("/historicrounds", response_model=HistoricRoundsResponse)
+async def historic_rounds(
+    _: RequireAdmin,
+    token: Annotated[str, Depends(get_bearer_token)],
+    stats: Annotated[StatsService, Depends(get_stats_service)],
+) -> HistoricRoundsResponse:
+    """Closed rounds with winners and jackpots (same payload as ``GET /stats/winners``)."""
+    rounds = await stats.historic_rounds(bearer_token=token)
+    return HistoricRoundsResponse(
+        rounds=[
+            HistoricRoundResponse(
+                round_id=row.round_id,
+                start_date=row.start_date,
+                end_date=row.end_date,
+                matches=row.matches,
+                players=row.players,
+                jackpot=row.jackpot,
+                winner=row.winner,
+                winner_ids=list(row.winner_ids),
+            )
+            for row in rounds
+        ]
+    )
 
 
 @router.get("/listsubrounds", response_model=SubroundsResponse)

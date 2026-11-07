@@ -604,3 +604,41 @@ class PlayerResponse(BaseModel):
 
 class PlayersResponse(BaseModel):
     players: list[PlayerResponse]
+
+
+class AggregateScorePoint(BaseModel):
+    """One scored match-day for a player (legacy ``scores[]`` entry)."""
+
+    name: str
+    date: date
+    score: int
+    matches: int
+
+
+class AggregatePlayerStats(BaseModel):
+    """Legacy ``/stats/aggregate`` player row. ``playerid`` is roster ``auth_id``."""
+
+    playerid: UUID
+    name: str
+    scores: list[AggregateScorePoint]
+
+
+class AggregateStatsResponse(BaseModel):
+    stats: list[AggregatePlayerStats]
+
+
+class HistoricRoundResponse(BaseModel):
+    """Legacy HISTORIC_ROUNDS row; ``winner_ids`` added for auth-keyed FE."""
+
+    round_id: int
+    start_date: date
+    end_date: date
+    matches: int
+    players: int
+    jackpot: int
+    winner: str
+    winner_ids: list[UUID] = Field(default_factory=list)
+
+
+class HistoricRoundsResponse(BaseModel):
+    rounds: list[HistoricRoundResponse]

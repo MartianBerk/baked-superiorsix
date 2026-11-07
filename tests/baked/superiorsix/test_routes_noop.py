@@ -5,8 +5,6 @@ from tests.baked.superiorsix.tokens import auth_header, make_access_token
 PUBLIC_NOOP = [
     ("GET", "/health"),
     ("GET", "/game/specialmessage"),
-    ("GET", "/stats/aggregate"),
-    ("GET", "/stats/winners"),
     ("GET", "/euros/matches"),
     ("GET", "/euros/scores"),
     ("GET", "/euros/listpredictions"),
@@ -26,10 +24,11 @@ IMPLEMENTED_PUBLIC = [
     ("GET", "/game/livematches"),
     ("GET", "/game/matchdetail"),
     ("GET", "/game/listsubrounds"),
+    ("GET", "/stats/aggregate"),
+    ("GET", "/stats/winners"),
 ]
 
 PROTECTED_NOOP = [
-    ("GET", "/admin/historicrounds", "admin"),
     ("GET", "/admin/getround", "admin"),
     ("POST", "/admin/setspecialmessage", "admin"),
     ("GET", "/admin/getspecialmessage", "admin"),
@@ -47,6 +46,7 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/listleagues", "admin"),
     ("GET", "/admin/listrounds", "admin"),
     ("GET", "/admin/currentround", "admin"),
+    ("GET", "/admin/historicrounds", "admin"),
     ("POST", "/admin/addround", "admin"),
     ("POST", "/admin/endround", "admin"),
     ("GET", "/admin/listsubrounds", "admin"),
