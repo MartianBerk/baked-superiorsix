@@ -200,13 +200,15 @@ class EurosPredictionRecord(Base):
 
 
 class WorldcupSettingsRecord(Base):
-    """Singleton static-pot config for the World Cup side game."""
+    """Singleton static-pot + open lifecycle for the World Cup side game."""
 
     __tablename__ = "worldcup_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     buy_in_pence: Mapped[int] = mapped_column(Integer, default=0)
     participant_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Admin open/end tournament; public meta exposes this for nav visibility.
+    open: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class WorldcupMatchRecord(Base):

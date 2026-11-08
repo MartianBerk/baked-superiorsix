@@ -843,6 +843,8 @@ class OpenEurosTournamentRequest(BaseModel):
     start_date: date
     buy_in_pence: int = Field(default=0, ge=0)
     label: str = "European Championship"
+    # Selected Super Six roster auth_ids; freezes entrant_count and grants ``euros``.
+    entrant_ids: list[UUID] = Field(min_length=1)
 
 
 class EndEurosTournamentRequest(BaseModel):
@@ -962,8 +964,22 @@ class WorldcupMetaResponse(BaseModel):
     buy_in_pence: int
     participant_count: int
     pot_pence: int
+    open: bool = False
 
 
 class WorldcupSettingsUpdateRequest(BaseModel):
     buy_in_pence: int | None = Field(default=None, ge=0)
     participant_count: int | None = Field(default=None, ge=0)
+
+
+class OpenWorldcupTournamentRequest(BaseModel):
+    """Activate World Cup; freezes participant_count and grants ``worldcup``."""
+
+    buy_in_pence: int = Field(default=0, ge=0)
+    entrant_ids: list[UUID] = Field(min_length=1)
+
+
+class EndWorldcupTournamentRequest(BaseModel):
+    """Close the active World Cup edition (clears ``open``)."""
+
+    pass

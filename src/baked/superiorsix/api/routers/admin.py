@@ -1052,12 +1052,13 @@ async def admin_euros_open_tournament(
     token: Annotated[str, Depends(get_bearer_token)],
     euros: Annotated[EurosService, Depends(get_euros_service)],
 ) -> EurosTournamentResponse:
-    """Open a Euro Wizard edition; freezes entrant_count for the static pot."""
+    """Open a Euro Wizard edition; grants ``euros`` and freezes entrant_count."""
     try:
         tournament = await euros.open_tournament(
             start_date=payload.start_date,
             buy_in_pence=payload.buy_in_pence,
             bearer_token=token,
+            entrant_ids=list(payload.entrant_ids),
             label=payload.label,
         )
     except EurosTournamentError as exc:

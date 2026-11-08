@@ -50,6 +50,7 @@ class WorldcupSettings:
     buy_in_pence: int
     participant_count: int
     id: int = 1
+    open: bool = False
 
 
 @dataclass(frozen=True, slots=True)

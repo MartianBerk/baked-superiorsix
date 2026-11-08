@@ -31,6 +31,7 @@ from baked.superiorsix.repositories.euros import (
     EurosPredictionRepository,
     EurosTournamentRepository,
 )
+from baked.superiorsix.services.side_game_roles import grant_side_game_role
 
 _CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
@@ -96,22 +97,42 @@ class EurosService:
         start_date: date,
         buy_in_pence: int,
         bearer_token: str,
+        entrant_ids: list[UUID],
         label: str = "European Championship",
         competition_code: str = "EC",
     ) -> EurosTournament:
         if buy_in_pence < 0:
             raise EurosTournamentError("buy_in_pence must be >= 0.")
+        if not entrant_ids:
+            raise EurosTournamentError("entrant_ids must not be empty.")
         existing = await self._tournaments.current()
         if existing is not None:
             raise EurosTournamentError("An open Euros tournament already exists.")
-        entrant_count = await self._count_euros_entrants(bearer_token)
+        if self._profiles is None or self._auth_admin is None:
+            raise EurosTournamentError(
+                "Roster and auth admin gateways are required to open a tournament."
+            )
+        try:
+            granted = await grant_side_game_role(
+                entrant_ids=entrant_ids,
+                role=EUROS_ROLE,
+                bearer_token=bearer_token,
+                profiles=self._profiles,
+                auth_admin=self._auth_admin,
+            )
+        except ValueError as exc:
+            raise EurosTournamentError(str(exc)) from exc
+        except AuthAdminError as exc:
+            raise EurosTournamentError(str(exc)) from exc
+        except RosterError as exc:
+            raise EurosTournamentError(str(exc)) from exc
         return await self._tournaments.add(
             EurosTournament(
                 start_date=start_date,
                 buy_in_pence=buy_in_pence,
                 label=label,
                 competition_code=competition_code.strip().upper() or "EC",
-                entrant_count=entrant_count,
+                entrant_count=len(granted),
             )
         )
 
@@ -309,19 +330,6 @@ class EurosService:
         ]
         rows.sort(key=lambda row: row.player.lower())
         return rows
-
-    async def _count_euros_entrants(self, bearer_token: str) -> int:
-        if self._profiles is None or self._auth_admin is None:
-            return 0
-        try:
-            roster = await self._profiles.list_profiles(bearer_token, active=True)
-        except RosterError:
-            return 0
-        count = 0
-        for profile in roster:
-            if await self._profile_has_euros_role(profile):
-                count += 1
-        return count
 
     async def _euros_roster_names(self, bearer_token: str) -> dict[UUID, str]:
         assert self._profiles is not None
