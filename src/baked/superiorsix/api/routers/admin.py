@@ -21,6 +21,7 @@ from baked.superiorsix.api.deps import (
     get_round_service,
     get_stats_service,
     get_subround_service,
+    get_team_xref_service,
     get_user_profiles,
 )
 from baked.superiorsix.api.schemas import (
@@ -60,9 +61,13 @@ from baked.superiorsix.api.schemas import (
     SelectMatchRequest,
     SubroundResponse,
     SubroundsResponse,
+    TeamXrefMapping,
+    TeamXrefResponse,
+    TeamXrefsResponse,
     UpdatePlayerRolesRequest,
     with_always_grant_invite_roles,
 )
+from baked.superiorsix.api.team_names import load_display
 from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import (
@@ -79,7 +84,7 @@ from baked.superiorsix.domain.exceptions import (
     SubroundError,
     SubroundNotFoundError,
 )
-from baked.superiorsix.domain.models import Match, Prediction
+from baked.superiorsix.domain.models import Match, Prediction, TeamXref
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.leagues import LeagueService
@@ -88,6 +93,7 @@ from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
 from baked.superiorsix.services.stats import StatsService
 from baked.superiorsix.services.subrounds import SubroundService, SubroundStatus
+from baked.superiorsix.services.team_xref import TeamXrefService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -104,16 +110,19 @@ def _roster_http_error(exc: RosterError) -> HTTPException:
 def _pick_from_prediction(
     prediction: Prediction,
     matches_by_id: dict[int, Match],
+    *,
+    display_team=None,
 ) -> AdminPlayerPickResponse:
     assert prediction.id is not None
     match = matches_by_id.get(prediction.match_id)
+    show = display_team or (lambda name: name)
     return AdminPlayerPickResponse(
         id=prediction.id,
         match_id=prediction.match_id,
         game_number=None if match is None else match.game_number,
         prediction=prediction.prediction,
-        home_team=None if match is None else match.home_team,
-        away_team=None if match is None else match.away_team,
+        home_team=None if match is None else show(match.home_team),
+        away_team=None if match is None else show(match.away_team),
         match_date=None if match is None else match.match_date,
     )
 
@@ -125,9 +134,11 @@ def _flat_from_prediction(
     first_name: str | None = None,
     last_name: str | None = None,
     nickname: str | None = None,
+    display_team=None,
 ) -> AdminFlatPredictionResponse:
     assert prediction.id is not None
     match = matches_by_id.get(prediction.match_id)
+    show = display_team or (lambda name: name)
     return AdminFlatPredictionResponse(
         id=prediction.id,
         round_id=prediction.round_id,
@@ -135,8 +146,8 @@ def _flat_from_prediction(
         match_id=prediction.match_id,
         prediction=prediction.prediction,
         game_number=None if match is None else match.game_number,
-        home_team=None if match is None else match.home_team,
-        away_team=None if match is None else match.away_team,
+        home_team=None if match is None else show(match.home_team),
+        away_team=None if match is None else show(match.away_team),
         match_date=None if match is None else match.match_date,
         first_name=first_name,
         last_name=last_name,
@@ -150,6 +161,7 @@ def _build_admin_board(
     matches: list[Match],
     predictions: list[Prediction],
     roster: list,
+    display_team=None,
 ) -> AdminPredictionBoardResponse:
     match_count = len(matches)
     matches_by_id = {match.id: match for match in matches if match.id is not None}
@@ -166,6 +178,7 @@ def _build_admin_board(
                 first_name=None if profile is None else profile.first_name,
                 last_name=None if profile is None else profile.last_name,
                 nickname=None if profile is None else profile.nickname,
+                display_team=display_team,
             )
         )
         by_auth.setdefault(prediction.auth_id, []).append(prediction)
@@ -189,7 +202,7 @@ def _build_admin_board(
         ),
     ):
         picks = [
-            _pick_from_prediction(prediction, matches_by_id)
+            _pick_from_prediction(prediction, matches_by_id, display_team=display_team)
             for prediction in by_auth.get(profile.auth_id, [])
         ]
         picks.sort(
@@ -215,7 +228,9 @@ def _build_admin_board(
         predictions=flat,
         subround=None if status_ is None else SubroundResponse.from_status(status_),
         match_count=match_count,
-        matches=[MatchResponse.from_domain(match) for match in matches],
+        matches=[
+            MatchResponse.from_domain(match, display_team=display_team) for match in matches
+        ],
         players=players,
     )
 
@@ -268,6 +283,33 @@ async def list_leagues(
 ) -> LeaguesResponse:
     leagues = await league_service.list()
     return LeaguesResponse(leagues=[LeagueResponse.from_domain(league) for league in leagues])
+
+
+@router.get("/listteamxref", response_model=TeamXrefsResponse)
+async def list_team_xref(
+    _: RequireAdmin,
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
+) -> TeamXrefsResponse:
+    """List provider team_name → xref mappings (legacy ``TEAM_XREF``)."""
+    rows = await team_xref.list()
+    return TeamXrefsResponse(
+        team_xref=[TeamXrefResponse.from_domain(row) for row in rows]
+    )
+
+
+@router.post("/upsertteamxref", response_model=TeamXrefsResponse)
+async def upsert_team_xref(
+    _: RequireAdmin,
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
+    payload: Annotated[TeamXrefMapping | list[TeamXrefMapping], Body()],
+) -> TeamXrefsResponse:
+    """Create or update team xref row(s) for provider / source-of-truth migrations."""
+    items = payload if isinstance(payload, list) else [payload]
+    mappings = [TeamXref(team_name=item.team_name, xref=item.xref) for item in items]
+    rows = await team_xref.upsert_many(mappings)
+    return TeamXrefsResponse(
+        team_xref=[TeamXrefResponse.from_domain(row) for row in rows]
+    )
 
 
 @router.get("/listplayers", response_model=PlayersResponse)
@@ -390,6 +432,7 @@ async def list_predictions(
     match_service: Annotated[MatchService, Depends(get_match_service)],
     prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     auth_id: Annotated[UUID | None, Query(alias="authId")] = None,
     subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
 ) -> AdminPredictionsListResponse:
@@ -419,8 +462,9 @@ async def list_predictions(
         round_id=status_.subround.round_id,
         match_ids=match_ids,
     )
+    display = await load_display(team_xref)
     picks = [
-        _pick_from_prediction(prediction, matches_by_id)
+        _pick_from_prediction(prediction, matches_by_id, display_team=display)
         for prediction in predictions
         if prediction.auth_id == auth_id
     ]
@@ -437,6 +481,7 @@ async def list_predictions_new(
     prediction_service: Annotated[PredictionService, Depends(get_prediction_service)],
     round_service: Annotated[RoundService, Depends(get_round_service)],
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
     match_date: Annotated[str | None, Query(alias="matchdate")] = None,
 ) -> AdminPredictionBoardResponse:
@@ -450,6 +495,7 @@ async def list_predictions_new(
         roster = await profiles.list_profiles(token, active=True)
     except RosterError as exc:
         raise _roster_http_error(exc) from exc
+    display = await load_display(team_xref)
 
     if match_date is not None:
         day = parse_legacy_date(match_date, field_name="matchdate")
@@ -463,6 +509,7 @@ async def list_predictions_new(
                 matches=matches,
                 predictions=[],
                 roster=roster,
+                display_team=display,
             )
         match_ids = [match.id for match in matches if match.id is not None]
         predictions = await prediction_service.list_active_for_matches(
@@ -483,6 +530,7 @@ async def list_predictions_new(
             matches=matches,
             predictions=predictions,
             roster=roster,
+            display_team=display,
         )
 
     status_, matches = await _resolve_admin_slate(
@@ -496,6 +544,7 @@ async def list_predictions_new(
             matches=[],
             predictions=[],
             roster=roster,
+            display_team=display,
         )
 
     match_ids = [match.id for match in matches if match.id is not None]
@@ -508,6 +557,7 @@ async def list_predictions_new(
         matches=matches,
         predictions=predictions,
         roster=roster,
+        display_team=display,
     )
 
 
@@ -780,6 +830,7 @@ async def get_round(_: RequireAdmin) -> dict[str, Any]:
 async def list_matches(
     _: RequireAdmin,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     from_date: Annotated[str | None, Query(alias="fromDate")] = None,
     to_date: Annotated[str | None, Query(alias="toDate")] = None,
 ) -> MatchesResponse:
@@ -817,11 +868,13 @@ async def list_matches(
     _, end = day_bounds(end_day)
     matches = await match_service.list_in_range(start=start, end=end)
     difficulties = await match_service.difficulties_for_matches(matches)
+    display = await load_display(team_xref)
     return MatchesResponse(
         matches=[
             MatchResponse.from_domain(
                 match,
                 difficulty=None if match.id is None else difficulties.get(match.id),
+                display_team=display,
             )
             for match in matches
         ]
@@ -832,6 +885,7 @@ async def list_matches(
 async def get_match(
     _: RequireAdmin,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     match_id: Annotated[int | None, Query(alias="id")] = None,
 ) -> MatchResponse:
     if match_id is None:
@@ -844,7 +898,8 @@ async def get_match(
         difficulty = await match_service.difficulty_for_match(match)
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return MatchResponse.from_domain(match, difficulty=difficulty)
+    display = await load_display(team_xref)
+    return MatchResponse.from_domain(match, difficulty=difficulty, display_team=display)
 
 
 @router.post("/addmatch", response_model=MatchResponse)
@@ -852,6 +907,7 @@ async def add_match(
     _: RequireAdmin,
     payload: SelectMatchRequest,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
 ) -> MatchResponse:
     try:
@@ -866,13 +922,15 @@ async def add_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (MatchSelectionError, SubroundError, RoundNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return MatchResponse.from_domain(match)
+    display = await load_display(team_xref)
+    return MatchResponse.from_domain(match, display_team=display)
 
 
 @router.post("/addmatches", response_model=MatchesResponse)
 async def add_matches(
     _: RequireAdmin,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
     payload: Annotated[list[BulkSelectMatchItem], Body()],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
@@ -895,13 +953,17 @@ async def add_matches(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (MatchSelectionError, SubroundError, RoundNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return MatchesResponse(matches=[MatchResponse.from_domain(match) for match in matches])
+    display = await load_display(team_xref)
+    return MatchesResponse(
+        matches=[MatchResponse.from_domain(match, display_team=display) for match in matches]
+    )
 
 
 @router.get("/dropmatch", response_model=MatchResponse)
 async def drop_match(
     _: RequireAdmin,
     match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     match_id: Annotated[int | None, Query(alias="id")] = None,
 ) -> MatchResponse:
     if match_id is None:
@@ -913,7 +975,8 @@ async def drop_match(
         match = await match_service.deselect_from_round(match_id)
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    return MatchResponse.from_domain(match)
+    display = await load_display(team_xref)
+    return MatchResponse.from_domain(match, display_team=display)
 
 
 @router.post("/addpredictions", response_model=dict[str, list[PredictionResponse]])
@@ -1018,6 +1081,7 @@ async def reactivate_player(
 async def admin_euros_meta(
     _: RequireAdmin,
     euros: Annotated[EurosService, Depends(get_euros_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> EurosMetaEnvelope:
     meta = await euros.meta()
     tournament = meta.tournament
@@ -1030,6 +1094,7 @@ async def admin_euros_meta(
             tournament=(
                 None if tournament is None else EurosTournamentResponse.from_domain(tournament)
             ),
+            teams=await team_xref.as_map(),
         )
     )
 
@@ -1038,10 +1103,12 @@ async def admin_euros_meta(
 async def admin_euros_matches(
     _: RequireAdmin,
     euros: Annotated[EurosService, Depends(get_euros_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> EurosMatchesResponse:
     matches = await euros.list_matches()
+    display = await load_display(team_xref)
     return EurosMatchesResponse(
-        matches=[EurosMatchResponse.from_domain(match) for match in matches]
+        matches=[EurosMatchResponse.from_domain(match, display_team=display) for match in matches]
     )
 
 

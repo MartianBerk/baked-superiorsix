@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -47,19 +48,23 @@ class MatchRepository(Protocol):
 
     async def list_by_league(self, league_id: int) -> list[Match]: ...
 
-    async def list_finished_for_team_before(self, team: str, before: datetime) -> list[Match]: ...
+    async def list_finished_for_team_before(
+        self,
+        teams: Collection[str],
+        before: datetime,
+    ) -> list[Match]: ...
 
     async def list_finished_h2h_before(
         self,
-        home_team: str,
-        away_team: str,
+        home_teams: Collection[str],
+        away_teams: Collection[str],
         before: datetime,
     ) -> list[Match]: ...
 
     async def find_fixture(
         self,
-        home_team: str,
-        away_team: str,
+        home_teams: Collection[str],
+        away_teams: Collection[str],
         start: datetime,
         end: datetime,
     ) -> Match | None: ...
@@ -154,13 +159,20 @@ class SqlAlchemyMatchRepository:
         )
         return [_to_domain(record) for record in result.scalars().all()]
 
-    async def list_finished_for_team_before(self, team: str, before: datetime) -> list[Match]:
+    async def list_finished_for_team_before(
+        self,
+        teams: Collection[str],
+        before: datetime,
+    ) -> list[Match]:
+        names = tuple(dict.fromkeys(teams))
+        if not names:
+            return []
         result = await self._session.execute(
             select(MatchRecord)
             .where(
                 MatchRecord.status == MatchStatus.FINISHED,
                 MatchRecord.match_date < before,
-                or_(MatchRecord.home_team == team, MatchRecord.away_team == team),
+                or_(MatchRecord.home_team.in_(names), MatchRecord.away_team.in_(names)),
             )
             .order_by(MatchRecord.match_date)
         )
@@ -168,10 +180,14 @@ class SqlAlchemyMatchRepository:
 
     async def list_finished_h2h_before(
         self,
-        home_team: str,
-        away_team: str,
+        home_teams: Collection[str],
+        away_teams: Collection[str],
         before: datetime,
     ) -> list[Match]:
+        homes = tuple(dict.fromkeys(home_teams))
+        aways = tuple(dict.fromkeys(away_teams))
+        if not homes or not aways:
+            return []
         result = await self._session.execute(
             select(MatchRecord)
             .where(
@@ -179,12 +195,12 @@ class SqlAlchemyMatchRepository:
                 MatchRecord.match_date < before,
                 or_(
                     and_(
-                        MatchRecord.home_team == home_team,
-                        MatchRecord.away_team == away_team,
+                        MatchRecord.home_team.in_(homes),
+                        MatchRecord.away_team.in_(aways),
                     ),
                     and_(
-                        MatchRecord.home_team == away_team,
-                        MatchRecord.away_team == home_team,
+                        MatchRecord.home_team.in_(aways),
+                        MatchRecord.away_team.in_(homes),
                     ),
                 ),
             )
@@ -194,15 +210,19 @@ class SqlAlchemyMatchRepository:
 
     async def find_fixture(
         self,
-        home_team: str,
-        away_team: str,
+        home_teams: Collection[str],
+        away_teams: Collection[str],
         start: datetime,
         end: datetime,
     ) -> Match | None:
+        homes = tuple(dict.fromkeys(home_teams))
+        aways = tuple(dict.fromkeys(away_teams))
+        if not homes or not aways:
+            return None
         result = await self._session.execute(
             select(MatchRecord).where(
-                MatchRecord.home_team == home_team,
-                MatchRecord.away_team == away_team,
+                MatchRecord.home_team.in_(homes),
+                MatchRecord.away_team.in_(aways),
                 MatchRecord.match_date >= start,
                 MatchRecord.match_date < end,
             )

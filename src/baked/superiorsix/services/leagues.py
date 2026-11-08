@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import date
 
@@ -8,6 +9,7 @@ from baked.superiorsix.domain.exceptions import LeagueNotFoundError
 from baked.superiorsix.domain.models import League, LeagueTableEntry, Match, MatchStatus
 from baked.superiorsix.repositories.leagues import LeagueRepository
 from baked.superiorsix.repositories.matches import MatchRepository
+from baked.superiorsix.services.team_xref import TeamXrefService
 
 
 def season_label(start_date: date) -> str:
@@ -26,9 +28,15 @@ def season_for_match_date(match_date: date) -> str:
 
 
 class LeagueService:
-    def __init__(self, leagues: LeagueRepository, matches: MatchRepository) -> None:
+    def __init__(
+        self,
+        leagues: LeagueRepository,
+        matches: MatchRepository,
+        team_xref: TeamXrefService | None = None,
+    ) -> None:
         self._leagues = leagues
         self._matches = matches
+        self._team_xref = team_xref
 
     async def get(self, league_id: int) -> League:
         league = await self._leagues.get(league_id)
@@ -63,13 +71,21 @@ class LeagueService:
             raise LeagueNotFoundError(f"League '{league_code}' not found.")
         season = season or season_label(league.start_date)
         matches = await self._matches.list_by_league(league.id)
-        return build_league_table(league_code, season, matches)
+        team_canonical = None if self._team_xref is None else await self._team_xref.as_map()
+        return build_league_table(
+            league_code,
+            season,
+            matches,
+            team_canonical=team_canonical,
+        )
 
 
 def build_league_table(
     league_code: str,
     season: str,
     matches: list[Match],
+    *,
+    team_canonical: Mapping[str, str] | None = None,
 ) -> list[LeagueTableEntry]:
     stats: dict[str, dict[str, int]] = defaultdict(
         lambda: {
@@ -83,6 +99,11 @@ def build_league_table(
         }
     )
 
+    def _key(name: str) -> str:
+        if not team_canonical:
+            return name
+        return team_canonical.get(name, name)
+
     for match in matches:
         if season_for_match_date(match.match_date.date()) != season:
             continue
@@ -91,8 +112,8 @@ def build_league_table(
         if match.home_score is None or match.away_score is None:
             continue
 
-        home = stats[match.home_team]
-        away = stats[match.away_team]
+        home = stats[_key(match.home_team)]
+        away = stats[_key(match.away_team)]
         home["played"] += 1
         away["played"] += 1
         home["goals_for"] += match.home_score

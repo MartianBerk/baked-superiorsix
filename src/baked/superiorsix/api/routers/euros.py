@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from baked.superiorsix.api.deps import RequireEuros, get_euros_service
+from baked.superiorsix.api.deps import RequireEuros, get_euros_service, get_team_xref_service
 from baked.superiorsix.api.schemas import (
     EurosAddPredictionRequest,
     EurosGetPredictionResponse,
@@ -18,11 +18,13 @@ from baked.superiorsix.api.schemas import (
     EurosScoresResponse,
     EurosTournamentResponse,
 )
+from baked.superiorsix.api.team_names import load_display
 from baked.superiorsix.domain.exceptions import (
     EurosMatchNotFoundError,
     EurosPredictionError,
 )
 from baked.superiorsix.services.euros import EurosService
+from baked.superiorsix.services.team_xref import TeamXrefService
 
 router = APIRouter(tags=["euros"])
 
@@ -38,6 +40,7 @@ def _optional_bearer(request: Request) -> str | None:
 @router.get("/euros/meta", response_model=EurosMetaEnvelope)
 async def euros_meta(
     euros: Annotated[EurosService, Depends(get_euros_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> EurosMetaEnvelope:
     """Static prize pot for the open Euros tournament (no round rollover)."""
     meta = await euros.meta()
@@ -51,6 +54,7 @@ async def euros_meta(
             tournament=(
                 None if tournament is None else EurosTournamentResponse.from_domain(tournament)
             ),
+            teams=await team_xref.as_map(),
         )
     )
 
@@ -58,10 +62,12 @@ async def euros_meta(
 @router.get("/euros/matches", response_model=EurosMatchesResponse)
 async def euros_matches(
     euros: Annotated[EurosService, Depends(get_euros_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> EurosMatchesResponse:
     matches = await euros.list_matches()
+    display = await load_display(team_xref)
     return EurosMatchesResponse(
-        matches=[EurosMatchResponse.from_domain(match) for match in matches]
+        matches=[EurosMatchResponse.from_domain(match, display_team=display) for match in matches]
     )
 
 

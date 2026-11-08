@@ -32,6 +32,19 @@ class LeagueRecord(Base):
     start_date: Mapped[date] = mapped_column(Date)
 
 
+class TeamXrefRecord(Base):
+    """Map provider team names → stable display / stats key (legacy ``TEAM_XREF``).
+
+    Multiple ``team_name`` rows may share one ``xref`` so form, H2H, and league
+    tables stay continuous across feed renames / provider migrations.
+    """
+
+    __tablename__ = "team_xref"
+
+    team_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    xref: Mapped[str] = mapped_column(String(128), index=True)
+
+
 class RoundRecord(Base):
     __tablename__ = "rounds"
 

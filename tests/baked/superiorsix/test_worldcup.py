@@ -221,6 +221,7 @@ async def test_admin_worldcup_settings_static_pot(client: TestClient) -> None:
         "pot_pence": 2800,
         "open": False,
         "winner_ids": [],
+        "teams": {},
     }
     assert client.get("/worldcup/meta").json()["pot_pence"] == 2800
 
@@ -265,6 +266,7 @@ async def test_worldcup_open_end_tournament_lifecycle(
         "pot_pence": 200,
         "open": True,
         "winner_ids": [],
+        "teams": {},
     }
     assert "worldcup" in auth_admin.memberships["wc@example.com"]
     assert client.get("/worldcup/meta").json()["open"] is True
