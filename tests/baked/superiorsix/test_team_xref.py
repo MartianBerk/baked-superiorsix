@@ -1,4 +1,4 @@
-"""Team xref: API responses use display names; form/H2H merge across aliases."""
+"""Legacy TEAM_XREF: meta.teams + form / H2H / league-table alias merge."""
 
 from datetime import UTC, date, datetime, timedelta
 
@@ -12,7 +12,7 @@ from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.team_xref import SqlAlchemyTeamXrefRepository
 from baked.superiorsix.services.ingest import MatchIngestService
-from baked.superiorsix.services.leagues import LeagueService
+from baked.superiorsix.services.leagues import LeagueService, build_league_table, season_label
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.team_xref import TeamXrefService
 
@@ -98,7 +98,42 @@ async def _seed(
         return day
 
 
-def test_api_responses_use_xref_display_names(client: TestClient) -> None:
+def test_meta_teams_and_admin_upsert(client: TestClient) -> None:
+    headers = _admin_headers()
+
+    empty = client.get("/game/meta")
+    assert empty.status_code == 200
+    assert empty.json()["meta"]["teams"] == {}
+
+    created = client.post(
+        "/admin/upsertteamxref",
+        headers=headers,
+        json=[
+            {"team_name": "Man Utd", "xref": "Manchester United"},
+            {"team_name": "Manchester United", "xref": "Manchester United"},
+        ],
+    )
+    assert created.status_code == 200, created.text
+    assert {row["team_name"] for row in created.json()["team_xref"]} == {
+        "Man Utd",
+        "Manchester United",
+    }
+
+    listed = client.get("/admin/listteamxref", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["team_xref"] == created.json()["team_xref"]
+
+    meta = client.get("/game/meta")
+    assert meta.status_code == 200
+    assert meta.json()["meta"]["teams"] == {
+        "Man Utd": "Manchester United",
+        "Manchester United": "Manchester United",
+    }
+    assert client.get("/euros/meta").json()["meta"]["teams"]["Man Utd"] == "Manchester United"
+    assert client.get("/worldcup/meta").json()["teams"]["Man Utd"] == "Manchester United"
+
+
+def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     day = anyio.run(_seed, client.app.state.session_factory)
     headers = _admin_headers()
 
@@ -121,56 +156,96 @@ def test_api_responses_use_xref_display_names(client: TestClient) -> None:
         params={"fromDate": _fmt(day), "toDate": _fmt(day)},
     )
     assert listed.status_code == 200, listed.text
-    matches = listed.json()["matches"]
-    row = next(item for item in matches if item["external_id"] == "pl-ars-che-xref")
-    assert row["home_team"] == "Arsenal"
-    assert row["away_team"] == "Chelsea"
-
+    row = next(
+        item for item in listed.json()["matches"] if item["external_id"] == "pl-ars-che-xref"
+    )
     selected = client.post(
         "/admin/addmatch",
         headers=headers,
         json={"id": row["id"], "game_number": 1},
     )
     assert selected.status_code == 200, selected.text
-    assert selected.json()["home_team"] == "Arsenal"
-    assert selected.json()["away_team"] == "Chelsea"
 
+    # Public livematches keep provider strings (FE labels via meta.teams).
     live = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert live.status_code == 200, live.text
     assert live.json()["matches"][0]["home_team"] == "Arsenal"
     assert live.json()["matches"][0]["away_team"] == "Chelsea"
 
-    # FE can call matchdetail with display names from livematches.
     detail = client.get(
         "/game/matchdetail",
         params={"hometeam": "Arsenal", "awayteam": "Chelsea", "matchdate": _fmt(day)},
     )
     assert detail.status_code == 200, detail.text
     body = detail.json()["match_detail"]
+    # Response keys stay the requested provider strings.
     assert set(body["league_position"]) == {"Arsenal", "Chelsea"}
     assert set(body["team_performance"]) == {"Arsenal", "Chelsea"}
     assert set(body["head_to_head"]) == {"Arsenal", "Chelsea"}
-    # Form includes historical "Arsenal FC" results via xref aliases.
+    # Form / H2H include historical "Arsenal FC" / "Chelsea FC" via aliases.
     assert body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
     assert body["head_to_head"]["Arsenal"] == ["WIN", "DRAW"]
+    assert body["league_position"]["Arsenal"] == "1"
 
-
-def test_admin_upsert_team_xref(client: TestClient) -> None:
-    headers = _admin_headers()
-    created = client.post(
-        "/admin/upsertteamxref",
-        headers=headers,
-        json={"team_name": "Manchester United FC", "xref": "Man Utd"},
+    # Alias query finds the same fixture; keys stay the requested alias strings.
+    aliased = client.get(
+        "/game/matchdetail",
+        params={"hometeam": "Arsenal FC", "awayteam": "Chelsea", "matchdate": _fmt(day)},
     )
-    assert created.status_code == 200, created.text
-    assert created.json()["team_xref"][0] == {
-        "team_name": "Manchester United FC",
-        "xref": "Man Utd",
-    }
+    assert aliased.status_code == 200, aliased.text
+    aliased_body = aliased.json()["match_detail"]
+    assert set(aliased_body["team_performance"]) == {"Arsenal FC", "Chelsea"}
+    assert aliased_body["team_performance"]["Arsenal FC"] == ["WIN", "DRAW", "WIN", "WIN"]
+    assert aliased_body["league_position"]["Arsenal FC"] == "1"
 
-    listed = client.get("/admin/listteamxref", headers=headers)
-    assert listed.status_code == 200, listed.text
-    assert any(
-        row["team_name"] == "Manchester United FC" and row["xref"] == "Man Utd"
-        for row in listed.json()["team_xref"]
+    async def table_teams() -> list[str]:
+        async with client.app.state.session_factory() as session:
+            xref = TeamXrefService(SqlAlchemyTeamXrefRepository(session))
+            leagues = LeagueService(
+                SqlAlchemyLeagueRepository(session),
+                SqlAlchemyMatchRepository(session),
+                xref,
+            )
+            table = await leagues.league_table("PL")
+            return [entry.team for entry in table]
+
+    names = anyio.run(table_teams)
+    assert "Arsenal" in names
+    assert "Arsenal FC" not in names
+
+
+def test_build_league_table_canonical_keys() -> None:
+    day = date(2025, 9, 1)
+    matches = [
+        Match(
+            external_id="a",
+            league_id=1,
+            match_date=_kickoff(day),
+            status=MatchStatus.FINISHED,
+            home_team="Arsenal FC",
+            away_team="Chelsea",
+            home_score=2,
+            away_score=0,
+        ),
+        Match(
+            external_id="b",
+            league_id=1,
+            match_date=_kickoff(day + timedelta(days=7)),
+            status=MatchStatus.FINISHED,
+            home_team="Arsenal",
+            away_team="Spurs",
+            home_score=1,
+            away_score=0,
+        ),
+    ]
+    table = build_league_table(
+        "PL",
+        season_label(date(2025, 8, 1)),
+        matches,
+        team_canonical={"Arsenal FC": "Arsenal", "Arsenal": "Arsenal"},
     )
+    by_team = {entry.team: entry for entry in table}
+    assert "Arsenal" in by_team
+    assert "Arsenal FC" not in by_team
+    assert by_team["Arsenal"].matches_played == 2
+    assert by_team["Arsenal"].points == 6
