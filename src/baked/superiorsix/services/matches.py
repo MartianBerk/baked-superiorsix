@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Collection
 from datetime import UTC, date, datetime, time, timedelta
 
 from baked.superiorsix.domain.exceptions import MatchNotFoundError, MatchSelectionError
@@ -14,14 +15,31 @@ from baked.superiorsix.domain.models import (
 from baked.superiorsix.repositories.matches import MatchRepository
 from baked.superiorsix.services.difficulty import calculate_match_difficulty
 from baked.superiorsix.services.leagues import LeagueService
+from baked.superiorsix.services.team_xref import TeamXrefService
 
 logger = logging.getLogger(__name__)
 
 
 class MatchService:
-    def __init__(self, matches: MatchRepository, leagues: LeagueService) -> None:
+    def __init__(
+        self,
+        matches: MatchRepository,
+        leagues: LeagueService,
+        team_xref: TeamXrefService | None = None,
+    ) -> None:
         self._matches = matches
         self._leagues = leagues
+        self._team_xref = team_xref
+
+    async def _canonical(self, team: str) -> str:
+        if self._team_xref is None:
+            return team
+        return await self._team_xref.canonical(team)
+
+    async def _aliases(self, team: str) -> list[str]:
+        if self._team_xref is None:
+            return [team]
+        return await self._team_xref.aliases(team)
 
     async def get(self, match_id: int) -> Match:
         match = await self._matches.get(match_id)
@@ -262,9 +280,16 @@ class MatchService:
             updated.append(await self._matches.save(match))
         return sorted(updated, key=lambda match: match.game_number or 0)
 
+    async def display_team(self, team: str) -> str:
+        """API-facing team label (xref when mapped)."""
+        if self._team_xref is None:
+            return team
+        return await self._team_xref.display(team)
+
     async def team_performance(self, team: str, before: datetime) -> list[TeamResult]:
-        matches = await self._matches.list_finished_for_team_before(team, before)
-        return [_result_for_team(match, team) for match in matches[-5:]]
+        aliases = await self._aliases(team)
+        matches = await self._matches.list_finished_for_team_before(aliases, before)
+        return [_result_for_team(match, aliases) for match in matches[-5:]]
 
     async def head_to_head(
         self,
@@ -272,12 +297,18 @@ class MatchService:
         away_team: str,
         before: datetime,
     ) -> tuple[list[TeamResult], list[TeamResult]]:
-        matches = await self._matches.list_finished_h2h_before(home_team, away_team, before)
+        home_aliases = await self._aliases(home_team)
+        away_aliases = await self._aliases(away_team)
+        matches = await self._matches.list_finished_h2h_before(
+            home_aliases,
+            away_aliases,
+            before,
+        )
         home_results: list[TeamResult] = []
         away_results: list[TeamResult] = []
         for match in matches[-5:]:
-            home_results.append(_result_for_team(match, home_team))
-            away_results.append(_result_for_team(match, away_team))
+            home_results.append(_result_for_team(match, home_aliases))
+            away_results.append(_result_for_team(match, away_aliases))
         return home_results, away_results
 
     async def match_detail(
@@ -287,7 +318,9 @@ class MatchService:
         match_date: date,
     ) -> MatchDetail:
         start, end = day_bounds(match_date)
-        match = await self._matches.find_fixture(home_team, away_team, start, end)
+        home_aliases = await self._aliases(home_team)
+        away_aliases = await self._aliases(away_team)
+        match = await self._matches.find_fixture(home_aliases, away_aliases, start, end)
         if match is None:
             raise MatchNotFoundError("Cannot find match.")
 
@@ -296,11 +329,16 @@ class MatchService:
 
         positions = {entry.team: entry.position for entry in table}
         before = start
-        home_h2h, away_h2h = await self.head_to_head(home_team, away_team, before)
-        home_form = await self.team_performance(home_team, before)
-        away_form = await self.team_performance(away_team, before)
-        home_position = positions.get(home_team)
-        away_position = positions.get(away_team)
+        # Aggregate via stored fixture names (alias-aware). Response dict keys
+        # stay the caller-requested strings for API compatibility; FE labels
+        # come from ``meta.teams[name] || name``.
+        home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
+        home_form = await self.team_performance(match.home_team, before)
+        away_form = await self.team_performance(match.away_team, before)
+        home_canonical = await self._canonical(match.home_team)
+        away_canonical = await self._canonical(match.away_team)
+        home_position = positions.get(home_canonical)
+        away_position = positions.get(away_canonical)
         difficulty = await self.difficulty_for_match(match)
 
         return MatchDetail(
@@ -400,11 +438,13 @@ class MatchService:
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
+        home_key = await self._canonical(match.home_team)
+        away_key = await self._canonical(match.away_team)
         difficulty = calculate_match_difficulty(
             home_performance=home_form,
             away_performance=away_form,
-            home_position=positions.get(match.home_team),
-            away_position=positions.get(match.away_team),
+            home_position=positions.get(home_key),
+            away_position=positions.get(away_key),
             home_head_to_head=home_h2h,
             away_head_to_head=away_h2h,
             league_size=len(table) or None,
@@ -439,16 +479,17 @@ def day_bounds(match_date: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def _result_for_team(match: Match, team: str) -> TeamResult:
+def _result_for_team(match: Match, team_names: str | Collection[str]) -> TeamResult:
+    names = {team_names} if isinstance(team_names, str) else set(team_names)
     if match.home_score is None or match.away_score is None:
         return TeamResult.DRAW
-    if match.home_team == team:
+    if match.home_team in names:
         if match.home_score > match.away_score:
             return TeamResult.WIN
         if match.home_score < match.away_score:
             return TeamResult.LOSE
         return TeamResult.DRAW
-    if match.away_team == team:
+    if match.away_team in names:
         if match.away_score > match.home_score:
             return TeamResult.WIN
         if match.away_score < match.home_score:

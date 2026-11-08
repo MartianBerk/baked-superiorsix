@@ -24,6 +24,7 @@ from baked.superiorsix.repositories.worldcup_matches import SqlAlchemyWorldcupMa
 from baked.superiorsix.repositories.worldcup_predictions import (
     SqlAlchemyWorldcupPredictionRepository,
 )
+from baked.superiorsix.repositories.team_xref import SqlAlchemyTeamXrefRepository
 from baked.superiorsix.repositories.worldcup_settings import SqlAlchemyWorldcupSettingsRepository
 from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.gameday import GamedayService
@@ -33,6 +34,7 @@ from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
 from baked.superiorsix.services.stats import StatsService
 from baked.superiorsix.services.subrounds import SubroundService
+from baked.superiorsix.services.team_xref import TeamXrefService
 from baked.superiorsix.services.worldcup import WorldcupService
 
 __all__ = [
@@ -56,6 +58,7 @@ __all__ = [
     "get_session_factory",
     "get_stats_service",
     "get_subround_service",
+    "get_team_xref_service",
     "get_user_profiles",
     "get_worldcup_service",
     "require_active_player",
@@ -74,17 +77,29 @@ async def get_db_session(
         yield session
 
 
+async def get_team_xref_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> TeamXrefService:
+    return TeamXrefService(SqlAlchemyTeamXrefRepository(session))
+
+
 async def get_league_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> LeagueService:
-    return LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
+    return LeagueService(
+        SqlAlchemyLeagueRepository(session),
+        SqlAlchemyMatchRepository(session),
+        team_xref,
+    )
 
 
 async def get_match_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     leagues: Annotated[LeagueService, Depends(get_league_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> MatchService:
-    return MatchService(SqlAlchemyMatchRepository(session), leagues)
+    return MatchService(SqlAlchemyMatchRepository(session), leagues, team_xref)
 
 
 async def get_round_service(

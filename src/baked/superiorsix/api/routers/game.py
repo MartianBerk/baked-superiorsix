@@ -9,6 +9,7 @@ from baked.superiorsix.api.deps import (
     get_gameday_service,
     get_match_service,
     get_subround_service,
+    get_team_xref_service,
 )
 from baked.superiorsix.api.schemas import (
     AvailableMatchesResponse,
@@ -32,6 +33,7 @@ from baked.superiorsix.noop import noop
 from baked.superiorsix.services.gameday import GamedayService, LiveScoresBoard
 from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.subrounds import SubroundService
+from baked.superiorsix.services.team_xref import TeamXrefService
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -39,6 +41,7 @@ router = APIRouter(prefix="/game", tags=["game"])
 @router.get("/meta", response_model=GameMetaEnvelope)
 async def game_meta(
     gameday: Annotated[GamedayService, Depends(get_gameday_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> GameMetaEnvelope:
     """Header round number + prize pot, plus slate / match-day navigation."""
     meta = await gameday.meta()
@@ -53,6 +56,7 @@ async def game_meta(
             subround=None if latest is None else SubroundResponse.from_status(latest),
             subrounds=[SubroundResponse.from_status(item) for item in meta.subrounds],
             match_days=list(meta.match_days),
+            teams=await team_xref.as_map(),
         )
     )
 
@@ -69,6 +73,7 @@ async def game_live_matches(
         )
     day = parse_legacy_date(match_date, field_name="matchDate")
     matches = await match_service.available_matches(day)
+    # Keep provider team strings; FE labels via ``meta.teams[name] || name``.
     return AvailableMatchesResponse(
         matches=[AvailableMatchResponse.from_domain(match) for match in matches]
     )

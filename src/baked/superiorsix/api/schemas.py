@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date, datetime
 from uuid import UUID
 
@@ -18,6 +19,8 @@ from baked.superiorsix.domain.models import (
     TeamResult,
 )
 from baked.superiorsix.services.subrounds import SubroundStatus
+
+DisplayTeam = Callable[[str], str]
 
 
 class AvailableMatchResponse(BaseModel):
@@ -40,12 +43,14 @@ class AvailableMatchResponse(BaseModel):
         match: Match,
         *,
         now: datetime | None = None,
+        display_team: DisplayTeam | None = None,
     ) -> "AvailableMatchResponse":
         assert match.id is not None
+        show = display_team or (lambda name: name)
         return cls(
             id=match.id,
-            home_team=match.home_team,
-            away_team=match.away_team,
+            home_team=show(match.home_team),
+            away_team=show(match.away_team),
             home_score=match.home_score,
             away_score=match.away_score,
             status=match.status,
@@ -150,8 +155,10 @@ class MatchResponse(BaseModel):
         *,
         difficulty: MatchDifficultyScore | None = None,
         now: datetime | None = None,
+        display_team: DisplayTeam | None = None,
     ) -> "MatchResponse":
         assert match.id is not None
+        show = display_team or (lambda name: name)
         return cls(
             id=match.id,
             external_id=match.external_id,
@@ -159,8 +166,8 @@ class MatchResponse(BaseModel):
             match_date=match.match_date,
             match_minute=resolve_match_minute(match, now=now),
             status=match.status,
-            home_team=match.home_team,
-            away_team=match.away_team,
+            home_team=show(match.home_team),
+            away_team=show(match.away_team),
             use_match=match.use_match,
             home_score=match.home_score,
             away_score=match.away_score,
@@ -290,6 +297,9 @@ class GameMetaResponse(BaseModel):
 
     ``round_number`` is the latest subround/slate sequence (Martin). Prize pot is
     ``buy_in_pence * n_players * round_number``.
+
+    ``teams`` is the legacy ``TEAM_XREF`` map (provider ``team_name`` → display /
+    stats ``xref``). FE labels: ``meta.teams[match.home_team] || match.home_team``.
     """
 
     round_number: int = 0
@@ -300,6 +310,7 @@ class GameMetaResponse(BaseModel):
     subround: SubroundResponse | None = None
     subrounds: list[SubroundResponse] = Field(default_factory=list)
     match_days: list[datetime] = Field(default_factory=list)
+    teams: dict[str, str] = Field(default_factory=dict)
 
 
 class GameMetaEnvelope(BaseModel):
@@ -716,12 +727,18 @@ class EurosMatchResponse(BaseModel):
     use_match: bool = True
 
     @classmethod
-    def from_domain(cls, match: EurosMatch) -> "EurosMatchResponse":
+    def from_domain(
+        cls,
+        match: EurosMatch,
+        *,
+        display_team: DisplayTeam | None = None,
+    ) -> "EurosMatchResponse":
         assert match.id is not None
+        show = display_team or (lambda name: name)
         return cls(
             id=match.id,
-            home_team=match.home_team,
-            away_team=match.away_team,
+            home_team=show(match.home_team),
+            away_team=show(match.away_team),
             home_score=match.home_score,
             away_score=match.away_score,
             status=match.status,
@@ -835,6 +852,7 @@ class EurosMetaResponse(BaseModel):
     entrant_count: int
     prize_pot_pence: int
     tournament: EurosTournamentResponse | None = None
+    teams: dict[str, str] = Field(default_factory=dict)
 
 
 class EurosMetaEnvelope(BaseModel):
@@ -875,15 +893,21 @@ class WorldcupMatchResponse(BaseModel):
     matchday: int | None = None
 
     @classmethod
-    def from_domain(cls, match: object) -> "WorldcupMatchResponse":
+    def from_domain(
+        cls,
+        match: object,
+        *,
+        display_team: DisplayTeam | None = None,
+    ) -> "WorldcupMatchResponse":
         from baked.superiorsix.domain.worldcup import WorldcupMatch
 
         assert isinstance(match, WorldcupMatch)
         assert match.id is not None
+        show = display_team or (lambda name: name)
         return cls(
             id=match.id,
-            home_team=match.home_team,
-            away_team=match.away_team,
+            home_team=show(match.home_team),
+            away_team=show(match.away_team),
             home_score=match.home_score,
             away_score=match.away_score,
             status=match.status,
@@ -973,6 +997,7 @@ class WorldcupMetaResponse(BaseModel):
     pot_pence: int
     open: bool = False
     winner_ids: list[UUID] = Field(default_factory=list)
+    teams: dict[str, str] = Field(default_factory=dict)
 
 
 class WorldcupSettingsUpdateRequest(BaseModel):
@@ -991,3 +1016,36 @@ class EndWorldcupTournamentRequest(BaseModel):
     """Close the active World Cup edition (clears ``open``) and record winners."""
 
     winner_ids: list[UUID] = Field(min_length=1)
+
+
+class TeamXrefMapping(BaseModel):
+    """One provider feed name → stable xref display / stats key."""
+
+    team_name: str = Field(min_length=1, max_length=128)
+    xref: str = Field(min_length=1, max_length=128)
+
+
+class TeamXrefResponse(BaseModel):
+    team_name: str
+    xref: str
+
+    @classmethod
+    def from_domain(cls, mapping: object) -> "TeamXrefResponse":
+        from baked.superiorsix.domain.models import TeamXref
+
+        assert isinstance(mapping, TeamXref)
+        return cls(team_name=mapping.team_name, xref=mapping.xref)
+
+
+class TeamXrefsResponse(BaseModel):
+    team_xref: list[TeamXrefResponse]
+
+
+class TeamXrefMapResponse(BaseModel):
+    """Legacy ``TEAM_XREF`` shape: provider ``team_name`` → display ``xref``.
+
+    Prefer xref names already embedded in match API payloads; this map is for
+    admin / migration tooling and legacy clients.
+    """
+
+    teams: dict[str, str] = Field(default_factory=dict)

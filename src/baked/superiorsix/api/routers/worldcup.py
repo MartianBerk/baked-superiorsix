@@ -8,6 +8,7 @@ from baked.superiorsix.api.deps import (
     RequireAdmin,
     RequireWorldcup,
     get_bearer_token,
+    get_team_xref_service,
     get_worldcup_service,
 )
 from baked.superiorsix.api.schemas import (
@@ -24,11 +25,13 @@ from baked.superiorsix.api.schemas import (
     WorldcupScoresResponse,
     WorldcupSettingsUpdateRequest,
 )
+from baked.superiorsix.api.team_names import load_display
 from baked.superiorsix.domain.exceptions import (
     PredictionError,
     WorldcupError,
     WorldcupMatchNotFoundError,
 )
+from baked.superiorsix.services.team_xref import TeamXrefService
 from baked.superiorsix.services.worldcup import WorldcupService
 
 router = APIRouter(tags=["worldcup"])
@@ -37,18 +40,23 @@ router = APIRouter(tags=["worldcup"])
 @router.get("/worldcup/meta", response_model=WorldcupMetaResponse)
 async def worldcup_meta(
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMetaResponse:
     meta = await service.meta()
-    return WorldcupMetaResponse(**meta)
+    return WorldcupMetaResponse(**meta, teams=await team_xref.as_map())
 
 
 @router.get("/worldcup/matches", response_model=WorldcupMatchesResponse)
 async def worldcup_matches(
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMatchesResponse:
     matches = await service.list_matches()
+    display = await load_display(team_xref)
     return WorldcupMatchesResponse(
-        matches=[WorldcupMatchResponse.from_domain(match) for match in matches]
+        matches=[
+            WorldcupMatchResponse.from_domain(match, display_team=display) for match in matches
+        ]
     )
 
 
@@ -136,9 +144,10 @@ async def worldcup_add_prediction(
 async def admin_get_worldcup_settings(
     _: RequireAdmin,
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMetaResponse:
     meta = await service.meta()
-    return WorldcupMetaResponse(**meta)
+    return WorldcupMetaResponse(**meta, teams=await team_xref.as_map())
 
 
 @router.post("/admin/worldcup/settings", response_model=WorldcupMetaResponse)
@@ -146,6 +155,7 @@ async def admin_update_worldcup_settings(
     _: RequireAdmin,
     payload: WorldcupSettingsUpdateRequest,
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMetaResponse:
     if payload.buy_in_pence is None and payload.participant_count is None:
         raise HTTPException(
@@ -160,7 +170,7 @@ async def admin_update_worldcup_settings(
     except WorldcupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     meta = await service.meta()
-    return WorldcupMetaResponse(**meta)
+    return WorldcupMetaResponse(**meta, teams=await team_xref.as_map())
 
 
 @router.post("/admin/worldcup/opentournament", response_model=WorldcupMetaResponse)
@@ -169,6 +179,7 @@ async def admin_worldcup_open_tournament(
     payload: OpenWorldcupTournamentRequest,
     token: Annotated[str, Depends(get_bearer_token)],
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMetaResponse:
     """Open World Cup; grants ``worldcup`` and freezes participant_count."""
     try:
@@ -180,7 +191,7 @@ async def admin_worldcup_open_tournament(
     except WorldcupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     meta = await service.meta()
-    return WorldcupMetaResponse(**meta)
+    return WorldcupMetaResponse(**meta, teams=await team_xref.as_map())
 
 
 @router.post("/admin/worldcup/endtournament", response_model=WorldcupMetaResponse)
@@ -188,6 +199,7 @@ async def admin_worldcup_end_tournament(
     _: RequireAdmin,
     payload: EndWorldcupTournamentRequest,
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMetaResponse:
     """Close the open World Cup edition and record ``winner_ids``."""
     try:
@@ -195,12 +207,13 @@ async def admin_worldcup_end_tournament(
     except WorldcupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     meta = await service.meta()
-    return WorldcupMetaResponse(**meta)
+    return WorldcupMetaResponse(**meta, teams=await team_xref.as_map())
 
 
 @router.get("/admin/worldcup/matches", response_model=WorldcupMatchesResponse)
 async def admin_list_worldcup_matches(
     _: RequireAdmin,
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> WorldcupMatchesResponse:
-    return await worldcup_matches(service)
+    return await worldcup_matches(service, team_xref)

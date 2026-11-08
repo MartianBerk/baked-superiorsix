@@ -52,6 +52,8 @@ PROTECTED_IMPLEMENTED = [
     ("POST", "/user/addprediction", "player"),
     ("POST", "/user/updatedetails", "player"),
     ("GET", "/admin/listleagues", "admin"),
+    ("GET", "/admin/listteamxref", "admin"),
+    ("POST", "/admin/upsertteamxref", "admin"),
     ("GET", "/admin/listrounds", "admin"),
     ("GET", "/admin/currentround", "admin"),
     ("GET", "/admin/historicrounds", "admin"),
@@ -117,6 +119,12 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
         )
     if path == "/admin/addpredictions":
         return client.post(path, json=[], headers=headers)
+    if path == "/admin/upsertteamxref":
+        return client.post(
+            path,
+            json={"team_name": "Arsenal FC", "xref": "Arsenal"},
+            headers=headers,
+        )
     if path in {"/euros/addprediction", "/worldcup/addprediction"}:
         return client.post(
             path,

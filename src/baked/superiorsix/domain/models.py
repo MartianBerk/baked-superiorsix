@@ -33,6 +33,14 @@ class League:
     id: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TeamXref:
+    """Provider team name → canonical xref (display + stats identity)."""
+
+    team_name: str
+    xref: str
+
+
 @dataclass(slots=True)
 class Match:
     external_id: str
