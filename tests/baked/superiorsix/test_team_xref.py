@@ -166,7 +166,7 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     )
     assert selected.status_code == 200, selected.text
 
-    # Public livematches keep provider strings (FE labels via meta.teams).
+    # Public livematches already return xref display names.
     live = client.get("/game/livematches", params={"matchDate": _fmt(day)})
     assert live.status_code == 200, live.text
     assert live.json()["matches"][0]["home_team"] == "Arsenal"
@@ -178,7 +178,7 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     )
     assert detail.status_code == 200, detail.text
     body = detail.json()["match_detail"]
-    # Response keys stay the requested provider strings.
+    # Response keys are xref display names (FE never remaps).
     assert set(body["league_position"]) == {"Arsenal", "Chelsea"}
     assert set(body["team_performance"]) == {"Arsenal", "Chelsea"}
     assert set(body["head_to_head"]) == {"Arsenal", "Chelsea"}
@@ -187,16 +187,16 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     assert body["head_to_head"]["Arsenal"] == ["WIN", "DRAW"]
     assert body["league_position"]["Arsenal"] == "1"
 
-    # Alias query finds the same fixture; keys stay the requested alias strings.
+    # Provider-name query still finds the fixture; keys stay display names.
     aliased = client.get(
         "/game/matchdetail",
         params={"hometeam": "Arsenal FC", "awayteam": "Chelsea", "matchdate": _fmt(day)},
     )
     assert aliased.status_code == 200, aliased.text
     aliased_body = aliased.json()["match_detail"]
-    assert set(aliased_body["team_performance"]) == {"Arsenal FC", "Chelsea"}
-    assert aliased_body["team_performance"]["Arsenal FC"] == ["WIN", "DRAW", "WIN", "WIN"]
-    assert aliased_body["league_position"]["Arsenal FC"] == "1"
+    assert set(aliased_body["team_performance"]) == {"Arsenal", "Chelsea"}
+    assert aliased_body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
+    assert aliased_body["league_position"]["Arsenal"] == "1"
 
     async def table_teams() -> list[str]:
         async with client.app.state.session_factory() as session:
