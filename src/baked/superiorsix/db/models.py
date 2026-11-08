@@ -123,6 +123,79 @@ class PredictionRecord(Base):
     dropped: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+# --- Euro Wizard (SS-19). Isolated from Super Six + World Cup tables. ---
+
+
+class EurosTournamentRecord(Base):
+    """One Euros edition: static buy-in pot (no round rollover)."""
+
+    __tablename__ = "euros_tournaments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    competition_code: Mapped[str] = mapped_column(String(16), default="EC", index=True)
+    label: Mapped[str] = mapped_column(String(128), default="European Championship")
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    buy_in_pence: Mapped[int] = mapped_column(Integer)
+    # Frozen at open: buy_in × entrant_count = prize pot for the whole tournament.
+    entrant_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utc_now,
+    )
+
+
+class EurosMatchRecord(Base):
+    """Euro Wizard fixtures — not the Super Six ``matches`` table."""
+
+    __tablename__ = "euros_matches"
+    __table_args__ = (UniqueConstraint("external_id", name="uq_euros_matches_external_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(String(255), index=True)
+    league_id: Mapped[int] = mapped_column(ForeignKey("leagues.id"), index=True)
+    matchday: Mapped[int] = mapped_column(Integer, index=True)
+    match_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    match_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32))
+    home_team: Mapped[str] = mapped_column(String(128), index=True)
+    away_team: Mapped[str] = mapped_column(String(128), index=True)
+    use_match: Mapped[bool] = mapped_column(Boolean, default=True)
+    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    penalties: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utc_now,
+        onupdate=_utc_now,
+    )
+
+
+class EurosPredictionRecord(Base):
+    """Euro Wizard picks keyed by roster ``auth_id`` (not Super Six predictions)."""
+
+    __tablename__ = "euros_predictions"
+    __table_args__ = (
+        UniqueConstraint(
+            "auth_id",
+            "match_id",
+            name="uq_euros_predictions_auth_match",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    auth_id: Mapped[UUID] = mapped_column(Uuid, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("euros_matches.id"), index=True)
+    prediction: Mapped[str] = mapped_column(String(16))
+    plus_ninety: Mapped[bool] = mapped_column(Boolean, default=False)
+    extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    penalties: Mapped[bool] = mapped_column(Boolean, default=False)
+    dropped: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 # --- World Cup / Qatar Hero (SS-20). Isolated from Super Six matches + euros_*. ---
 
 

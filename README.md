@@ -81,7 +81,8 @@ invite already exists.
 | `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
 | `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
 | `poetry run baked-superiorsix-tournament-extractor` | Upsert tournament catalog (`FAC`, `EC`, `WC`) into shared `leagues` |
-| `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert fixtures for one tournament code into shared `matches` |
+| `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert FAC fixtures into Super Six `matches` |
+| `poetry run baked-superiorsix-tournament-extractor -l EC --from …` | Upsert EC fixtures into isolated `euros_matches` (SS-19; no seed required) |
 | `poetry run baked-superiorsix-worldcup-extractor` | Upsert WC into shared `leagues` (catalog); fixtures go to `worldcup_matches` |
 | `poetry run baked-superiorsix-worldcup-extractor --from 2026-06-01 [--to …]` | Pull WC fixtures into `worldcup_*` (not Super Six `matches`) |
 | `poetry run baked-superiorsix-auto-score` | Smart live-score pass (selected fixtures by default) |
@@ -230,3 +231,7 @@ poetry run pytest
 Legacy subdomain → path prefix: `game`, `user`, `admin`, `stats`, `euros`,
 `worldcup`, plus aliases `eurowizard` and `qatarhero` where the old app used
 alternate subdomains for the same handlers.
+
+**Euro Wizard (SS-19):** `/euros/*` (+ `/eurowizard/listpredictions`) and
+`/admin/euros/*` are live against isolated `euros_*` tables. Predictions require
+the `euros` JWT role. World Cup routes remain noop until SS-20.

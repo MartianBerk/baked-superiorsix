@@ -21,9 +21,15 @@ from baked.superiorsix.process.extractors.league import LeagueExtractor
 from baked.superiorsix.process.extractors.match import MatchExtractor
 from baked.superiorsix.process.extractors.tournament import TournamentExtractor
 from baked.superiorsix.process.extractors.worldcup import WorldcupExtractor
+from baked.superiorsix.repositories.euros import (
+    SqlAlchemyEurosMatchRepository,
+    SqlAlchemyEurosPredictionRepository,
+    SqlAlchemyEurosTournamentRepository,
+)
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.worldcup_matches import SqlAlchemyWorldcupMatchRepository
+from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.ingest import MatchIngestService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
@@ -58,7 +64,12 @@ def _build_services(session):
     leagues = LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
     matches = MatchService(SqlAlchemyMatchRepository(session), leagues)
     ingest = MatchIngestService(matches, leagues)
-    return ingest, leagues, matches
+    euros = EurosService(
+        SqlAlchemyEurosTournamentRepository(session),
+        SqlAlchemyEurosMatchRepository(session),
+        SqlAlchemyEurosPredictionRepository(session),
+    )
+    return ingest, leagues, matches, euros
 
 
 async def _run_league(settings: Settings) -> int:
@@ -66,7 +77,7 @@ async def _run_league(settings: Settings) -> int:
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        ingest, _, _ = _build_services(session)
+        ingest, _, _, _ = _build_services(session)
         extractor = LeagueExtractor(
             ingest,
             football_data_token=_secret(settings.football_data_api_token),
@@ -89,7 +100,7 @@ async def _run_match(
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        ingest, leagues, _ = _build_services(session)
+        ingest, leagues, _, _ = _build_services(session)
         extractor = MatchExtractor(
             ingest,
             leagues,
@@ -122,13 +133,14 @@ async def _run_tournament_catalog(
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        ingest, leagues, _ = _build_services(session)
+        ingest, leagues, _, euros = _build_services(session)
         extractor = TournamentExtractor(
             ingest,
             leagues,
             football_data_token=_secret(settings.football_data_api_token),
             goal_api_key=_secret(settings.goal_api_key),
             codes=codes,
+            euros=euros,
         )
         upserted = await extractor.process_catalog()
         await session.commit()
@@ -152,12 +164,13 @@ async def _run_tournament_matches(
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        ingest, leagues, _ = _build_services(session)
+        ingest, leagues, _, euros = _build_services(session)
         extractor = TournamentExtractor(
             ingest,
             leagues,
             football_data_token=_secret(settings.football_data_api_token),
             goal_api_key=_secret(settings.goal_api_key),
+            euros=euros,
         )
         matches = await extractor.process_matches(
             league_code=league_code,
@@ -187,7 +200,7 @@ async def _run_auto_score(
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        ingest, leagues, matches = _build_services(session)
+        ingest, leagues, matches, _ = _build_services(session)
         extractor = AutoScoreExtractor(
             ingest,
             leagues,
@@ -291,8 +304,10 @@ def tournament_main(argv: list[str] | None = None) -> None:
         description=(
             "Tournament / cup ingest via football-data.org (FAC, EC, WC). "
             "Default: upsert tournament league catalog. "
-            "With -l/--from (or --live): pull fixtures for one tournament code "
-            "through the shared match extractor. No Flashscore / Selenium."
+            "With -l/--from (or --live): FAC → Super Six matches; "
+            "EC → isolated euros_matches (SS-19). "
+            "WC side-game fixtures use baked-superiorsix-worldcup-extractor. "
+            "No Flashscore / Selenium."
         ),
     )
     parser.add_argument(
@@ -374,7 +389,7 @@ async def _run_worldcup_catalog(settings: Settings) -> int:
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        _, leagues, _ = _build_services(session)
+        _, leagues, _, _ = _build_services(session)
         wc_ingest = WorldcupIngestService(
             SqlAlchemyWorldcupMatchRepository(session),
             leagues,
@@ -405,7 +420,7 @@ async def _run_worldcup_matches(
     await init_db(engine)
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
-        _, leagues, _ = _build_services(session)
+        _, leagues, _, _ = _build_services(session)
         wc_ingest = WorldcupIngestService(
             SqlAlchemyWorldcupMatchRepository(session),
             leagues,

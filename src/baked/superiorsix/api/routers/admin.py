@@ -14,6 +14,7 @@ from baked.superiorsix.api.deps import (
     RequireAdmin,
     get_auth_admin,
     get_bearer_token,
+    get_euros_service,
     get_league_service,
     get_match_service,
     get_prediction_service,
@@ -34,7 +35,13 @@ from baked.superiorsix.api.schemas import (
     BulkSelectMatchItem,
     CurrentRoundResponse,
     CurrentSubroundResponse,
+    EndEurosTournamentRequest,
     EndRoundRequest,
+    EurosMatchesResponse,
+    EurosMatchResponse,
+    EurosMetaEnvelope,
+    EurosMetaResponse,
+    EurosTournamentResponse,
     HistoricRoundResponse,
     HistoricRoundsResponse,
     InvitePlayerRequest,
@@ -43,6 +50,7 @@ from baked.superiorsix.api.schemas import (
     LeaguesResponse,
     MatchesResponse,
     MatchResponse,
+    OpenEurosTournamentRequest,
     OpenRoundRequest,
     PlayerResponse,
     PlayerRolesResponse,
@@ -59,6 +67,8 @@ from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import (
     AuthAdminError,
+    EurosTournamentError,
+    EurosTournamentNotFoundError,
     MatchNotFoundError,
     MatchSelectionError,
     PredictionError,
@@ -71,6 +81,7 @@ from baked.superiorsix.domain.exceptions import (
 )
 from baked.superiorsix.domain.models import Match, Prediction
 from baked.superiorsix.noop import noop
+from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService, day_bounds
 from baked.superiorsix.services.predictions import PredictionService
@@ -998,3 +1009,71 @@ async def reactivate_player(
     except RosterError as exc:
         raise _roster_http_error(exc) from exc
     return PlayerResponse.from_roster(player.to_player_dict())
+
+
+# --- Euro Wizard admin (SS-19) ---
+
+
+@router.get("/euros/meta", response_model=EurosMetaEnvelope)
+async def admin_euros_meta(
+    _: RequireAdmin,
+    euros: Annotated[EurosService, Depends(get_euros_service)],
+) -> EurosMetaEnvelope:
+    meta = await euros.meta()
+    tournament = meta.tournament
+    return EurosMetaEnvelope(
+        meta=EurosMetaResponse(
+            open=meta.open,
+            buy_in_pence=meta.buy_in_pence,
+            entrant_count=meta.entrant_count,
+            prize_pot_pence=meta.prize_pot_pence,
+            tournament=(
+                None if tournament is None else EurosTournamentResponse.from_domain(tournament)
+            ),
+        )
+    )
+
+
+@router.get("/euros/matches", response_model=EurosMatchesResponse)
+async def admin_euros_matches(
+    _: RequireAdmin,
+    euros: Annotated[EurosService, Depends(get_euros_service)],
+) -> EurosMatchesResponse:
+    matches = await euros.list_matches()
+    return EurosMatchesResponse(
+        matches=[EurosMatchResponse.from_domain(match) for match in matches]
+    )
+
+
+@router.post("/euros/opentournament", response_model=EurosTournamentResponse)
+async def admin_euros_open_tournament(
+    _: RequireAdmin,
+    payload: OpenEurosTournamentRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    euros: Annotated[EurosService, Depends(get_euros_service)],
+) -> EurosTournamentResponse:
+    """Open a Euro Wizard edition; freezes entrant_count for the static pot."""
+    try:
+        tournament = await euros.open_tournament(
+            start_date=payload.start_date,
+            buy_in_pence=payload.buy_in_pence,
+            bearer_token=token,
+            label=payload.label,
+        )
+    except EurosTournamentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return EurosTournamentResponse.from_domain(tournament)
+
+
+@router.post("/euros/endtournament", response_model=EurosTournamentResponse)
+async def admin_euros_end_tournament(
+    _: RequireAdmin,
+    euros: Annotated[EurosService, Depends(get_euros_service)],
+    payload: EndEurosTournamentRequest | None = None,
+) -> EurosTournamentResponse:
+    body = payload or EndEurosTournamentRequest()
+    try:
+        tournament = await euros.end_tournament(end_date=body.end_date)
+    except EurosTournamentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return EurosTournamentResponse.from_domain(tournament)

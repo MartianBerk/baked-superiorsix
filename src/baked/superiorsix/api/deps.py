@@ -10,6 +10,11 @@ from baked.superiorsix.clients.auth_admin import AuthAdminGateway
 from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.domain.exceptions import RosterNotFoundError
+from baked.superiorsix.repositories.euros import (
+    SqlAlchemyEurosMatchRepository,
+    SqlAlchemyEurosPredictionRepository,
+    SqlAlchemyEurosTournamentRepository,
+)
 from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
 from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
@@ -20,6 +25,7 @@ from baked.superiorsix.repositories.worldcup_predictions import (
     SqlAlchemyWorldcupPredictionRepository,
 )
 from baked.superiorsix.repositories.worldcup_settings import SqlAlchemyWorldcupSettingsRepository
+from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.gameday import GamedayService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService
@@ -40,6 +46,7 @@ __all__ = [
     "get_bearer_token",
     "get_current_principal",
     "get_db_session",
+    "get_euros_service",
     "get_gameday_service",
     "get_key_set",
     "get_league_service",
@@ -144,6 +151,20 @@ async def get_stats_service(
         profiles=profiles,
         auth_admin=auth_admin,
         settings=settings,
+    )
+
+
+async def get_euros_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+) -> EurosService:
+    return EurosService(
+        SqlAlchemyEurosTournamentRepository(session),
+        SqlAlchemyEurosMatchRepository(session),
+        SqlAlchemyEurosPredictionRepository(session),
+        profiles=profiles,
+        auth_admin=auth_admin,
     )
 
 

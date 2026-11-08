@@ -114,3 +114,57 @@ class Prediction:
     prediction: str
     id: int | None = None
     dropped: bool = False
+
+
+@dataclass(slots=True)
+class EurosTournament:
+    start_date: date
+    buy_in_pence: int
+    id: int | None = None
+    competition_code: str = "EC"
+    label: str = "European Championship"
+    end_date: date | None = None
+    entrant_count: int = 0
+    created_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class EurosMatch:
+    external_id: str
+    league_id: int
+    matchday: int
+    match_date: datetime
+    status: str
+    home_team: str
+    away_team: str
+    id: int | None = None
+    match_minute: int | None = None
+    use_match: bool = True
+    home_score: int | None = None
+    away_score: int | None = None
+    extra_time: bool = False
+    penalties: bool = False
+    last_updated: datetime | None = None
+
+
+@dataclass(slots=True)
+class EurosPrediction:
+    auth_id: UUID
+    match_id: int
+    prediction: str
+    id: int | None = None
+    plus_ninety: bool = False
+    extra_time: bool = False
+    penalties: bool = False
+    dropped: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EurosScoreRow:
+    """Legacy ``EUROS_SCORES`` row shape (player display name + totals)."""
+
+    player: str
+    score: int
+    bonus: int
+    total: int
+    auth_id: UUID | None = None
