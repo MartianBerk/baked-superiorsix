@@ -1,0 +1,4 @@
+id,league_id,match_date,status,home_team,away_team,use_match,home_score,away_score,game_number
+100,1,2025-01-10T15:00:00+00:00,FINISHED,Alpha,Beta,1,2,1,1
+101,1,2025-01-11T15:00:00+00:00,FINISHED,Gamma,Delta,1,0,0,2
+200,1,2025-04-10T15:00:00+00:00,SCHEDULED,Echo,Foxtrot,0,,,
