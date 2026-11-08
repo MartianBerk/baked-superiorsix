@@ -5,11 +5,6 @@ from tests.baked.superiorsix.tokens import auth_header, make_access_token
 PUBLIC_NOOP = [
     ("GET", "/health"),
     ("GET", "/game/specialmessage"),
-    ("GET", "/euros/matches"),
-    ("GET", "/euros/scores"),
-    ("GET", "/euros/listpredictions"),
-    ("GET", "/eurowizard/listpredictions"),
-    ("GET", "/euros/getpredictions"),
     ("GET", "/worldcup/matches"),
     ("GET", "/worldcup/scores"),
     ("GET", "/worldcup/listpredictions"),
@@ -26,6 +21,12 @@ IMPLEMENTED_PUBLIC = [
     ("GET", "/game/listsubrounds"),
     ("GET", "/stats/aggregate"),
     ("GET", "/stats/winners"),
+    ("GET", "/euros/matches"),
+    ("GET", "/euros/scores"),
+    ("GET", "/euros/listpredictions"),
+    ("GET", "/eurowizard/listpredictions"),
+    ("GET", "/euros/getpredictions"),
+    ("GET", "/euros/meta"),
 ]
 
 PROTECTED_NOOP = [
@@ -33,8 +34,6 @@ PROTECTED_NOOP = [
     ("POST", "/admin/setspecialmessage", "admin"),
     ("GET", "/admin/getspecialmessage", "admin"),
     ("GET", "/admin/endspecialmessage", "admin"),
-    ("GET", "/euros/getprediction", "euros"),
-    ("POST", "/euros/addprediction", "euros"),
     ("GET", "/worldcup/getprediction", "worldcup"),
     ("POST", "/worldcup/addprediction", "worldcup"),
 ]
@@ -69,6 +68,12 @@ PROTECTED_IMPLEMENTED = [
     ("POST", "/admin/addplayer", "admin"),
     ("GET", "/admin/dropplayer", "admin"),
     ("GET", "/admin/reactivateplayer", "admin"),
+    ("GET", "/euros/getprediction", "euros"),
+    ("POST", "/euros/addprediction", "euros"),
+    ("GET", "/admin/euros/meta", "admin"),
+    ("GET", "/admin/euros/matches", "admin"),
+    ("POST", "/admin/euros/opentournament", "admin"),
+    ("POST", "/admin/euros/endtournament", "admin"),
 ]
 
 
@@ -81,6 +86,8 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
         get_kwargs["params"] = {"authId": "00000000-0000-0000-0000-000000000001"}
     elif path == "/admin/dropprediction":
         get_kwargs["params"] = {"id": 1}
+    elif path == "/euros/getprediction":
+        get_kwargs["params"] = {"gameId": 1}
     if method == "GET":
         return client.get(path, headers=headers, **get_kwargs)
     if path == "/admin/addprediction":
@@ -95,6 +102,20 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
         )
     if path == "/admin/addpredictions":
         return client.post(path, json=[], headers=headers)
+    if path == "/euros/addprediction":
+        return client.post(
+            path,
+            json={"game_id": 1, "prediction": "home"},
+            headers=headers,
+        )
+    if path == "/admin/euros/opentournament":
+        return client.post(
+            path,
+            json={"start_date": "2024-06-01", "buy_in_pence": 0},
+            headers=headers,
+        )
+    if path == "/admin/euros/endtournament":
+        return client.post(path, json={}, headers=headers)
     return client.post(path, json={}, headers=headers)
 
 

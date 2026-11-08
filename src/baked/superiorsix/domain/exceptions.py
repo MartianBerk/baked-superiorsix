@@ -48,3 +48,19 @@ class NotOnRosterError(RosterError):
 
 class AuthAdminError(SuperiorSixError):
     """Raised when a server-side baked-auth admin call fails."""
+
+
+class EurosTournamentNotFoundError(SuperiorSixError):
+    """Raised when no open Euro Wizard tournament is available."""
+
+
+class EurosTournamentError(SuperiorSixError):
+    """Raised when opening or closing a Euro Wizard tournament fails."""
+
+
+class EurosMatchNotFoundError(SuperiorSixError):
+    """Raised when a Euro Wizard match cannot be found."""
+
+
+class EurosPredictionError(SuperiorSixError):
+    """Raised when a Euro Wizard prediction cannot be accepted."""

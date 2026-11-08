@@ -21,3 +21,7 @@ class MatchPayload:
     home_score: int | None = None
     away_score: int | None = None
     match_minute: int | None = None
+    # Tournament / cup fields (Euros / World Cup). League ingest leaves these unset.
+    matchday: int | None = None
+    extra_time: bool | None = None
+    penalties: bool | None = None
