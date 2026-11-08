@@ -11,10 +11,11 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 
 - `GET /game/meta` — header ``round_number`` (latest slate sequence) +
   ``prize_pot_pence`` (`buy_in × full active roster × sequence`), plus subrounds /
-  match-day list for navigation, and ``teams`` (legacy ``TEAM_XREF`` map:
-  provider ``team_name`` → display / stats ``xref``). Form, H2H, and league
-  tables aggregate via xref aliases so renames / provider migrations stay
-  continuous. Admin: `GET /admin/listteamxref`, `POST /admin/upsertteamxref`.
+  match-day list for navigation, and ``teams`` (legacy ``TEAM_XREF`` map).
+  Match payloads (`livematches`, `livescores`, admin lists, euros/WC matches,
+  matchdetail keys) already return xref display names — the FE should not remap.
+  Form, H2H, and league tables aggregate via xref aliases across provider
+  renames. Admin: `GET /admin/listteamxref`, `POST /admin/upsertteamxref`.
 - `GET /game/currentround` — public pot summary (`jackpot` / `prize_pot_pence`);
   empty when no open parent round
 - `GET /game/livescores` — aggregate scoreboard for latest slate (or
