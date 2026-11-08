@@ -152,6 +152,28 @@ def normalize_prediction(value: str | None) -> str:
     return aliases[lowered]
 
 
+def normalize_match_status(value: str | None) -> str:
+    """Map CSV status strings onto domain ``MatchStatus`` values."""
+    raw = (value or "SCHEDULED").strip()
+    if not raw:
+        return "SCHEDULED"
+    key = raw.casefold().replace("_", " ").replace("-", " ")
+    aliases = {
+        "scheduled": "SCHEDULED",
+        "postponed": "POSTPONED",
+        "in play": "IN PLAY",
+        "inplay": "IN PLAY",
+        "live": "IN PLAY",
+        "half time": "HALF TIME",
+        "halftime": "HALF TIME",
+        "ht": "HALF TIME",
+        "finished": "FINISHED",
+        "ft": "FINISHED",
+        "full time": "FINISHED",
+    }
+    return aliases.get(key, raw.upper())
+
+
 @dataclass(frozen=True, slots=True)
 class PlayerMapping:
     old_player_id: int
@@ -366,7 +388,7 @@ def _load_matches(bundle: LegacyCsvBundle) -> None:
                     old_league_id=parse_int(pick(row, "league_id"), label="league_id"),
                     external_id=external,
                     match_date=match_date,
-                    status=pick(row, "status") or "SCHEDULED",
+                    status=normalize_match_status(pick(row, "status")),
                     home_team=pick(row, "home_team", "home") or "",
                     away_team=pick(row, "away_team", "away") or "",
                     use_match=parse_bool(pick(row, "use_match"), default=False),
@@ -421,7 +443,8 @@ def _load_predictions(bundle: LegacyCsvBundle) -> None:
                     auth_id=auth,
                     match_id=parse_int(pick(row, "match_id"), label="match_id"),
                     prediction=normalize_prediction(pick(row, "prediction", "pick")),
-                    dropped=parse_bool(pick(row, "dropped"), default=False),
+                    # Legacy SQLite column is ``drop``; accept ``dropped`` too.
+                    dropped=parse_bool(pick(row, "dropped", "drop"), default=False),
                 )
             )
         except ValueError as exc:

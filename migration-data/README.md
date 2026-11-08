@@ -79,4 +79,10 @@ Column names may use legacy aliases (`buy_in`, `football_data_id`, etc.); the im
    - `GET /admin/historicrounds`
    - Spot-check `GET /admin/listpredictionsnew?matchdate=dd-mm-yyyy`
 
+### Stats gotchas
+
+- `predictions.csv` must keep the legacy ``drop`` flag (also accepted as ``dropped``). Dropped picks are excluded from Performance rates.
+- Closed-round matches need ``use_match=1`` and ``status=FINISHED`` (with scores) or Performance stays empty while Winners may still list rounds.
+- `player_mapping.csv` ``auth_id`` values should match baked-user roster ``auth_id``s so Winners/Performance show names instead of UUID strings. Rates still compute when profiles are missing; known inactive profiles are excluded.
+
 See `poetry run baked-superiorsix-legacy-import --help` for flags (`--truncate`, `--dry-run`).
