@@ -327,11 +327,12 @@ class MatchService:
         league = await self._leagues.get(match.league_id)
         table = await self._leagues.league_table(league.code)
 
+        # Response keys are xref display names so the FE never remaps feeds.
+        home_label = await self.display_team(match.home_team)
+        away_label = await self.display_team(match.away_team)
+
         positions = {entry.team: entry.position for entry in table}
         before = start
-        # Aggregate via stored fixture names (alias-aware). Response dict keys
-        # stay the caller-requested strings for API compatibility; FE labels
-        # come from ``meta.teams[name] || name``.
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
@@ -343,16 +344,16 @@ class MatchService:
 
         return MatchDetail(
             league_position={
-                home_team: home_position,
-                away_team: away_position,
+                home_label: home_position,
+                away_label: away_position,
             },
             team_performance={
-                home_team: home_form,
-                away_team: away_form,
+                home_label: home_form,
+                away_label: away_form,
             },
             head_to_head={
-                home_team: home_h2h,
-                away_team: away_h2h,
+                home_label: home_h2h,
+                away_label: away_h2h,
             },
             difficulty=difficulty,
         )
