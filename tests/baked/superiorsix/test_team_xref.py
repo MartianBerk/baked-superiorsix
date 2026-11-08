@@ -178,7 +178,7 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     )
     assert detail.status_code == 200, detail.text
     body = detail.json()["match_detail"]
-    # Response keys are xref display names (FE never remaps).
+    # Response keys stay the requested provider strings.
     assert set(body["league_position"]) == {"Arsenal", "Chelsea"}
     assert set(body["team_performance"]) == {"Arsenal", "Chelsea"}
     assert set(body["head_to_head"]) == {"Arsenal", "Chelsea"}
@@ -187,16 +187,16 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     assert body["head_to_head"]["Arsenal"] == ["WIN", "DRAW"]
     assert body["league_position"]["Arsenal"] == "1"
 
-    # Provider-name query still finds the fixture; keys stay display names.
+    # Alias query finds the same fixture; keys stay the requested alias strings.
     aliased = client.get(
         "/game/matchdetail",
         params={"hometeam": "Arsenal FC", "awayteam": "Chelsea", "matchdate": _fmt(day)},
     )
     assert aliased.status_code == 200, aliased.text
     aliased_body = aliased.json()["match_detail"]
-    assert set(aliased_body["team_performance"]) == {"Arsenal", "Chelsea"}
-    assert aliased_body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
-    assert aliased_body["league_position"]["Arsenal"] == "1"
+    assert set(aliased_body["team_performance"]) == {"Arsenal FC", "Chelsea"}
+    assert aliased_body["team_performance"]["Arsenal FC"] == ["WIN", "DRAW", "WIN", "WIN"]
+    assert aliased_body["league_position"]["Arsenal FC"] == "1"
 
     async def table_teams() -> list[str]:
         async with client.app.state.session_factory() as session:
