@@ -51,19 +51,19 @@ class AuthAdminError(SuperiorSixError):
 
 
 class EurosTournamentNotFoundError(SuperiorSixError):
-    """Raised when no open Euro Wizard tournament is available."""
+    """Raised when no open Euros tournament is available."""
 
 
 class EurosTournamentError(SuperiorSixError):
-    """Raised when opening or closing a Euro Wizard tournament fails."""
+    """Raised when opening or closing an Euros tournament fails."""
 
 
 class EurosMatchNotFoundError(SuperiorSixError):
-    """Raised when a Euro Wizard match cannot be found."""
+    """Raised when an Euros match cannot be found."""
 
 
 class EurosPredictionError(SuperiorSixError):
-    """Raised when a Euro Wizard prediction cannot be accepted."""
+    """Raised when an Euros prediction cannot be accepted."""
 
 
 class WorldcupMatchNotFoundError(SuperiorSixError):

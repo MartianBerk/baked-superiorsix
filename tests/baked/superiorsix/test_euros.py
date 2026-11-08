@@ -1,4 +1,4 @@
-"""Euro Wizard (SS-19): scoring, APIs, isolated schema."""
+"""Euros (SS-19): scoring, APIs, isolated schema."""
 
 from __future__ import annotations
 
@@ -382,6 +382,23 @@ def test_euros_open_with_entrants_grants_role_and_meta_open(
     )
     assert again.status_code == 400
 
-    ended = client.post("/admin/euros/endtournament", headers=headers, json={})
-    assert ended.status_code == 200
+    empty_winners = client.post(
+        "/admin/euros/endtournament",
+        headers=headers,
+        json={"winner_ids": []},
+    )
+    assert empty_winners.status_code == 422
+
+    ended = client.post(
+        "/admin/euros/endtournament",
+        headers=headers,
+        json={"winner_ids": [str(auth_id)]},
+    )
+    assert ended.status_code == 200, ended.text
+    ended_body = ended.json()
+    assert ended_body["winner_ids"] == [str(auth_id)]
+    assert ended_body["end_date"] is not None
     assert client.get("/euros/meta").json()["meta"]["open"] is False
+    assert client.get("/euros/meta").json()["meta"]["tournament"]["winner_ids"] == [
+        str(auth_id)
+    ]

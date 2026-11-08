@@ -696,7 +696,7 @@ class HistoricRoundsResponse(BaseModel):
     rounds: list[HistoricRoundResponse]
 
 
-# --- Euro Wizard (SS-19) ---
+# --- Euros (SS-19) ---
 
 
 class EurosMatchResponse(BaseModel):
@@ -811,6 +811,7 @@ class EurosTournamentResponse(BaseModel):
     buy_in_pence: int
     entrant_count: int
     prize_pot_pence: int
+    winner_ids: list[UUID] = Field(default_factory=list)
 
     @classmethod
     def from_domain(cls, tournament: EurosTournament) -> "EurosTournamentResponse":
@@ -824,6 +825,7 @@ class EurosTournamentResponse(BaseModel):
             buy_in_pence=tournament.buy_in_pence,
             entrant_count=tournament.entrant_count,
             prize_pot_pence=tournament.buy_in_pence * tournament.entrant_count,
+            winner_ids=list(tournament.winner_ids or []),
         )
 
 
@@ -848,10 +850,15 @@ class OpenEurosTournamentRequest(BaseModel):
 
 
 class EndEurosTournamentRequest(BaseModel):
-    end_date: date | None = None
+    """Close the open Euros tournament and record winners.
+
+    ``end_date`` is set server-side; clients only send ``winner_ids``.
+    """
+
+    winner_ids: list[UUID] = Field(min_length=1)
 
 
-# --- World Cup / Qatar Hero (SS-20) ---
+# --- World Cup (SS-20) ---
 
 
 class WorldcupMatchResponse(BaseModel):
@@ -965,6 +972,7 @@ class WorldcupMetaResponse(BaseModel):
     participant_count: int
     pot_pence: int
     open: bool = False
+    winner_ids: list[UUID] = Field(default_factory=list)
 
 
 class WorldcupSettingsUpdateRequest(BaseModel):
@@ -980,6 +988,6 @@ class OpenWorldcupTournamentRequest(BaseModel):
 
 
 class EndWorldcupTournamentRequest(BaseModel):
-    """Close the active World Cup edition (clears ``open``)."""
+    """Close the active World Cup edition (clears ``open``) and record winners."""
 
-    pass
+    winner_ids: list[UUID] = Field(min_length=1)

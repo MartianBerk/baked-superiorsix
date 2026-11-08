@@ -1,4 +1,4 @@
-"""World Cup / Qatar Hero routes (legacy subdomains: worldcup, qatarhero)."""
+"""World Cup routes (legacy path alias: ``/qatarhero/listpredictions``)."""
 
 from typing import Annotated
 
@@ -186,13 +186,12 @@ async def admin_worldcup_open_tournament(
 @router.post("/admin/worldcup/endtournament", response_model=WorldcupMetaResponse)
 async def admin_worldcup_end_tournament(
     _: RequireAdmin,
+    payload: EndWorldcupTournamentRequest,
     service: Annotated[WorldcupService, Depends(get_worldcup_service)],
-    payload: EndWorldcupTournamentRequest | None = None,
 ) -> WorldcupMetaResponse:
-    """Close the open World Cup edition (clears ``open`` for nav)."""
-    del payload  # reserved for future end_date parity with euros
+    """Close the open World Cup edition and record ``winner_ids``."""
     try:
-        await service.end_tournament()
+        await service.end_tournament(winner_ids=list(payload.winner_ids))
     except WorldcupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     meta = await service.meta()

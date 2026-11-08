@@ -1,4 +1,4 @@
-"""Euro Wizard scoring — port of legacy ``EUROS_SCORES`` view.
+"""Euros scoring — port of legacy ``EUROS_SCORES`` view.
 
 Base point: correct home / away / draw against stored full-time scores.
 Knockout bonus (``matchday >= 4``) only when the base point is earned:

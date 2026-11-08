@@ -1,4 +1,4 @@
-"""World Cup / Qatar Hero side-game service (legacy WORLDCUP_* behaviour)."""
+"""World Cup side-game service (legacy WORLDCUP_* behaviour)."""
 
 from __future__ import annotations
 
@@ -125,15 +125,24 @@ class WorldcupService:
         current.open = True
         return await self._settings.save(current)
 
-    async def end_tournament(self) -> WorldcupSettings:
-        """Clear ``open`` while keeping frozen buy-in / participant_count."""
+    async def end_tournament(self, *, winner_ids: list[UUID]) -> WorldcupSettings:
+        """Clear ``open``, keep frozen pot fields, and persist winners."""
+        if not winner_ids:
+            raise WorldcupError("at least one winner_id is required")
+        unique: list[UUID] = []
+        seen: set[UUID] = set()
+        for auth_id in winner_ids:
+            if auth_id in seen:
+                raise WorldcupError("winner_ids must be unique")
+            seen.add(auth_id)
+            unique.append(auth_id)
         current = await self._settings.get()
         if not current.open:
             raise WorldcupError("No open World Cup tournament.")
         current.open = False
-        return await self._settings.save(current)
+        return await self._settings.end_with_winners(current, unique)
 
-    async def meta(self) -> dict[str, int | bool]:
+    async def meta(self) -> dict[str, object]:
         settings = await self.get_settings()
         return {
             "buy_in_pence": settings.buy_in_pence,
@@ -143,6 +152,7 @@ class WorldcupService:
                 participant_count=settings.participant_count,
             ),
             "open": settings.open,
+            "winner_ids": list(settings.winner_ids),
         }
 
     async def list_predictions(self) -> list[WorldcupPrediction]:

@@ -42,6 +42,8 @@ PROTECTED_WORLDCUP = [
     ("POST", "/worldcup/addprediction", "worldcup"),
     ("GET", "/admin/worldcup/settings", "admin"),
     ("POST", "/admin/worldcup/settings", "admin"),
+    ("POST", "/admin/worldcup/opentournament", "admin"),
+    ("POST", "/admin/worldcup/endtournament", "admin"),
     ("GET", "/admin/worldcup/matches", "admin"),
 ]
 
@@ -124,11 +126,34 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
     if path == "/admin/euros/opentournament":
         return client.post(
             path,
-            json={"start_date": "2024-06-01", "buy_in_pence": 0},
+            json={
+                "start_date": "2024-06-01",
+                "buy_in_pence": 0,
+                "entrant_ids": ["00000000-0000-0000-0000-000000000001"],
+            },
             headers=headers,
         )
     if path == "/admin/euros/endtournament":
-        return client.post(path, json={}, headers=headers)
+        return client.post(
+            path,
+            json={"winner_ids": ["00000000-0000-0000-0000-000000000001"]},
+            headers=headers,
+        )
+    if path == "/admin/worldcup/opentournament":
+        return client.post(
+            path,
+            json={
+                "buy_in_pence": 200,
+                "entrant_ids": ["00000000-0000-0000-0000-000000000001"],
+            },
+            headers=headers,
+        )
+    if path == "/admin/worldcup/endtournament":
+        return client.post(
+            path,
+            json={"winner_ids": ["00000000-0000-0000-0000-000000000001"]},
+            headers=headers,
+        )
     return client.post(path, json={}, headers=headers)
 
 

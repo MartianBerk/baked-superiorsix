@@ -87,7 +87,7 @@ def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
 
 
 def _parse_et_pens_flags(score_block: dict[str, Any]) -> tuple[bool | None, bool | None]:
-    """Derive ET / pens booleans from football-data ``score`` (legacy Euro Wizard).
+    """Derive ET / pens booleans from football-data ``score`` (legacy Euros).
 
     A side having a non-null ET or pens value means that phase was played.
     Returns ``(None, None)`` when the feed omits both blocks (league fixtures).

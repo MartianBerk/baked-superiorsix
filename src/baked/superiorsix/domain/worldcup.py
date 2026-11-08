@@ -1,8 +1,8 @@
-"""World Cup / Qatar Hero domain types and scoring (legacy WORLDCUP_* rules)."""
+"""World Cup domain types and scoring (legacy WORLDCUP_* rules)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -51,6 +51,7 @@ class WorldcupSettings:
     participant_count: int
     id: int = 1
     open: bool = False
+    winner_ids: list[UUID] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

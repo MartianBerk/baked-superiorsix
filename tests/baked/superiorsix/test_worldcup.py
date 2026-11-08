@@ -220,6 +220,7 @@ async def test_admin_worldcup_settings_static_pot(client: TestClient) -> None:
         "participant_count": 14,
         "pot_pence": 2800,
         "open": False,
+        "winner_ids": [],
     }
     assert client.get("/worldcup/meta").json()["pot_pence"] == 2800
 
@@ -233,8 +234,8 @@ async def test_worldcup_open_end_tournament_lifecycle(
     _, auth_id = make_access_token(roles=["player", "user-profile"])
     user_profiles.seed(
         auth_id,
-        first_name="Qatar",
-        last_name="Hero",
+        first_name="World",
+        last_name="Cup",
         email="wc@example.com",
     )
     auth_admin.memberships["wc@example.com"] = ["player", "user-profile"]
@@ -263,6 +264,7 @@ async def test_worldcup_open_end_tournament_lifecycle(
         "participant_count": 1,
         "pot_pence": 200,
         "open": True,
+        "winner_ids": [],
     }
     assert "worldcup" in auth_admin.memberships["wc@example.com"]
     assert client.get("/worldcup/meta").json()["open"] is True
@@ -274,15 +276,21 @@ async def test_worldcup_open_end_tournament_lifecycle(
     )
     assert again.status_code == 400
 
-    ended = client.post("/admin/worldcup/endtournament", headers=headers, json={})
+    ended = client.post(
+        "/admin/worldcup/endtournament",
+        headers=headers,
+        json={"winner_ids": [str(auth_id)]},
+    )
     assert ended.status_code == 200, ended.text
     closed = ended.json()
     assert closed["open"] is False
     assert closed["participant_count"] == 1
     assert closed["pot_pence"] == 200
+    assert closed["winner_ids"] == [str(auth_id)]
     assert client.get("/worldcup/meta").json()["open"] is False
+    assert client.get("/worldcup/meta").json()["winner_ids"] == [str(auth_id)]
 
-    # Re-open after end is allowed.
+    # Re-open after end is allowed (clears prior winners until next close).
     reopened = client.post(
         "/admin/worldcup/opentournament",
         headers=headers,
@@ -291,6 +299,7 @@ async def test_worldcup_open_end_tournament_lifecycle(
     assert reopened.status_code == 200
     assert reopened.json()["open"] is True
     assert reopened.json()["pot_pence"] == 300
+    assert reopened.json()["winner_ids"] == []
 
 
 @pytest.mark.asyncio

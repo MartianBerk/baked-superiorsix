@@ -1,4 +1,4 @@
-"""Euros / Euro Wizard routes (legacy subdomains: euros, eurowizard)."""
+"""Euros routes (legacy path alias: ``/eurowizard/listpredictions``)."""
 
 from typing import Annotated, Any
 
@@ -39,7 +39,7 @@ def _optional_bearer(request: Request) -> str | None:
 async def euros_meta(
     euros: Annotated[EurosService, Depends(get_euros_service)],
 ) -> EurosMetaEnvelope:
-    """Static prize pot for the open Euro Wizard tournament (no round rollover)."""
+    """Static prize pot for the open Euros tournament (no round rollover)."""
     meta = await euros.meta()
     tournament = meta.tournament
     return EurosMetaEnvelope(
