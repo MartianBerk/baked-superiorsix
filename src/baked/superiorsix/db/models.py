@@ -194,3 +194,63 @@ class EurosPredictionRecord(Base):
     extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
     penalties: Mapped[bool] = mapped_column(Boolean, default=False)
     dropped: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+# --- World Cup / Qatar Hero (SS-20). Isolated from Super Six matches + euros_*. ---
+
+
+class WorldcupSettingsRecord(Base):
+    """Singleton static-pot config for the World Cup side game."""
+
+    __tablename__ = "worldcup_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    buy_in_pence: Mapped[int] = mapped_column(Integer, default=0)
+    participant_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class WorldcupMatchRecord(Base):
+    __tablename__ = "worldcup_matches"
+    __table_args__ = (UniqueConstraint("external_id", name="uq_worldcup_matches_external_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    external_id: Mapped[str] = mapped_column(String(255), index=True)
+    # Shared leagues catalog (legacy LEAGUES); fixtures stay WC-only.
+    league_id: Mapped[int] = mapped_column(ForeignKey("leagues.id"), index=True)
+    matchday: Mapped[int] = mapped_column(Integer)
+    match_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    match_minute: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32))
+    home_team: Mapped[str] = mapped_column(String(128), index=True)
+    away_team: Mapped[str] = mapped_column(String(128), index=True)
+    use_match: Mapped[bool] = mapped_column(Boolean, default=True)
+    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    penalties: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utc_now,
+        onupdate=_utc_now,
+    )
+
+
+class WorldcupPredictionRecord(Base):
+    __tablename__ = "worldcup_predictions"
+    __table_args__ = (
+        UniqueConstraint(
+            "auth_id",
+            "match_id",
+            name="uq_worldcup_predictions_auth_match",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    auth_id: Mapped[UUID] = mapped_column(Uuid, index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("worldcup_matches.id"), index=True)
+    prediction: Mapped[str] = mapped_column(String(16))
+    plus_ninety: Mapped[bool] = mapped_column(Boolean, default=False)
+    extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    penalties: Mapped[bool] = mapped_column(Boolean, default=False)
+    dropped: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -20,6 +20,11 @@ from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
 from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
 from baked.superiorsix.repositories.subrounds import SqlAlchemySubroundRepository
+from baked.superiorsix.repositories.worldcup_matches import SqlAlchemyWorldcupMatchRepository
+from baked.superiorsix.repositories.worldcup_predictions import (
+    SqlAlchemyWorldcupPredictionRepository,
+)
+from baked.superiorsix.repositories.worldcup_settings import SqlAlchemyWorldcupSettingsRepository
 from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.gameday import GamedayService
 from baked.superiorsix.services.leagues import LeagueService
@@ -28,6 +33,7 @@ from baked.superiorsix.services.predictions import PredictionService
 from baked.superiorsix.services.rounds import RoundService
 from baked.superiorsix.services.stats import StatsService
 from baked.superiorsix.services.subrounds import SubroundService
+from baked.superiorsix.services.worldcup import WorldcupService
 
 __all__ = [
     "RequireActivePlayer",
@@ -51,6 +57,7 @@ __all__ = [
     "get_stats_service",
     "get_subround_service",
     "get_user_profiles",
+    "get_worldcup_service",
     "require_active_player",
     "require_roles",
 ]
@@ -158,6 +165,16 @@ async def get_euros_service(
         SqlAlchemyEurosPredictionRepository(session),
         profiles=profiles,
         auth_admin=auth_admin,
+    )
+
+
+async def get_worldcup_service(
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> WorldcupService:
+    return WorldcupService(
+        SqlAlchemyWorldcupMatchRepository(session),
+        SqlAlchemyWorldcupPredictionRepository(session),
+        SqlAlchemyWorldcupSettingsRepository(session),
     )
 
 

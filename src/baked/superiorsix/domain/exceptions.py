@@ -64,3 +64,12 @@ class EurosMatchNotFoundError(SuperiorSixError):
 
 class EurosPredictionError(SuperiorSixError):
     """Raised when a Euro Wizard prediction cannot be accepted."""
+
+
+class WorldcupMatchNotFoundError(SuperiorSixError):
+    """Raised when a World Cup side-game match cannot be found."""
+
+
+class WorldcupError(SuperiorSixError):
+    """Raised when a World Cup side-game operation fails."""
+
