@@ -22,7 +22,9 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
   `?subroundId=` / legacy `?matchDate=dd-mm-yyyy`); includes per-player picks,
   ``correct`` flags, top-level ``matches`` with live scores, ``live`` /
   ``next_kickoff`` for FE polling
-- `GET /game/livematches?matchDate=dd-mm-yyyy` — Super Six selections (`use_match`)
+- `GET /game/livematches?subroundId=` — Super Six selections for one slate
+  (preferred); legacy `?matchDate=dd-mm-yyyy` for a UTC day. Includes frozen
+  prediction ``difficulty`` when set on the match row
 - `GET /game/matchdetail?hometeam=&awayteam=&matchdate=` — form, H2H, league positions,
   and prediction ``difficulty`` (`score` 0–1 higher=harder, `band` 1–5). Admin
   ``GET /admin/listmatches`` / ``GET /admin/getmatch`` include the same field.

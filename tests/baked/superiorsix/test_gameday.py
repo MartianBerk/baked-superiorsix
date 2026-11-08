@@ -247,6 +247,10 @@ def test_livescores_scores_predictions_and_live_flag(
     assert body["live"] is True
     assert body["next_kickoff"] is not None
     assert len(body["scores"]) == 2
+    for slate_match in body["matches"]:
+        assert slate_match["difficulty"] is not None
+        assert 0.0 <= slate_match["difficulty"]["score"] <= 1.0
+        assert 1 <= slate_match["difficulty"]["band"] <= 5
 
     by_auth = {row["auth_id"]: row for row in body["scores"]}
     ada = by_auth[str(ada_id)]
@@ -262,16 +266,18 @@ def test_livescores_scores_predictions_and_live_flag(
     assert bob["matches"][0]["correct"] is False
     assert bob["matches"][0]["match_minute"] == 35
 
-    by_date = client.get(
-        "/game/livescores",
-        params={"matchDate": kickoff.astimezone(UTC).strftime("%d-%m-%Y")},
-    )
+    kickoff_day = kickoff.astimezone(UTC).strftime("%d-%m-%Y")
+    later_day = later.astimezone(UTC).strftime("%d-%m-%Y")
+    by_date = client.get("/game/livescores", params={"matchDate": kickoff_day})
     assert by_date.status_code == 200, by_date.text
-    assert by_date.json()["match_count"] == 2
+    # Near UTC midnight the two kickoffs can land on different calendar days.
+    expected_on_kickoff_day = 2 if kickoff_day == later_day else 1
+    assert by_date.json()["match_count"] == expected_on_kickoff_day
 
     by_sub = client.get("/game/livescores", params={"subroundId": subround_id})
     assert by_sub.status_code == 200, by_sub.text
     assert by_sub.json()["match_count"] == 2
+    assert by_sub.json()["matches"][0]["difficulty"] == body["matches"][0]["difficulty"]
 
 
 def test_livescores_computes_match_minute_when_provider_null(

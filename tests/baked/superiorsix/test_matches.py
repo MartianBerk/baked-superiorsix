@@ -241,10 +241,42 @@ def test_match_writes_stamp_last_updated_utc(
     assert row["last_updated"] == "2026-03-14T12:10:00Z"
 
 
-def test_livematches_requires_match_date(client: TestClient) -> None:
+def test_livematches_requires_match_date_or_subround(client: TestClient) -> None:
     response = client.get("/game/livematches")
     assert response.status_code == 400
-    assert response.json()["detail"] == "missing matchDate"
+    assert response.json()["detail"] == "missing matchDate or subroundId"
+
+
+def test_livematches_by_subround_includes_difficulty(client: TestClient) -> None:
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    token, _ = make_access_token(roles=["admin"])
+    headers = auth_header(token)
+    _open_round(client, headers)
+
+    select = client.post(
+        "/admin/addmatch",
+        headers=headers,
+        json={"id": fixture.id, "game_number": 1},
+    )
+    assert select.status_code == 200, select.text
+    subround_id = select.json()["subround_id"]
+    assert subround_id is not None
+    frozen = select.json()["difficulty"]
+    assert frozen is not None
+
+    by_sub = client.get("/game/livematches", params={"subroundId": subround_id})
+    assert by_sub.status_code == 200, by_sub.text
+    payload = by_sub.json()["matches"]
+    assert len(payload) == 1
+    assert payload[0]["id"] == fixture.id
+    assert payload[0]["subround_id"] == subround_id
+    assert payload[0]["difficulty"] == frozen
+
+    by_day = client.get("/game/livematches", params={"matchDate": _fmt(day)})
+    assert by_day.status_code == 200, by_day.text
+    assert by_day.json()["matches"][0]["difficulty"] == frozen
 
 
 def test_matchdetail_not_found(client: TestClient) -> None:
