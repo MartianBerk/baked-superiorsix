@@ -24,6 +24,7 @@ baked-superiorsix-match-extractor = "baked.superiorsix.process.extractors.cli:ma
 baked-superiorsix-tournament-extractor = "baked.superiorsix.process.extractors.cli:tournament_main"
 baked-superiorsix-auto-score = "baked.superiorsix.process.extractors.cli:auto_score_main"
 baked-superiorsix-db = "baked.superiorsix.cli.db_view:main"
+baked-superiorsix-legacy-import = "baked.superiorsix.cli.legacy_import:main"
 
 [dependency-groups]
 dev = [

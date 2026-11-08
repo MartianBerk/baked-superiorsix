@@ -19,6 +19,8 @@
 !/.dockerignore
 !/local-dev/
 !/local-dev/**
+!/migration-data/
+!/migration-data/**
 
 # Read-only legacy reference (MartianBerk/supersix) for migration; not part of this repo.
 reference/supersix/
@@ -39,6 +41,10 @@ venv/
 
 # Local runtime data
 *.db
+
+# Legacy CSV dumps (contents ignored except README — see !/migration-data/ above)
+migration-data/*
+!migration-data/README.md
 
 # Test and tool caches
 .pytest_cache/
