@@ -1011,7 +1011,7 @@ async def reactivate_player(
     return PlayerResponse.from_roster(player.to_player_dict())
 
 
-# --- Euro Wizard admin (SS-19) ---
+# --- Euros admin (SS-19) ---
 
 
 @router.get("/euros/meta", response_model=EurosMetaEnvelope)
@@ -1052,12 +1052,13 @@ async def admin_euros_open_tournament(
     token: Annotated[str, Depends(get_bearer_token)],
     euros: Annotated[EurosService, Depends(get_euros_service)],
 ) -> EurosTournamentResponse:
-    """Open a Euro Wizard edition; freezes entrant_count for the static pot."""
+    """Open an Euros edition; grants ``euros`` and freezes entrant_count."""
     try:
         tournament = await euros.open_tournament(
             start_date=payload.start_date,
             buy_in_pence=payload.buy_in_pence,
             bearer_token=token,
+            entrant_ids=list(payload.entrant_ids),
             label=payload.label,
         )
     except EurosTournamentError as exc:
@@ -1068,12 +1069,14 @@ async def admin_euros_open_tournament(
 @router.post("/euros/endtournament", response_model=EurosTournamentResponse)
 async def admin_euros_end_tournament(
     _: RequireAdmin,
+    payload: EndEurosTournamentRequest,
     euros: Annotated[EurosService, Depends(get_euros_service)],
-    payload: EndEurosTournamentRequest | None = None,
 ) -> EurosTournamentResponse:
-    body = payload or EndEurosTournamentRequest()
+    """Close the open Euros tournament and record ``winner_ids`` (roster auth ids)."""
     try:
-        tournament = await euros.end_tournament(end_date=body.end_date)
+        tournament = await euros.end_tournament(winner_ids=list(payload.winner_ids))
     except EurosTournamentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except EurosTournamentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return EurosTournamentResponse.from_domain(tournament)

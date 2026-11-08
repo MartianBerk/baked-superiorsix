@@ -125,6 +125,7 @@ class EurosTournament:
     label: str = "European Championship"
     end_date: date | None = None
     entrant_count: int = 0
+    winner_ids: list[UUID] | None = None
     created_at: datetime | None = None
 
 

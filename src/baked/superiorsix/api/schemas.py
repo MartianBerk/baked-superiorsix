@@ -696,7 +696,7 @@ class HistoricRoundsResponse(BaseModel):
     rounds: list[HistoricRoundResponse]
 
 
-# --- Euro Wizard (SS-19) ---
+# --- Euros (SS-19) ---
 
 
 class EurosMatchResponse(BaseModel):
@@ -811,6 +811,7 @@ class EurosTournamentResponse(BaseModel):
     buy_in_pence: int
     entrant_count: int
     prize_pot_pence: int
+    winner_ids: list[UUID] = Field(default_factory=list)
 
     @classmethod
     def from_domain(cls, tournament: EurosTournament) -> "EurosTournamentResponse":
@@ -824,6 +825,7 @@ class EurosTournamentResponse(BaseModel):
             buy_in_pence=tournament.buy_in_pence,
             entrant_count=tournament.entrant_count,
             prize_pot_pence=tournament.buy_in_pence * tournament.entrant_count,
+            winner_ids=list(tournament.winner_ids or []),
         )
 
 
@@ -843,13 +845,20 @@ class OpenEurosTournamentRequest(BaseModel):
     start_date: date
     buy_in_pence: int = Field(default=0, ge=0)
     label: str = "European Championship"
+    # Selected Super Six roster auth_ids; freezes entrant_count and grants ``euros``.
+    entrant_ids: list[UUID] = Field(min_length=1)
 
 
 class EndEurosTournamentRequest(BaseModel):
-    end_date: date | None = None
+    """Close the open Euros tournament and record winners.
+
+    ``end_date`` is set server-side; clients only send ``winner_ids``.
+    """
+
+    winner_ids: list[UUID] = Field(min_length=1)
 
 
-# --- World Cup / Qatar Hero (SS-20) ---
+# --- World Cup (SS-20) ---
 
 
 class WorldcupMatchResponse(BaseModel):
@@ -962,8 +971,23 @@ class WorldcupMetaResponse(BaseModel):
     buy_in_pence: int
     participant_count: int
     pot_pence: int
+    open: bool = False
+    winner_ids: list[UUID] = Field(default_factory=list)
 
 
 class WorldcupSettingsUpdateRequest(BaseModel):
     buy_in_pence: int | None = Field(default=None, ge=0)
     participant_count: int | None = Field(default=None, ge=0)
+
+
+class OpenWorldcupTournamentRequest(BaseModel):
+    """Activate World Cup; freezes participant_count and grants ``worldcup``."""
+
+    buy_in_pence: int = Field(default=0, ge=0)
+    entrant_ids: list[UUID] = Field(min_length=1)
+
+
+class EndWorldcupTournamentRequest(BaseModel):
+    """Close the active World Cup edition (clears ``open``) and record winners."""
+
+    winner_ids: list[UUID] = Field(min_length=1)

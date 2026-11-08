@@ -170,11 +170,15 @@ async def get_euros_service(
 
 async def get_worldcup_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
 ) -> WorldcupService:
     return WorldcupService(
         SqlAlchemyWorldcupMatchRepository(session),
         SqlAlchemyWorldcupPredictionRepository(session),
         SqlAlchemyWorldcupSettingsRepository(session),
+        profiles=profiles,
+        auth_admin=auth_admin,
     )
 
 

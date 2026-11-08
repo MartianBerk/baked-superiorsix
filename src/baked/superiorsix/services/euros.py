@@ -1,4 +1,4 @@
-"""Euro Wizard game service — matches, predictions, scores, static pot."""
+"""Euros game service — matches, predictions, scores, static pot."""
 
 from __future__ import annotations
 
@@ -31,6 +31,7 @@ from baked.superiorsix.repositories.euros import (
     EurosPredictionRepository,
     EurosTournamentRepository,
 )
+from baked.superiorsix.services.side_game_roles import grant_side_game_role
 
 _CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
@@ -47,7 +48,7 @@ EUROS_ROLE = "euros"
 
 @dataclass(frozen=True, slots=True)
 class EurosMeta:
-    """Header pot for Euro Wizard (static; no round rollover)."""
+    """Header pot for Euros (static; no round rollover)."""
 
     tournament: EurosTournament | None
     prize_pot_pence: int
@@ -73,7 +74,11 @@ class EurosService:
         self._auth_admin = auth_admin
 
     async def meta(self) -> EurosMeta:
+        # Prefer the open edition; otherwise the latest closed one (for winners).
         tournament = await self._tournaments.current()
+        if tournament is None:
+            all_tournaments = await self._tournaments.list_all()
+            tournament = all_tournaments[-1] if all_tournaments else None
         if tournament is None:
             return EurosMeta(
                 tournament=None,
@@ -96,31 +101,65 @@ class EurosService:
         start_date: date,
         buy_in_pence: int,
         bearer_token: str,
+        entrant_ids: list[UUID],
         label: str = "European Championship",
         competition_code: str = "EC",
     ) -> EurosTournament:
         if buy_in_pence < 0:
             raise EurosTournamentError("buy_in_pence must be >= 0.")
+        if not entrant_ids:
+            raise EurosTournamentError("entrant_ids must not be empty.")
         existing = await self._tournaments.current()
         if existing is not None:
             raise EurosTournamentError("An open Euros tournament already exists.")
-        entrant_count = await self._count_euros_entrants(bearer_token)
+        if self._profiles is None or self._auth_admin is None:
+            raise EurosTournamentError(
+                "Roster and auth admin gateways are required to open a tournament."
+            )
+        try:
+            granted = await grant_side_game_role(
+                entrant_ids=entrant_ids,
+                role=EUROS_ROLE,
+                bearer_token=bearer_token,
+                profiles=self._profiles,
+                auth_admin=self._auth_admin,
+            )
+        except ValueError as exc:
+            raise EurosTournamentError(str(exc)) from exc
+        except AuthAdminError as exc:
+            raise EurosTournamentError(str(exc)) from exc
+        except RosterError as exc:
+            raise EurosTournamentError(str(exc)) from exc
         return await self._tournaments.add(
             EurosTournament(
                 start_date=start_date,
                 buy_in_pence=buy_in_pence,
                 label=label,
                 competition_code=competition_code.strip().upper() or "EC",
-                entrant_count=entrant_count,
+                entrant_count=len(granted),
             )
         )
 
-    async def end_tournament(self, *, end_date: date | None = None) -> EurosTournament:
+    async def end_tournament(self, *, winner_ids: list[UUID]) -> EurosTournament:
+        """Close the open tournament and record one or more winners.
+
+        ``end_date`` is set server-side to today (tournaments have fixed calendars;
+        admins do not supply an end date).
+        """
+        if not winner_ids:
+            raise EurosTournamentError("at least one winner_id is required")
+        unique: list[UUID] = []
+        seen: set[UUID] = set()
+        for auth_id in winner_ids:
+            if auth_id in seen:
+                raise EurosTournamentError("winner_ids must be unique")
+            seen.add(auth_id)
+            unique.append(auth_id)
         tournament = await self._tournaments.current()
         if tournament is None or tournament.id is None:
             raise EurosTournamentNotFoundError("No open Euros tournament.")
-        tournament.end_date = end_date or date.today()
-        return await self._tournaments.save(tournament)
+        tournament.end_date = date.today()
+        return await self._tournaments.end_with_winners(tournament, unique)
 
     async def list_tournaments(self) -> list[EurosTournament]:
         return await self._tournaments.list_all()
@@ -309,19 +348,6 @@ class EurosService:
         ]
         rows.sort(key=lambda row: row.player.lower())
         return rows
-
-    async def _count_euros_entrants(self, bearer_token: str) -> int:
-        if self._profiles is None or self._auth_admin is None:
-            return 0
-        try:
-            roster = await self._profiles.list_profiles(bearer_token, active=True)
-        except RosterError:
-            return 0
-        count = 0
-        for profile in roster:
-            if await self._profile_has_euros_role(profile):
-                count += 1
-        return count
 
     async def _euros_roster_names(self, bearer_token: str) -> dict[UUID, str]:
         assert self._profiles is not None

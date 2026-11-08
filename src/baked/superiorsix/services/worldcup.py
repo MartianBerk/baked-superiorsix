@@ -1,4 +1,4 @@
-"""World Cup / Qatar Hero side-game service (legacy WORLDCUP_* behaviour)."""
+"""World Cup side-game service (legacy WORLDCUP_* behaviour)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,12 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from baked.superiorsix.clients.auth_admin import AuthAdminGateway
+from baked.superiorsix.clients.user_profiles import UserProfileGateway
 from baked.superiorsix.domain.exceptions import (
+    AuthAdminError,
     PredictionError,
+    RosterError,
     WorldcupError,
     WorldcupMatchNotFoundError,
 )
@@ -23,6 +27,7 @@ from baked.superiorsix.domain.worldcup import (
 from baked.superiorsix.repositories.worldcup_matches import WorldcupMatchRepository
 from baked.superiorsix.repositories.worldcup_predictions import WorldcupPredictionRepository
 from baked.superiorsix.repositories.worldcup_settings import WorldcupSettingsRepository
+from baked.superiorsix.services.side_game_roles import grant_side_game_role
 
 _CUTOFF = timedelta(minutes=10)
 _USER_CHOICES = {PredictionChoice.HOME, PredictionChoice.AWAY, PredictionChoice.DRAW}
@@ -34,6 +39,7 @@ _CHOICE_ALIASES = {
     "d": PredictionChoice.DRAW,
     "draw": PredictionChoice.DRAW,
 }
+WORLDCUP_ROLE = "worldcup"
 
 
 class WorldcupService:
@@ -42,10 +48,15 @@ class WorldcupService:
         matches: WorldcupMatchRepository,
         predictions: WorldcupPredictionRepository,
         settings: WorldcupSettingsRepository,
+        *,
+        profiles: UserProfileGateway | None = None,
+        auth_admin: AuthAdminGateway | None = None,
     ) -> None:
         self._matches = matches
         self._predictions = predictions
         self._settings = settings
+        self._profiles = profiles
+        self._auth_admin = auth_admin
 
     async def list_matches(self) -> list[WorldcupMatch]:
         return await self._matches.list_all()
@@ -76,7 +87,62 @@ class WorldcupService:
             current.participant_count = participant_count
         return await self._settings.save(current)
 
-    async def meta(self) -> dict[str, int]:
+    async def open_tournament(
+        self,
+        *,
+        buy_in_pence: int,
+        entrant_ids: list[UUID],
+        bearer_token: str,
+    ) -> WorldcupSettings:
+        """Activate World Cup: freeze participant count, grant roles, set open."""
+        if buy_in_pence < 0:
+            raise WorldcupError("buy_in_pence must be >= 0.")
+        if not entrant_ids:
+            raise WorldcupError("entrant_ids must not be empty.")
+        current = await self._settings.get()
+        if current.open:
+            raise WorldcupError("An open World Cup tournament already exists.")
+        if self._profiles is None or self._auth_admin is None:
+            raise WorldcupError(
+                "Roster and auth admin gateways are required to open a tournament."
+            )
+        try:
+            granted = await grant_side_game_role(
+                entrant_ids=entrant_ids,
+                role=WORLDCUP_ROLE,
+                bearer_token=bearer_token,
+                profiles=self._profiles,
+                auth_admin=self._auth_admin,
+            )
+        except ValueError as exc:
+            raise WorldcupError(str(exc)) from exc
+        except AuthAdminError as exc:
+            raise WorldcupError(str(exc)) from exc
+        except RosterError as exc:
+            raise WorldcupError(str(exc)) from exc
+        current.buy_in_pence = buy_in_pence
+        current.participant_count = len(granted)
+        current.open = True
+        return await self._settings.save(current)
+
+    async def end_tournament(self, *, winner_ids: list[UUID]) -> WorldcupSettings:
+        """Clear ``open``, keep frozen pot fields, and persist winners."""
+        if not winner_ids:
+            raise WorldcupError("at least one winner_id is required")
+        unique: list[UUID] = []
+        seen: set[UUID] = set()
+        for auth_id in winner_ids:
+            if auth_id in seen:
+                raise WorldcupError("winner_ids must be unique")
+            seen.add(auth_id)
+            unique.append(auth_id)
+        current = await self._settings.get()
+        if not current.open:
+            raise WorldcupError("No open World Cup tournament.")
+        current.open = False
+        return await self._settings.end_with_winners(current, unique)
+
+    async def meta(self) -> dict[str, object]:
         settings = await self.get_settings()
         return {
             "buy_in_pence": settings.buy_in_pence,
@@ -85,6 +151,8 @@ class WorldcupService:
                 buy_in_pence=settings.buy_in_pence,
                 participant_count=settings.participant_count,
             ),
+            "open": settings.open,
+            "winner_ids": list(settings.winner_ids),
         }
 
     async def list_predictions(self) -> list[WorldcupPrediction]:

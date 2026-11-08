@@ -1,4 +1,4 @@
-"""Euro Wizard (SS-19): scoring, APIs, isolated schema."""
+"""Euros (SS-19): scoring, APIs, isolated schema."""
 
 from __future__ import annotations
 
@@ -213,12 +213,16 @@ def test_euros_add_prediction_requires_euros_role(
     user_profiles: FakeUserProfileClient,
     auth_admin: FakeAuthAdminClient,
 ) -> None:
-    _seed_euros_player(user_profiles, auth_admin)
+    auth_id, _ = _seed_euros_player(user_profiles, auth_admin)
     admin_token, _ = make_access_token(roles=["admin"])
     open_resp = client.post(
         "/admin/euros/opentournament",
         headers=auth_header(admin_token),
-        json={"start_date": "2024-06-01", "buy_in_pence": 500},
+        json={
+            "start_date": "2024-06-01",
+            "buy_in_pence": 500,
+            "entrant_ids": [str(auth_id)],
+        },
     )
     assert open_resp.status_code == 200
     assert open_resp.json()["entrant_count"] == 1
@@ -244,7 +248,11 @@ def test_euros_prediction_flow(
         client.post(
             "/admin/euros/opentournament",
             headers=auth_header(admin_token),
-            json={"start_date": "2024-06-01", "buy_in_pence": 200},
+            json={
+                "start_date": "2024-06-01",
+                "buy_in_pence": 200,
+                "entrant_ids": [str(auth_id)],
+            },
         ).status_code
         == 200
     )
@@ -316,3 +324,81 @@ def test_tournament_ec_requires_euros_service() -> None:
 
     with pytest.raises(ValueError, match="EurosService"):
         anyio.run(_call)
+
+
+def test_euros_open_with_entrants_grants_role_and_meta_open(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    # Roster player without euros yet — open should grant the role.
+    _, auth_id = make_access_token(roles=["player", "user-profile"])
+    user_profiles.seed(
+        auth_id,
+        first_name="New",
+        last_name="Entrant",
+        email="new-entrant@example.com",
+    )
+    auth_admin.memberships["new-entrant@example.com"] = ["player", "user-profile"]
+
+    admin_token, _ = make_access_token(roles=["admin"])
+    headers = auth_header(admin_token)
+
+    empty = client.post(
+        "/admin/euros/opentournament",
+        headers=headers,
+        json={"start_date": "2024-06-01", "buy_in_pence": 200, "entrant_ids": []},
+    )
+    assert empty.status_code == 422
+
+    opened = client.post(
+        "/admin/euros/opentournament",
+        headers=headers,
+        json={
+            "start_date": "2024-06-01",
+            "buy_in_pence": 200,
+            "entrant_ids": [str(auth_id)],
+        },
+    )
+    assert opened.status_code == 200, opened.text
+    body = opened.json()
+    assert body["entrant_count"] == 1
+    assert body["prize_pot_pence"] == 200
+    assert "euros" in auth_admin.memberships["new-entrant@example.com"]
+
+    meta = client.get("/euros/meta").json()
+    assert meta["meta"]["open"] is True
+    assert meta["meta"]["entrant_count"] == 1
+    assert meta["meta"]["prize_pot_pence"] == 200
+
+    again = client.post(
+        "/admin/euros/opentournament",
+        headers=headers,
+        json={
+            "start_date": "2024-06-02",
+            "buy_in_pence": 100,
+            "entrant_ids": [str(auth_id)],
+        },
+    )
+    assert again.status_code == 400
+
+    empty_winners = client.post(
+        "/admin/euros/endtournament",
+        headers=headers,
+        json={"winner_ids": []},
+    )
+    assert empty_winners.status_code == 422
+
+    ended = client.post(
+        "/admin/euros/endtournament",
+        headers=headers,
+        json={"winner_ids": [str(auth_id)]},
+    )
+    assert ended.status_code == 200, ended.text
+    ended_body = ended.json()
+    assert ended_body["winner_ids"] == [str(auth_id)]
+    assert ended_body["end_date"] is not None
+    assert client.get("/euros/meta").json()["meta"]["open"] is False
+    assert client.get("/euros/meta").json()["meta"]["tournament"]["winner_ids"] == [
+        str(auth_id)
+    ]

@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.baked.superiorsix.fakes import FakeAuthAdminClient, FakeUserProfileClient
 from tests.baked.superiorsix.tokens import auth_header, make_access_token
 
 from baked.superiorsix.domain.worldcup import (
@@ -156,7 +157,9 @@ async def test_worldcup_public_routes_and_prediction_flow(client: TestClient) ->
     assert client.get("/worldcup/scores").json() == {"scores": []}
     assert client.get("/worldcup/listpredictions").json() == {"predictions": []}
     assert client.get("/qatarhero/listpredictions").json() == {"predictions": []}
-    assert client.get("/worldcup/meta").json()["pot_pence"] == 0
+    meta0 = client.get("/worldcup/meta").json()
+    assert meta0["pot_pence"] == 0
+    assert meta0["open"] is False
 
     token, auth_id = make_access_token(roles=["worldcup"])
     headers = auth_header(token)
@@ -216,8 +219,87 @@ async def test_admin_worldcup_settings_static_pot(client: TestClient) -> None:
         "buy_in_pence": 200,
         "participant_count": 14,
         "pot_pence": 2800,
+        "open": False,
+        "winner_ids": [],
     }
     assert client.get("/worldcup/meta").json()["pot_pence"] == 2800
+
+
+@pytest.mark.asyncio
+async def test_worldcup_open_end_tournament_lifecycle(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    _, auth_id = make_access_token(roles=["player", "user-profile"])
+    user_profiles.seed(
+        auth_id,
+        first_name="World",
+        last_name="Cup",
+        email="wc@example.com",
+    )
+    auth_admin.memberships["wc@example.com"] = ["player", "user-profile"]
+
+    admin_token, _ = make_access_token(roles=["admin"])
+    headers = auth_header(admin_token)
+
+    assert client.get("/worldcup/meta").json()["open"] is False
+
+    empty = client.post(
+        "/admin/worldcup/opentournament",
+        headers=headers,
+        json={"buy_in_pence": 200, "entrant_ids": []},
+    )
+    assert empty.status_code == 422
+
+    opened = client.post(
+        "/admin/worldcup/opentournament",
+        headers=headers,
+        json={"buy_in_pence": 200, "entrant_ids": [str(auth_id)]},
+    )
+    assert opened.status_code == 200, opened.text
+    body = opened.json()
+    assert body == {
+        "buy_in_pence": 200,
+        "participant_count": 1,
+        "pot_pence": 200,
+        "open": True,
+        "winner_ids": [],
+    }
+    assert "worldcup" in auth_admin.memberships["wc@example.com"]
+    assert client.get("/worldcup/meta").json()["open"] is True
+
+    again = client.post(
+        "/admin/worldcup/opentournament",
+        headers=headers,
+        json={"buy_in_pence": 100, "entrant_ids": [str(auth_id)]},
+    )
+    assert again.status_code == 400
+
+    ended = client.post(
+        "/admin/worldcup/endtournament",
+        headers=headers,
+        json={"winner_ids": [str(auth_id)]},
+    )
+    assert ended.status_code == 200, ended.text
+    closed = ended.json()
+    assert closed["open"] is False
+    assert closed["participant_count"] == 1
+    assert closed["pot_pence"] == 200
+    assert closed["winner_ids"] == [str(auth_id)]
+    assert client.get("/worldcup/meta").json()["open"] is False
+    assert client.get("/worldcup/meta").json()["winner_ids"] == [str(auth_id)]
+
+    # Re-open after end is allowed (clears prior winners until next close).
+    reopened = client.post(
+        "/admin/worldcup/opentournament",
+        headers=headers,
+        json={"buy_in_pence": 300, "entrant_ids": [str(auth_id)]},
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["open"] is True
+    assert reopened.json()["pot_pence"] == 300
+    assert reopened.json()["winner_ids"] == []
 
 
 @pytest.mark.asyncio

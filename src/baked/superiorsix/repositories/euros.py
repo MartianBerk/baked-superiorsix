@@ -1,4 +1,4 @@
-"""Persistence for Euro Wizard tables (isolated from Super Six / World Cup)."""
+"""Persistence for Euros tables (isolated from Super Six / World Cup)."""
 
 from __future__ import annotations
 
@@ -6,13 +6,14 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from baked.superiorsix.db.models import (
     EurosMatchRecord,
     EurosPredictionRecord,
     EurosTournamentRecord,
+    EurosTournamentWinnerRecord,
 )
 from baked.superiorsix.domain.models import EurosMatch, EurosPrediction, EurosTournament
 
@@ -37,6 +38,12 @@ class EurosTournamentRepository(Protocol):
     async def add(self, tournament: EurosTournament) -> EurosTournament: ...
 
     async def save(self, tournament: EurosTournament) -> EurosTournament: ...
+
+    async def end_with_winners(
+        self,
+        tournament: EurosTournament,
+        winner_ids: list[UUID],
+    ) -> EurosTournament: ...
 
 
 class EurosMatchRepository(Protocol):
@@ -85,7 +92,7 @@ class SqlAlchemyEurosTournamentRepository:
 
     async def get(self, tournament_id: int) -> EurosTournament | None:
         record = await self._session.get(EurosTournamentRecord, tournament_id)
-        return _tournament_to_domain(record) if record else None
+        return await self._to_domain(record) if record else None
 
     async def current(self) -> EurosTournament | None:
         result = await self._session.execute(
@@ -95,13 +102,13 @@ class SqlAlchemyEurosTournamentRepository:
             .limit(1)
         )
         record = result.scalar_one_or_none()
-        return _tournament_to_domain(record) if record else None
+        return await self._to_domain(record) if record else None
 
     async def list_all(self) -> list[EurosTournament]:
         result = await self._session.execute(
             select(EurosTournamentRecord).order_by(EurosTournamentRecord.id.asc())
         )
-        return [_tournament_to_domain(row) for row in result.scalars().all()]
+        return [await self._to_domain(row) for row in result.scalars().all()]
 
     async def add(self, tournament: EurosTournament) -> EurosTournament:
         record = EurosTournamentRecord(
@@ -115,7 +122,7 @@ class SqlAlchemyEurosTournamentRepository:
         self._session.add(record)
         await self._session.commit()
         await self._session.refresh(record)
-        return _tournament_to_domain(record)
+        return await self._to_domain(record)
 
     async def save(self, tournament: EurosTournament) -> EurosTournament:
         assert tournament.id is not None
@@ -129,7 +136,58 @@ class SqlAlchemyEurosTournamentRepository:
         record.entrant_count = tournament.entrant_count
         await self._session.commit()
         await self._session.refresh(record)
-        return _tournament_to_domain(record)
+        return await self._to_domain(record)
+
+    async def end_with_winners(
+        self,
+        tournament: EurosTournament,
+        winner_ids: list[UUID],
+    ) -> EurosTournament:
+        if tournament.id is None:
+            raise ValueError("tournament id is required to record winners")
+        record = await self._session.get(EurosTournamentRecord, tournament.id)
+        if record is None:
+            raise ValueError(f"euros tournament {tournament.id} not found")
+        record.competition_code = tournament.competition_code
+        record.label = tournament.label
+        record.start_date = tournament.start_date
+        record.end_date = tournament.end_date
+        record.buy_in_pence = tournament.buy_in_pence
+        record.entrant_count = tournament.entrant_count
+        await self._session.execute(
+            delete(EurosTournamentWinnerRecord).where(
+                EurosTournamentWinnerRecord.tournament_id == tournament.id
+            )
+        )
+        for auth_id in winner_ids:
+            self._session.add(
+                EurosTournamentWinnerRecord(tournament_id=tournament.id, auth_id=auth_id)
+            )
+        await self._session.commit()
+        await self._session.refresh(record)
+        return await self._to_domain(record)
+
+    async def _winner_ids(self, tournament_id: int) -> list[UUID]:
+        result = await self._session.execute(
+            select(EurosTournamentWinnerRecord.auth_id)
+            .where(EurosTournamentWinnerRecord.tournament_id == tournament_id)
+            .order_by(EurosTournamentWinnerRecord.auth_id)
+        )
+        return list(result.scalars().all())
+
+    async def _to_domain(self, record: EurosTournamentRecord) -> EurosTournament:
+        winners = await self._winner_ids(record.id)
+        return EurosTournament(
+            id=record.id,
+            competition_code=record.competition_code,
+            label=record.label,
+            start_date=record.start_date,
+            end_date=record.end_date,
+            buy_in_pence=record.buy_in_pence,
+            entrant_count=record.entrant_count,
+            winner_ids=winners,
+            created_at=_as_utc(record.created_at) if record.created_at else None,
+        )
 
 
 class SqlAlchemyEurosMatchRepository:
@@ -292,19 +350,6 @@ class SqlAlchemyEurosPredictionRepository:
         await self._session.commit()
         await self._session.refresh(record)
         return _prediction_to_domain(record)
-
-
-def _tournament_to_domain(record: EurosTournamentRecord) -> EurosTournament:
-    return EurosTournament(
-        id=record.id,
-        competition_code=record.competition_code,
-        label=record.label,
-        start_date=record.start_date,
-        end_date=record.end_date,
-        buy_in_pence=record.buy_in_pence,
-        entrant_count=record.entrant_count,
-        created_at=_as_utc(record.created_at) if record.created_at else None,
-    )
 
 
 def _match_to_domain(record: EurosMatchRecord) -> EurosMatch:

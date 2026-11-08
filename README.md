@@ -118,11 +118,11 @@ poetry run baked-superiorsix-tournament-extractor -l EC --live
 
 **World Cup side game (SS-20):** isolated `worldcup_matches` /
 `worldcup_predictions` / `worldcup_settings` tables (static buy-in pot; ET/pens
-scoring). Player routes under `/worldcup/*` (+ `/qatarhero/listpredictions`);
-admin pot settings under `/admin/worldcup/*`. Role gate: JWT `worldcup`.
-Use `baked-superiorsix-worldcup-extractor` for WC fixtures — do **not** rely on
-`tournament-extractor -l WC` for the side game (that path still writes shared
-`matches`). Euros side game remains SS-19. No Flashscore.
+scoring). Player routes under `/worldcup/*` (legacy alias
+`/qatarhero/listpredictions`); admin under `/admin/worldcup/*`. Role gate: JWT
+`worldcup`. Use `baked-superiorsix-worldcup-extractor` for WC fixtures — do
+**not** rely on `tournament-extractor -l WC` for the side game (that path still
+writes shared `matches`). Euros side game remains SS-19. No Flashscore.
 
 #### Auto-score (SS-11)
 
@@ -229,9 +229,10 @@ poetry run pytest
 ## Route map
 
 Legacy subdomain → path prefix: `game`, `user`, `admin`, `stats`, `euros`,
-`worldcup`, plus aliases `eurowizard` and `qatarhero` where the old app used
-alternate subdomains for the same handlers.
+`worldcup`, plus legacy aliases `eurowizard` and `qatarhero` where the old app
+used alternate subdomains for the same handlers.
 
-**Euro Wizard (SS-19):** `/euros/*` (+ `/eurowizard/listpredictions`) and
+**Euros (SS-19):** `/euros/*` (+ `/eurowizard/listpredictions`) and
 `/admin/euros/*` are live against isolated `euros_*` tables. Predictions require
-the `euros` JWT role. World Cup routes remain noop until SS-20.
+the `euros` JWT role. **World Cup (SS-20):** `/worldcup/*` and
+`/admin/worldcup/*` against `worldcup_*` tables; JWT role `worldcup`.

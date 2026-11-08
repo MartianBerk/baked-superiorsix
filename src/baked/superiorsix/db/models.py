@@ -123,7 +123,7 @@ class PredictionRecord(Base):
     dropped: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-# --- Euro Wizard (SS-19). Isolated from Super Six + World Cup tables. ---
+# --- Euros (SS-19). Isolated from Super Six + World Cup tables. ---
 
 
 class EurosTournamentRecord(Base):
@@ -146,8 +146,20 @@ class EurosTournamentRecord(Base):
     )
 
 
+class EurosTournamentWinnerRecord(Base):
+    """Winners for a closed Euros tournament — roster ``auth_id`` keys."""
+
+    __tablename__ = "euros_tournament_winners"
+
+    tournament_id: Mapped[int] = mapped_column(
+        ForeignKey("euros_tournaments.id"),
+        primary_key=True,
+    )
+    auth_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+
+
 class EurosMatchRecord(Base):
-    """Euro Wizard fixtures — not the Super Six ``matches`` table."""
+    """Euros fixtures — not the Super Six ``matches`` table."""
 
     __tablename__ = "euros_matches"
     __table_args__ = (UniqueConstraint("external_id", name="uq_euros_matches_external_id"),)
@@ -175,7 +187,7 @@ class EurosMatchRecord(Base):
 
 
 class EurosPredictionRecord(Base):
-    """Euro Wizard picks keyed by roster ``auth_id`` (not Super Six predictions)."""
+    """Euros picks keyed by roster ``auth_id`` (not Super Six predictions)."""
 
     __tablename__ = "euros_predictions"
     __table_args__ = (
@@ -196,17 +208,31 @@ class EurosPredictionRecord(Base):
     dropped: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-# --- World Cup / Qatar Hero (SS-20). Isolated from Super Six matches + euros_*. ---
+# --- World Cup (SS-20). Isolated from Super Six matches + euros_*. ---
 
 
 class WorldcupSettingsRecord(Base):
-    """Singleton static-pot config for the World Cup side game."""
+    """Singleton static-pot + open lifecycle for the World Cup side game."""
 
     __tablename__ = "worldcup_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     buy_in_pence: Mapped[int] = mapped_column(Integer, default=0)
     participant_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Admin open/end tournament; public meta exposes this for nav visibility.
+    open: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class WorldcupWinnerRecord(Base):
+    """Winners for the latest closed World Cup edition (singleton settings)."""
+
+    __tablename__ = "worldcup_winners"
+
+    settings_id: Mapped[int] = mapped_column(
+        ForeignKey("worldcup_settings.id"),
+        primary_key=True,
+    )
+    auth_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
 
 
 class WorldcupMatchRecord(Base):

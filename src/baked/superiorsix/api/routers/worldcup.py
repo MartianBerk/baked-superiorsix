@@ -1,11 +1,18 @@
-"""World Cup / Qatar Hero routes (legacy subdomains: worldcup, qatarhero)."""
+"""World Cup routes (legacy path alias: ``/qatarhero/listpredictions``)."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from baked.superiorsix.api.deps import RequireAdmin, RequireWorldcup, get_worldcup_service
+from baked.superiorsix.api.deps import (
+    RequireAdmin,
+    RequireWorldcup,
+    get_bearer_token,
+    get_worldcup_service,
+)
 from baked.superiorsix.api.schemas import (
+    EndWorldcupTournamentRequest,
+    OpenWorldcupTournamentRequest,
     WorldcupAddPredictionRequest,
     WorldcupGetPredictionResponse,
     WorldcupMatchesResponse,
@@ -150,6 +157,41 @@ async def admin_update_worldcup_settings(
             buy_in_pence=payload.buy_in_pence,
             participant_count=payload.participant_count,
         )
+    except WorldcupError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    meta = await service.meta()
+    return WorldcupMetaResponse(**meta)
+
+
+@router.post("/admin/worldcup/opentournament", response_model=WorldcupMetaResponse)
+async def admin_worldcup_open_tournament(
+    _: RequireAdmin,
+    payload: OpenWorldcupTournamentRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+) -> WorldcupMetaResponse:
+    """Open World Cup; grants ``worldcup`` and freezes participant_count."""
+    try:
+        await service.open_tournament(
+            buy_in_pence=payload.buy_in_pence,
+            entrant_ids=list(payload.entrant_ids),
+            bearer_token=token,
+        )
+    except WorldcupError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    meta = await service.meta()
+    return WorldcupMetaResponse(**meta)
+
+
+@router.post("/admin/worldcup/endtournament", response_model=WorldcupMetaResponse)
+async def admin_worldcup_end_tournament(
+    _: RequireAdmin,
+    payload: EndWorldcupTournamentRequest,
+    service: Annotated[WorldcupService, Depends(get_worldcup_service)],
+) -> WorldcupMetaResponse:
+    """Close the open World Cup edition and record ``winner_ids``."""
+    try:
+        await service.end_tournament(winner_ids=list(payload.winner_ids))
     except WorldcupError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     meta = await service.meta()
