@@ -28,7 +28,6 @@ from baked.superiorsix.api.schemas import (
     SubroundResponse,
     SubroundsResponse,
 )
-from baked.superiorsix.api.team_names import DisplayTeam, load_display
 from baked.superiorsix.domain.exceptions import MatchNotFoundError, SubroundNotFoundError
 from baked.superiorsix.noop import noop
 from baked.superiorsix.services.gameday import GamedayService, LiveScoresBoard
@@ -65,7 +64,6 @@ async def game_meta(
 @router.get("/livematches", response_model=AvailableMatchesResponse)
 async def game_live_matches(
     match_service: Annotated[MatchService, Depends(get_match_service)],
-    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
 ) -> AvailableMatchesResponse:
     if not match_date:
@@ -75,18 +73,15 @@ async def game_live_matches(
         )
     day = parse_legacy_date(match_date, field_name="matchDate")
     matches = await match_service.available_matches(day)
-    display = await load_display(team_xref)
+    # Keep provider team strings; FE labels via ``meta.teams[name] || name``.
     return AvailableMatchesResponse(
-        matches=[
-            AvailableMatchResponse.from_domain(match, display_team=display) for match in matches
-        ]
+        matches=[AvailableMatchResponse.from_domain(match) for match in matches]
     )
 
 
 @router.get("/livescores", response_model=LiveScoresResponse)
 async def game_live_scores(
     gameday: Annotated[GamedayService, Depends(get_gameday_service)],
-    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
     subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
 ) -> LiveScoresResponse:
@@ -100,8 +95,7 @@ async def game_live_scores(
         board = await gameday.live_scores(match_date=day, subround_id=subround_id)
     except SubroundNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    display = await load_display(team_xref)
-    return _live_scores_response(board, display_team=display)
+    return _live_scores_response(board)
 
 
 @router.get("/currentround", response_model=PublicCurrentRoundEnvelope)
@@ -179,12 +173,7 @@ async def game_match_detail(
     return MatchDetailResponse(match_detail=MatchDetailPayload.from_domain(detail))
 
 
-def _live_scores_response(
-    board: LiveScoresBoard,
-    *,
-    display_team: DisplayTeam | None = None,
-) -> LiveScoresResponse:
-    show = display_team or (lambda name: name)
+def _live_scores_response(board: LiveScoresBoard) -> LiveScoresResponse:
     return LiveScoresResponse(
         scores=[
             LiveScorePlayerResponse(
@@ -199,8 +188,8 @@ def _live_scores_response(
                     LiveScoreMatchResponse(
                         match_id=pick.match_id,
                         game_number=pick.game_number,
-                        home_team=show(pick.home_team),
-                        away_team=show(pick.away_team),
+                        home_team=pick.home_team,
+                        away_team=pick.away_team,
                         home_score=pick.home_score,
                         away_score=pick.away_score,
                         status=pick.status,
@@ -215,9 +204,7 @@ def _live_scores_response(
             for player in board.scores
         ],
         subround=(None if board.subround is None else SubroundResponse.from_status(board.subround)),
-        matches=[
-            MatchResponse.from_domain(match, display_team=display_team) for match in board.matches
-        ],
+        matches=[MatchResponse.from_domain(match) for match in board.matches],
         match_count=board.match_count,
         live=board.live,
         min_kickoff=board.min_kickoff,

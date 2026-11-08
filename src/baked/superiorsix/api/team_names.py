@@ -1,7 +1,7 @@
-"""Optional helpers to resolve provider team names → xref display labels.
+"""Helpers to put xref display names on API match payloads.
 
-Public game match payloads keep provider strings so the FE can use
-``meta.teams[name] || name``. Admin / side-game routes may remap eagerly.
+Match responses should expose ``display()`` / ``load_display()`` names so the
+FE never applies ``meta.teams`` mappings itself.
 """
 
 from __future__ import annotations
