@@ -97,26 +97,32 @@ class StatsService:
 
         Not the full score history — only the most recently closed round.
         Optional ``start_date`` / ``end_date`` further filter match days.
-        Inactive roster profiles are excluded.
-        """
-        roster = await self._load_roster(bearer_token=bearer_token, active=True)
-        by_auth = {profile.auth_id: profile for profile in roster}
-        if not by_auth:
-            return []
 
+        Known inactive roster profiles are excluded. Predictors present in the
+        closed-round data but missing from the roster (common right after a
+        legacy import before every ``auth_id`` is invited) are still included,
+        labelled with the ``auth_id`` string until a profile exists.
+        """
         previous = await self._previous_closed_round()
         if previous is None:
             return []
 
+        roster = await self._load_roster(bearer_token=bearer_token, active=None)
+        by_auth = {profile.auth_id: profile for profile in roster}
+        inactive = {auth_id for auth_id, profile in by_auth.items() if not profile.active}
+
         day_rows = await self._day_scores(
-            auth_ids=list(by_auth.keys()),
+            auth_ids=None,
             round_ids=[previous.id],
             start_date=start_date,
             end_date=end_date,
         )
         grouped: dict[UUID, list[PlayerDayScore]] = {}
         for row in day_rows:
-            name = display_name(by_auth[row.auth_id])
+            if row.auth_id in inactive:
+                continue
+            profile = by_auth.get(row.auth_id)
+            name = display_name(profile) if profile is not None else str(row.auth_id)
             score = PlayerDayScore(
                 round_id=row.round_id,
                 auth_id=row.auth_id,
@@ -129,12 +135,14 @@ class StatsService:
 
         aggregates: list[PlayerAggregate] = []
         for auth_id, scores in grouped.items():
+            profile = by_auth.get(auth_id)
+            name = display_name(profile) if profile is not None else str(auth_id)
             correct = sum(item.correct for item in scores)
             matches = sum(item.matches for item in scores)
             aggregates.append(
                 PlayerAggregate(
                     auth_id=auth_id,
-                    name=display_name(by_auth[auth_id]),
+                    name=name,
                     correct=correct,
                     matches=matches,
                     success_rate=success_rate(correct=correct, matches=matches),
@@ -221,12 +229,14 @@ class StatsService:
     async def _day_scores(
         self,
         *,
-        auth_ids: list[UUID],
+        auth_ids: list[UUID] | None,
         round_ids: list[int],
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[PlayerDayScore]:
-        if not auth_ids or not round_ids:
+        if not round_ids:
+            return []
+        if auth_ids is not None and not auth_ids:
             return []
 
         correct_expr = case(
@@ -248,6 +258,14 @@ class StatsService:
             else_=0,
         )
         match_day = func.date(MatchRecord.match_date)
+        filters = [
+            PredictionRecord.dropped.is_(False),
+            MatchRecord.use_match.is_(True),
+            MatchRecord.status == MatchStatus.FINISHED,
+            PredictionRecord.round_id.in_(round_ids),
+        ]
+        if auth_ids is not None:
+            filters.append(PredictionRecord.auth_id.in_(auth_ids))
         stmt = (
             select(
                 PredictionRecord.round_id,
@@ -257,13 +275,7 @@ class StatsService:
                 func.coalesce(func.sum(correct_expr), 0).label("correct"),
             )
             .join(MatchRecord, MatchRecord.id == PredictionRecord.match_id)
-            .where(
-                PredictionRecord.dropped.is_(False),
-                MatchRecord.use_match.is_(True),
-                MatchRecord.status == MatchStatus.FINISHED,
-                PredictionRecord.auth_id.in_(auth_ids),
-                PredictionRecord.round_id.in_(round_ids),
-            )
+            .where(*filters)
             .group_by(PredictionRecord.round_id, PredictionRecord.auth_id, match_day)
             .order_by(match_day, PredictionRecord.auth_id)
         )
