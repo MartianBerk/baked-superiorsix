@@ -180,10 +180,21 @@ def test_stats_previous_round_rates_and_full_winners_archive(
         )
     )
 
-    # Open round is not n−1 — aggregate stays empty until the round is closed.
+    # Default scope=previous is empty while the only round is still open.
     during = client.get("/stats/aggregate")
     assert during.status_code == 200, during.text
     assert during.json() == {"stats": []}
+
+    # scope=current returns open-round rates before close (Performance graph).
+    current = client.get("/stats/aggregate", params={"scope": "current"})
+    assert current.status_code == 200, current.text
+    current_by = {row["playerid"]: row for row in current.json()["stats"]}
+    assert set(current_by) == {str(ada_id), str(bob_id)}
+    assert current_by[str(ada_id)]["correct"] == 2
+    assert current_by[str(ada_id)]["matches"] == 2
+    assert current_by[str(ada_id)]["success_rate"] == 100.0
+    assert len(current_by[str(ada_id)]["scores"]) == 2
+    assert current_by[str(bob_id)]["success_rate"] == 0.0
 
     ended = client.post(
         "/admin/endround",
@@ -193,7 +204,10 @@ def test_stats_previous_round_rates_and_full_winners_archive(
     )
     assert ended.status_code == 200, ended.text
 
-    # Previous closed round rates (n−1).
+    # After close: current is empty; previous (n−1) has the closed-round rates.
+    assert client.get("/stats/aggregate", params={"scope": "current"}).json() == {
+        "stats": []
+    }
     aggregate = client.get("/stats/aggregate")
     assert aggregate.status_code == 200, aggregate.text
     by_player = {row["playerid"]: row for row in aggregate.json()["stats"]}
@@ -297,7 +311,7 @@ def test_stats_previous_round_rates_and_full_winners_archive(
     assert archive_rounds[0]["winner"] == "Bob Builder"
     assert archive_rounds[1]["round_id"] == round1
 
-    # Aggregate is previous round (round2) only — not full score history.
+    # Aggregate previous is round2 only — not full score history.
     n1 = client.get("/stats/aggregate")
     assert n1.status_code == 200, n1.text
     n1_by = {row["playerid"]: row for row in n1.json()["stats"]}
@@ -306,6 +320,14 @@ def test_stats_previous_round_rates_and_full_winners_archive(
     assert n1_by[str(bob_id)]["matches"] == 1
     assert n1_by[str(bob_id)]["success_rate"] == 100.0
     assert str(ada_id) not in n1_by
+    assert client.get("/stats/aggregate", params={"scope": "current"}).json() == {
+        "stats": []
+    }
+
+
+def test_aggregate_rejects_bad_scope(client: TestClient) -> None:
+    response = client.get("/stats/aggregate", params={"scope": "all"})
+    assert response.status_code == 422
 
 
 def test_historicrounds_requires_admin(client: TestClient) -> None:
