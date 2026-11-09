@@ -557,3 +557,39 @@ def test_selections_can_span_days_without_full_six(client: TestClient) -> None:
     day2 = client.get("/game/livematches", params={"matchDate": _fmt(day + timedelta(days=1))})
     assert day2.status_code == 200
     assert day2.json()["matches"][0]["game_number"] == 1
+
+
+def test_addmatch_rejects_postponed(client: TestClient) -> None:
+    fixture, day = anyio.run(_seed_weekend, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    async def postpone() -> None:
+        async with client.app.state.session_factory() as session:
+            matches = SqlAlchemyMatchRepository(session)
+            match = await matches.get(fixture.id)
+            assert match is not None
+            match.status = MatchStatus.POSTPONED
+            await matches.save(match)
+
+    anyio.run(postpone)
+
+    token, _ = make_access_token(roles=["admin"])
+    headers = auth_header(token)
+    _open_round(client, headers)
+
+    select = client.post(
+        "/admin/addmatch",
+        headers=headers,
+        json={"id": fixture.id, "game_number": 1},
+    )
+    assert select.status_code == 400, select.text
+    assert "postponed" in select.json()["detail"].lower()
+
+    bulk = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": _fmt(day)},
+        json=[{"id": fixture.id, "game_number": 1}],
+    )
+    assert bulk.status_code == 400, bulk.text
+    assert "postponed" in bulk.json()["detail"].lower()

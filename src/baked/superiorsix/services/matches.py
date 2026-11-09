@@ -180,6 +180,7 @@ class MatchService:
             raise MatchSelectionError("Invalid game_number, must be between 1 and 6.")
 
         match = await self.get(match_id)
+        _reject_postponed_selection(match)
         selected = await self.selected_matches_for_subround(subround_id)
 
         if (
@@ -268,6 +269,7 @@ class MatchService:
         updated: list[Match] = []
         for match_id, game_number in selections:
             match = await self.get(match_id)
+            _reject_postponed_selection(match)
             day = match.match_date.astimezone(UTC).date()
             if day != match_date:
                 raise MatchSelectionError(
@@ -466,6 +468,15 @@ class MatchService:
                 raise MatchNotFoundError(f"Match '{external_id}' not found.")
             return match
         raise MatchNotFoundError("Match id or external_id is required.")
+
+
+def _reject_postponed_selection(match: Match) -> None:
+    """Block postponed fixtures from Super Six slate selection."""
+    if match.status == MatchStatus.POSTPONED:
+        match_id = match.id if match.id is not None else "?"
+        raise MatchSelectionError(
+            f"Match {match_id} is postponed and cannot be selected."
+        )
 
 
 def _frozen_difficulty(match: Match) -> MatchDifficultyScore | None:
