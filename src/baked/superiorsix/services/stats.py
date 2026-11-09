@@ -96,11 +96,13 @@ class StatsService:
         start_date: date | None = None,
         end_date: date | None = None,
         bearer_token: str | None = None,
-    ) -> list[PlayerAggregate]:
+    ) -> tuple[list[PlayerAggregate], int | None]:
         """Success-rate aggregates for one round scope.
 
         ``scope=previous`` (default): most recently closed round (n−1).
-        ``scope=current``: open round in progress (n), else ``[]``.
+        ``scope=current``: open round in progress (n), else ``([], None)``.
+
+        Returns ``(rows, round_id)`` so the API can echo which round was used.
 
         Day ``scores`` are one point per scored match-day (subround slate days
         after import). Optional ``start_date`` / ``end_date`` further filter.
@@ -112,7 +114,7 @@ class StatsService:
         """
         target = await self._round_for_scope(scope)
         if target is None:
-            return []
+            return [], None
 
         roster = await self._load_roster(bearer_token=bearer_token, active=None)
         by_auth = {profile.auth_id: profile for profile in roster}
@@ -157,7 +159,7 @@ class StatsService:
                 )
             )
         aggregates.sort(key=lambda row: (-row.success_rate, row.name.lower(), str(row.auth_id)))
-        return aggregates
+        return aggregates, target.id
 
     async def historic_rounds(self, *, bearer_token: str | None = None) -> list[HistoricRound]:
         """Full closed-round winners archive (legacy HISTORIC_ROUNDS)."""

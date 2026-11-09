@@ -35,11 +35,18 @@ async def aggregate_stats(
     ``scope=current`` for the open round (Performance graph / table). Optional
     ``start_date`` / ``end_date`` (``dd-mm-yyyy``) further filter match days.
     ``playerid`` is roster ``auth_id``. FE renders ``success_rate`` as-is.
+
+    Response echoes ``scope`` and resolved ``round_id`` so clients can tell a
+    stale BE (that ignores ``scope``) from a real current-round payload.
     """
     start = None if not start_date else parse_legacy_date(start_date, field_name="start_date")
     end = None if not end_date else parse_legacy_date(end_date, field_name="end_date")
-    rows = await stats.aggregate(scope=scope, start_date=start, end_date=end)
-    return AggregateStatsResponse(stats=[AggregatePlayerStats.from_domain(row) for row in rows])
+    rows, round_id = await stats.aggregate(scope=scope, start_date=start, end_date=end)
+    return AggregateStatsResponse(
+        scope=scope,
+        round_id=round_id,
+        stats=[AggregatePlayerStats.from_domain(row) for row in rows],
+    )
 
 
 @router.get("/winners", response_model=HistoricRoundsResponse)
