@@ -320,9 +320,27 @@ class MatchService:
         match_date: date,
     ) -> MatchDetail:
         start, end = day_bounds(match_date)
-        home_aliases = await self._aliases(home_team)
-        away_aliases = await self._aliases(away_team)
-        match = await self._matches.find_fixture(home_aliases, away_aliases, start, end)
+        # Exact names first (legacy list semantics); aliases only if needed so
+        # provider-spelling duplicates on the same day do not collide.
+        match = await self._matches.find_fixture(
+            [home_team],
+            [away_team],
+            start,
+            end,
+            prefer_home=home_team,
+            prefer_away=away_team,
+        )
+        if match is None:
+            home_aliases = await self._aliases(home_team)
+            away_aliases = await self._aliases(away_team)
+            match = await self._matches.find_fixture(
+                home_aliases,
+                away_aliases,
+                start,
+                end,
+                prefer_home=home_team,
+                prefer_away=away_team,
+            )
         if match is None:
             raise MatchNotFoundError("Cannot find match.")
 

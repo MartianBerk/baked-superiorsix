@@ -214,6 +214,88 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     assert "Arsenal FC" not in names
 
 
+def test_matchdetail_tolerates_alias_duplicate_fixtures(client: TestClient) -> None:
+    """Alias expansion must not 500 when two provider spellings share a day.
+
+    Admin Matches expand calls ``GET /game/matchdetail``; xref aliases can match
+    both ``Arsenal``/``Chelsea`` and ``Arsenal FC``/``Chelsea FC`` rows. Prefer
+    the exact requested names.
+    """
+
+    async def seed() -> date:
+        async with client.app.state.session_factory() as session:
+            team_xref = TeamXrefService(SqlAlchemyTeamXrefRepository(session))
+            await team_xref.upsert_many(
+                [
+                    TeamXref(team_name="Arsenal FC", xref="Arsenal"),
+                    TeamXref(team_name="Arsenal", xref="Arsenal"),
+                    TeamXref(team_name="Chelsea FC", xref="Chelsea"),
+                    TeamXref(team_name="Chelsea", xref="Chelsea"),
+                ]
+            )
+            leagues = LeagueService(
+                SqlAlchemyLeagueRepository(session),
+                SqlAlchemyMatchRepository(session),
+                team_xref,
+            )
+            matches = MatchService(SqlAlchemyMatchRepository(session), leagues, team_xref)
+            ingest = MatchIngestService(matches, leagues)
+
+            day = date.today() + timedelta(days=28)
+            season_start_year = day.year if day.month >= 8 else day.year - 1
+            league = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert league.id is not None
+            await ingest.upsert_match(
+                Match(
+                    external_id="pl-ars-che-alias-a",
+                    league_id=league.id,
+                    match_date=_kickoff(day, hour=12),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Arsenal FC",
+                    away_team="Chelsea FC",
+                )
+            )
+            preferred = await ingest.upsert_match(
+                Match(
+                    external_id="pl-ars-che-alias-b",
+                    league_id=league.id,
+                    match_date=_kickoff(day, hour=15),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Arsenal",
+                    away_team="Chelsea",
+                )
+            )
+            assert preferred.id is not None
+            return day
+
+    day = anyio.run(seed)
+
+    detail = client.get(
+        "/game/matchdetail",
+        params={"hometeam": "Arsenal", "awayteam": "Chelsea", "matchdate": _fmt(day)},
+    )
+    assert detail.status_code == 200, detail.text
+    body = detail.json()["match_detail"]
+    assert set(body["league_position"]) == {"Arsenal", "Chelsea"}
+
+    # Display-name query still resolves when only the FC spelling exists later.
+    aliased_only = client.get(
+        "/game/matchdetail",
+        params={
+            "hometeam": "Arsenal FC",
+            "awayteam": "Chelsea FC",
+            "matchdate": _fmt(day),
+        },
+    )
+    assert aliased_only.status_code == 200, aliased_only.text
+
+
 def test_build_league_table_canonical_keys() -> None:
     day = date(2025, 9, 1)
     matches = [

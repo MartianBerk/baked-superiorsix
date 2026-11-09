@@ -67,6 +67,9 @@ class MatchRepository(Protocol):
         away_teams: Collection[str],
         start: datetime,
         end: datetime,
+        *,
+        prefer_home: str | None = None,
+        prefer_away: str | None = None,
     ) -> Match | None: ...
 
     async def add(self, match: Match) -> Match: ...
@@ -214,21 +217,41 @@ class SqlAlchemyMatchRepository:
         away_teams: Collection[str],
         start: datetime,
         end: datetime,
+        *,
+        prefer_home: str | None = None,
+        prefer_away: str | None = None,
     ) -> Match | None:
+        """Return one fixture for the home/away name sets in ``[start, end)``.
+
+        Alias expansion can match several rows on the same day (duplicate
+        provider spellings). Prefer an exact ``prefer_home``/``prefer_away``
+        hit, then a single ``use_match`` selection, then earliest kickoff/id.
+        Never raises ``MultipleResultsFound``.
+        """
         homes = tuple(dict.fromkeys(home_teams))
         aways = tuple(dict.fromkeys(away_teams))
         if not homes or not aways:
             return None
         result = await self._session.execute(
-            select(MatchRecord).where(
+            select(MatchRecord)
+            .where(
                 MatchRecord.home_team.in_(homes),
                 MatchRecord.away_team.in_(aways),
                 MatchRecord.match_date >= start,
                 MatchRecord.match_date < end,
             )
+            .order_by(MatchRecord.match_date, MatchRecord.id)
         )
-        record = result.scalar_one_or_none()
-        return _to_domain(record) if record else None
+        records = list(result.scalars().all())
+        if not records:
+            return None
+        return _to_domain(
+            _pick_fixture_record(
+                records,
+                prefer_home=prefer_home,
+                prefer_away=prefer_away,
+            )
+        )
 
     async def add(self, match: Match) -> Match:
         now = _stamp_now()
@@ -278,6 +301,34 @@ class SqlAlchemyMatchRepository:
         await self._session.commit()
         await self._session.refresh(record)
         return _to_domain(record)
+
+
+def _pick_fixture_record(
+    records: list[MatchRecord],
+    *,
+    prefer_home: str | None,
+    prefer_away: str | None,
+) -> MatchRecord:
+    """Disambiguate alias/day collisions without an arbitrary silent pick."""
+    if len(records) == 1:
+        return records[0]
+    candidates = records
+    if prefer_home is not None and prefer_away is not None:
+        exact = [
+            record
+            for record in candidates
+            if record.home_team == prefer_home and record.away_team == prefer_away
+        ]
+        if len(exact) == 1:
+            return exact[0]
+        if exact:
+            candidates = exact
+    selected = [record for record in candidates if record.use_match]
+    if len(selected) == 1:
+        return selected[0]
+    if selected:
+        candidates = selected
+    return candidates[0]
 
 
 def _to_domain(record: MatchRecord) -> Match:
