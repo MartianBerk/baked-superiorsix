@@ -244,6 +244,8 @@ def test_livescores_scores_predictions_and_live_flag(
     assert body["matches"][0]["status"] == MatchStatus.IN_PLAY, body["matches"]
     assert body["matches"][0]["home_score"] == 1
     assert body["matches"][0]["match_minute"] == 35
+    assert body["matches"][0]["league_code"] == "PL"
+    assert all(row["league_code"] == "PL" for row in body["matches"])
     assert body["live"] is True
     assert body["next_kickoff"] is not None
     assert len(body["scores"]) == 2

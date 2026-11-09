@@ -60,6 +60,8 @@ class Match:
     # Persisted prediction difficulty (SS-125). Once both are set they are immutable.
     difficulty_score: float | None = None
     difficulty_band: int | None = None
+    # Populated from leagues.code when loaded via repository join (not persisted).
+    league_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

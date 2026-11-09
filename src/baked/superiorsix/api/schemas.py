@@ -48,6 +48,7 @@ class AvailableMatchResponse(BaseModel):
     game_number: int | None = None
     match_date: datetime
     subround_id: int | None = None
+    league_code: str | None = None
     difficulty: MatchDifficultyPayload | None = None
 
     @classmethod
@@ -78,6 +79,7 @@ class AvailableMatchResponse(BaseModel):
             game_number=match.game_number,
             match_date=match.match_date,
             subround_id=match.subround_id,
+            league_code=match.league_code,
             difficulty=(
                 None if frozen is None else MatchDifficultyPayload.from_domain(frozen)
             ),
@@ -159,6 +161,7 @@ class MatchResponse(BaseModel):
     id: int
     external_id: str
     league_id: int
+    league_code: str | None = None
     match_date: datetime
     match_minute: int | None = None
     status: str
@@ -193,6 +196,7 @@ class MatchResponse(BaseModel):
             id=match.id,
             external_id=match.external_id,
             league_id=match.league_id,
+            league_code=match.league_code,
             match_date=match.match_date,
             match_minute=resolve_match_minute(match, now=now),
             status=match.status,
