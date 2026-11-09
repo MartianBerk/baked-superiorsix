@@ -139,16 +139,14 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     assert 0.0 <= arsenal_row["difficulty"]["score"] <= 1.0
     assert 1 <= arsenal_row["difficulty"]["band"] <= 5
 
-    detail = client.get(
-        "/game/matchdetail",
-        params={
-            "hometeam": "Arsenal",
-            "awayteam": "Chelsea",
-            "matchdate": _fmt(day),
-        },
-    )
+    detail = client.get("/game/matchdetail", params={"id": fixture.id})
     assert detail.status_code == 200, detail.text
     body = detail.json()["match_detail"]
+    assert body["id"] == fixture.id
+    assert body["home_team"] == "Arsenal"
+    assert body["away_team"] == "Chelsea"
+    assert body["home_team_xref"] == "Arsenal"
+    assert body["away_team_xref"] == "Chelsea"
     assert body["league_position"]["Arsenal"] == "1"
     assert body["league_position"]["Chelsea"] == "3"
     assert body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
@@ -279,11 +277,14 @@ def test_livematches_by_subround_includes_difficulty(client: TestClient) -> None
     assert by_day.json()["matches"][0]["difficulty"] == frozen
 
 
+def test_matchdetail_requires_id(client: TestClient) -> None:
+    response = client.get("/game/matchdetail")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Missing mandatory parameter 'id'."
+
+
 def test_matchdetail_not_found(client: TestClient) -> None:
-    response = client.get(
-        "/game/matchdetail",
-        params={"hometeam": "A", "awayteam": "B", "matchdate": "01-01-2026"},
-    )
+    response = client.get("/game/matchdetail", params={"id": 999999})
     assert response.status_code == 404
 
 

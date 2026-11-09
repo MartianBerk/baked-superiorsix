@@ -171,14 +171,7 @@ def test_difficulty_set_once_survives_finished_ingest(client: TestClient) -> Non
     row_again = next(m for m in again.json()["matches"] if m["id"] == fixture.id)
     assert row_again["difficulty"] == frozen
 
-    detail = client.get(
-        "/game/matchdetail",
-        params={
-            "hometeam": "Arsenal",
-            "awayteam": "Chelsea",
-            "matchdate": _fmt(day),
-        },
-    )
+    detail = client.get("/game/matchdetail", params={"id": fixture.id})
     assert detail.status_code == 200, detail.text
     assert detail.json()["match_detail"]["difficulty"] == frozen
 

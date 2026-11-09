@@ -313,28 +313,20 @@ class MatchService:
             away_results.append(_result_for_team(match, away_aliases))
         return home_results, away_results
 
-    async def match_detail(
-        self,
-        home_team: str,
-        away_team: str,
-        match_date: date,
-    ) -> MatchDetail:
-        start, end = day_bounds(match_date)
-        home_aliases = await self._aliases(home_team)
-        away_aliases = await self._aliases(away_team)
-        match = await self._matches.find_fixture(home_aliases, away_aliases, start, end)
-        if match is None:
-            raise MatchNotFoundError("Cannot find match.")
+    async def match_detail(self, match_id: int) -> MatchDetail:
+        """Form / H2H / table context for a fixture loaded by primary key."""
+        match = await self.get(match_id)
+        assert match.id is not None
 
         league = await self._leagues.get(match.league_id)
         table = await self._leagues.league_table(league.code)
 
-        # Response keys are xref display names so the FE never remaps feeds.
-        home_label = await self.display_team(match.home_team)
-        away_label = await self.display_team(match.away_team)
+        # Provider spellings stay on the row; xref is the FE display label.
+        home_xref = await self.display_team(match.home_team)
+        away_xref = await self.display_team(match.away_team)
 
         positions = {entry.team: entry.position for entry in table}
-        before = start
+        before = day_bounds(match.match_date.astimezone(UTC).date())[0]
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
@@ -345,17 +337,22 @@ class MatchService:
         difficulty = await self.difficulty_for_match(match)
 
         return MatchDetail(
+            id=match.id,
+            home_team=match.home_team,
+            away_team=match.away_team,
+            home_team_xref=home_xref,
+            away_team_xref=away_xref,
             league_position={
-                home_label: home_position,
-                away_label: away_position,
+                home_xref: home_position,
+                away_xref: away_position,
             },
             team_performance={
-                home_label: home_form,
-                away_label: away_form,
+                home_xref: home_form,
+                away_xref: away_form,
             },
             head_to_head={
-                home_label: home_h2h,
-                away_label: away_h2h,
+                home_xref: home_h2h,
+                away_xref: away_h2h,
             },
             difficulty=difficulty,
         )

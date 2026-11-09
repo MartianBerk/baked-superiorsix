@@ -32,7 +32,7 @@ def _admin_headers() -> dict[str, str]:
 
 async def _seed(
     session_factory: async_sessionmaker[AsyncSession],
-) -> date:
+) -> tuple[Match, date]:
     async with session_factory() as session:
         team_xref = TeamXrefService(SqlAlchemyTeamXrefRepository(session))
         await team_xref.upsert_many(
@@ -84,18 +84,19 @@ async def _seed(
                 )
             )
 
+        # Upcoming fixture keeps provider spelling distinct from xref display.
         fixture = await ingest.upsert_match(
             Match(
                 external_id="pl-ars-che-xref",
                 league_id=league.id,
                 match_date=_kickoff(day),
                 status=MatchStatus.SCHEDULED,
-                home_team="Arsenal",
-                away_team="Chelsea",
+                home_team="Arsenal FC",
+                away_team="Chelsea FC",
             )
         )
         assert fixture.id is not None
-        return day
+        return fixture, day
 
 
 def test_meta_teams_and_admin_upsert(client: TestClient) -> None:
@@ -134,7 +135,8 @@ def test_meta_teams_and_admin_upsert(client: TestClient) -> None:
 
 
 def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
-    day = anyio.run(_seed, client.app.state.session_factory)
+    fixture, day = anyio.run(_seed, client.app.state.session_factory)
+    assert fixture.id is not None
     headers = _admin_headers()
 
     meta = client.get("/game/meta")
@@ -159,6 +161,7 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     row = next(
         item for item in listed.json()["matches"] if item["external_id"] == "pl-ars-che-xref"
     )
+    assert row["id"] == fixture.id
     selected = client.post(
         "/admin/addmatch",
         headers=headers,
@@ -172,13 +175,16 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     assert live.json()["matches"][0]["home_team"] == "Arsenal"
     assert live.json()["matches"][0]["away_team"] == "Chelsea"
 
-    detail = client.get(
-        "/game/matchdetail",
-        params={"hometeam": "Arsenal", "awayteam": "Chelsea", "matchdate": _fmt(day)},
-    )
+    detail = client.get("/game/matchdetail", params={"id": fixture.id})
     assert detail.status_code == 200, detail.text
     body = detail.json()["match_detail"]
-    # Response keys are xref display names.
+    # Dual names: provider spelling + xref display.
+    assert body["id"] == fixture.id
+    assert body["home_team"] == "Arsenal FC"
+    assert body["away_team"] == "Chelsea FC"
+    assert body["home_team_xref"] == "Arsenal"
+    assert body["away_team_xref"] == "Chelsea"
+    # Form / H2H / position maps are keyed by xref.
     assert set(body["league_position"]) == {"Arsenal", "Chelsea"}
     assert set(body["team_performance"]) == {"Arsenal", "Chelsea"}
     assert set(body["head_to_head"]) == {"Arsenal", "Chelsea"}
@@ -186,17 +192,6 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     assert body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
     assert body["head_to_head"]["Arsenal"] == ["WIN", "DRAW"]
     assert body["league_position"]["Arsenal"] == "1"
-
-    # Alias query finds the same fixture; keys are xref display names.
-    aliased = client.get(
-        "/game/matchdetail",
-        params={"hometeam": "Arsenal FC", "awayteam": "Chelsea", "matchdate": _fmt(day)},
-    )
-    assert aliased.status_code == 200, aliased.text
-    aliased_body = aliased.json()["match_detail"]
-    assert set(aliased_body["team_performance"]) == {"Arsenal", "Chelsea"}
-    assert aliased_body["team_performance"]["Arsenal"] == ["WIN", "DRAW", "WIN", "WIN"]
-    assert aliased_body["league_position"]["Arsenal"] == "1"
 
     async def table_teams() -> list[str]:
         async with client.app.state.session_factory() as session:
@@ -212,6 +207,61 @@ def test_form_h2h_merge_via_xref_aliases(client: TestClient) -> None:
     names = anyio.run(table_teams)
     assert "Arsenal" in names
     assert "Arsenal FC" not in names
+
+
+def test_matchdetail_by_id_ignores_same_day_alias_duplicates(client: TestClient) -> None:
+    """Id lookup must not collide when alias sets could match multiple fixtures."""
+    fixture, day = anyio.run(_seed, client.app.state.session_factory)
+    assert fixture.id is not None
+
+    async def add_duplicate_spelling() -> int:
+        async with client.app.state.session_factory() as session:
+            ingest = MatchIngestService(
+                MatchService(
+                    SqlAlchemyMatchRepository(session),
+                    LeagueService(
+                        SqlAlchemyLeagueRepository(session),
+                        SqlAlchemyMatchRepository(session),
+                    ),
+                ),
+                LeagueService(
+                    SqlAlchemyLeagueRepository(session),
+                    SqlAlchemyMatchRepository(session),
+                ),
+            )
+            # Same kickoff day, alternate provider spelling that shares xref aliases.
+            twin = await ingest.upsert_match(
+                Match(
+                    external_id="pl-ars-che-xref-twin",
+                    league_id=fixture.league_id,
+                    match_date=_kickoff(day, hour=17),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Arsenal",
+                    away_team="Chelsea",
+                )
+            )
+            assert twin.id is not None
+            return twin.id
+
+    twin_id = anyio.run(add_duplicate_spelling)
+
+    primary = client.get("/game/matchdetail", params={"id": fixture.id})
+    assert primary.status_code == 200, primary.text
+    primary_body = primary.json()["match_detail"]
+    assert primary_body["id"] == fixture.id
+    assert primary_body["home_team"] == "Arsenal FC"
+    assert primary_body["away_team"] == "Chelsea FC"
+    assert primary_body["home_team_xref"] == "Arsenal"
+    assert primary_body["away_team_xref"] == "Chelsea"
+
+    twin = client.get("/game/matchdetail", params={"id": twin_id})
+    assert twin.status_code == 200, twin.text
+    twin_body = twin.json()["match_detail"]
+    assert twin_body["id"] == twin_id
+    assert twin_body["home_team"] == "Arsenal"
+    assert twin_body["away_team"] == "Chelsea"
+    assert twin_body["home_team_xref"] == "Arsenal"
+    assert twin_body["away_team_xref"] == "Chelsea"
 
 
 def test_build_league_table_canonical_keys() -> None:
