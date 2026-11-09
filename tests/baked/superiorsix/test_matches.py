@@ -125,6 +125,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     assert payload[0]["home_team"] == "Arsenal"
     assert payload[0]["away_team"] == "Chelsea"
     assert payload[0]["game_number"] == 1
+    assert payload[0]["league_code"] == "PL"
 
     admin_list = client.get(
         "/admin/listmatches",
@@ -135,6 +136,7 @@ def test_available_matches_and_match_detail(client: TestClient) -> None:
     listed = admin_list.json()["matches"]
     assert len(listed) == 2
     arsenal_row = next(row for row in listed if row["home_team"] == "Arsenal")
+    assert arsenal_row["league_code"] == "PL"
     assert arsenal_row["difficulty"] is not None
     assert 0.0 <= arsenal_row["difficulty"]["score"] <= 1.0
     assert 1 <= arsenal_row["difficulty"]["band"] <= 5
