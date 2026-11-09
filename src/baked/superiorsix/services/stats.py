@@ -1,9 +1,10 @@
-"""Player success-rate aggregates (n−1 round) and full historic winners (SS-18)."""
+"""Player success-rate aggregates (current + n−1) and full historic winners (SS-18)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import case, func, select
@@ -22,10 +23,12 @@ from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError
 from baked.superiorsix.domain.models import MatchStatus, PredictionChoice
 from baked.superiorsix.services.matches import day_bounds
 
+AggregateScope = Literal["current", "previous"]
+
 
 @dataclass(frozen=True, slots=True)
 class PlayerDayScore:
-    """One player's scored match-day within the previous round."""
+    """One player's scored match-day within a single round scope."""
 
     round_id: int
     auth_id: UUID
@@ -37,7 +40,7 @@ class PlayerDayScore:
 
 @dataclass(frozen=True, slots=True)
 class PlayerAggregate:
-    """Aggregate row with totals + optional day breakdown (previous round only)."""
+    """Aggregate row with totals + optional day breakdown for one round scope."""
 
     auth_id: UUID
     name: str
@@ -89,23 +92,29 @@ class StatsService:
     async def aggregate(
         self,
         *,
+        scope: AggregateScope = "previous",
         start_date: date | None = None,
         end_date: date | None = None,
         bearer_token: str | None = None,
-    ) -> list[PlayerAggregate]:
-        """Success-rate aggregates for the previous closed round only (n−1).
+    ) -> tuple[list[PlayerAggregate], int | None]:
+        """Success-rate aggregates for one round scope.
 
-        Not the full score history — only the most recently closed round.
-        Optional ``start_date`` / ``end_date`` further filter match days.
+        ``scope=previous`` (default): most recently closed round (n−1).
+        ``scope=current``: open round in progress (n), else ``([], None)``.
+
+        Returns ``(rows, round_id)`` so the API can echo which round was used.
+
+        Day ``scores`` are one point per scored match-day (subround slate days
+        after import). Optional ``start_date`` / ``end_date`` further filter.
 
         Known inactive roster profiles are excluded. Predictors present in the
-        closed-round data but missing from the roster (common right after a
-        legacy import before every ``auth_id`` is invited) are still included,
-        labelled with the ``auth_id`` string until a profile exists.
+        round data but missing from the roster (common right after a legacy
+        import before every ``auth_id`` is invited) are still included, labelled
+        with the ``auth_id`` string until a profile exists.
         """
-        previous = await self._previous_closed_round()
-        if previous is None:
-            return []
+        target = await self._round_for_scope(scope)
+        if target is None:
+            return [], None
 
         roster = await self._load_roster(bearer_token=bearer_token, active=None)
         by_auth = {profile.auth_id: profile for profile in roster}
@@ -113,7 +122,7 @@ class StatsService:
 
         day_rows = await self._day_scores(
             auth_ids=None,
-            round_ids=[previous.id],
+            round_ids=[target.id],
             start_date=start_date,
             end_date=end_date,
         )
@@ -150,7 +159,7 @@ class StatsService:
                 )
             )
         aggregates.sort(key=lambda row: (-row.success_rate, row.name.lower(), str(row.auth_id)))
-        return aggregates
+        return aggregates, target.id
 
     async def historic_rounds(self, *, bearer_token: str | None = None) -> list[HistoricRound]:
         """Full closed-round winners archive (legacy HISTORIC_ROUNDS)."""
@@ -300,6 +309,19 @@ class StatsService:
                 )
             )
         return rows
+
+    async def _round_for_scope(self, scope: AggregateScope) -> RoundRecord | None:
+        if scope == "current":
+            return await self._current_open_round()
+        return await self._previous_closed_round()
+
+    async def _current_open_round(self) -> RoundRecord | None:
+        result = await self._session.execute(
+            select(RoundRecord)
+            .where(RoundRecord.end_date.is_(None))
+            .order_by(RoundRecord.id.desc())
+        )
+        return result.scalars().first()
 
     async def _previous_closed_round(self) -> RoundRecord | None:
         result = await self._session.execute(
