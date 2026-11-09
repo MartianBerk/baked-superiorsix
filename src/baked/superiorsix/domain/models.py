@@ -88,6 +88,18 @@ class MatchDifficultyScore:
 
 @dataclass(frozen=True, slots=True)
 class MatchDetail:
+    """Form / H2H / table context for one fixture.
+
+    ``home_team`` / ``away_team`` are provider spellings stored on the match row.
+    ``home_team_xref`` / ``away_team_xref`` are display labels (team_xref, or the
+    provider name when unmapped). Form/H2H/position dicts are keyed by xref.
+    """
+
+    id: int
+    home_team: str
+    away_team: str
+    home_team_xref: str
+    away_team_xref: str
     league_position: dict[str, str | None]
     team_performance: dict[str, list[TeamResult]]
     head_to_head: dict[str, list[TeamResult]]

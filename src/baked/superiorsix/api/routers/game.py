@@ -162,28 +162,21 @@ async def game_special_message() -> dict[str, Any]:
 @router.get("/matchdetail", response_model=MatchDetailResponse)
 async def game_match_detail(
     match_service: Annotated[MatchService, Depends(get_match_service)],
-    home_team: Annotated[str | None, Query(alias="hometeam")] = None,
-    away_team: Annotated[str | None, Query(alias="awayteam")] = None,
-    match_date: Annotated[str | None, Query(alias="matchdate")] = None,
+    match_id: Annotated[int | None, Query(alias="id")] = None,
 ) -> MatchDetailResponse:
-    missing = [
-        name
-        for name, value in (
-            ("hometeam", home_team),
-            ("awayteam", away_team),
-            ("matchdate", match_date),
-        )
-        if not value
-    ]
-    if missing:
+    """Load form / H2H / table context for a fixture by match id.
+
+    Query: ``id`` (match primary key). Response includes provider team names
+    (``home_team`` / ``away_team``) and display names (``home_team_xref`` /
+    ``away_team_xref``); form/H2H/position maps are keyed by xref.
+    """
+    if match_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Missing mandatory parameter '{missing[0]}'.",
+            detail="Missing mandatory parameter 'id'.",
         )
-    assert home_team is not None and away_team is not None and match_date is not None
-    day = parse_legacy_date(match_date, field_name="matchdate")
     try:
-        detail = await match_service.match_detail(home_team, away_team, day)
+        detail = await match_service.match_detail(match_id)
     except MatchNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return MatchDetailResponse(match_detail=MatchDetailPayload.from_domain(detail))

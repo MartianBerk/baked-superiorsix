@@ -89,6 +89,13 @@ class AvailableMatchesResponse(BaseModel):
 
 
 class MatchDetailPayload(BaseModel):
+    """Match expand payload. FE shows ``*_xref``; provider names stay for joins."""
+
+    id: int
+    home_team: str
+    away_team: str
+    home_team_xref: str
+    away_team_xref: str
     league_position: dict[str, str | None]
     team_performance: dict[str, list[TeamResult]]
     head_to_head: dict[str, list[TeamResult]]
@@ -97,6 +104,11 @@ class MatchDetailPayload(BaseModel):
     @classmethod
     def from_domain(cls, detail: MatchDetail) -> "MatchDetailPayload":
         return cls(
+            id=detail.id,
+            home_team=detail.home_team,
+            away_team=detail.away_team,
+            home_team_xref=detail.home_team_xref,
+            away_team_xref=detail.away_team_xref,
             league_position=detail.league_position,
             team_performance=detail.team_performance,
             head_to_head=detail.head_to_head,
