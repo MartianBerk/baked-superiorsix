@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -671,6 +672,14 @@ class AggregatePlayerStats(BaseModel):
 
 
 class AggregateStatsResponse(BaseModel):
+    """Aggregate payload. ``scope`` / ``round_id`` echo the resolved round."""
+
+    scope: Literal["current", "previous"] = "previous"
+    """Which round scope was resolved for this response."""
+
+    round_id: int | None = None
+    """Resolved ``rounds.id`` for ``stats``, or ``None`` when empty."""
+
     stats: list[AggregatePlayerStats]
 
 
