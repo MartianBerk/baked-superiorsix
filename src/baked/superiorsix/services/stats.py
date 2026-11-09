@@ -221,6 +221,10 @@ class StatsService:
             ]
             players = players_by_round.get(record.id, 0)
             matches = match_days_by_round.get(record.id, 0)
+            if record.amount_won is not None:
+                jackpot = record.amount_won
+            else:
+                jackpot = record.buy_in_pence * matches * players
             historic.append(
                 HistoricRound(
                     round_id=record.id,
@@ -228,7 +232,7 @@ class StatsService:
                     end_date=record.end_date,
                     matches=matches,
                     players=players,
-                    jackpot=record.buy_in_pence * matches * players,
+                    jackpot=jackpot,
                     winner=" & ".join(winner_labels),
                     winner_ids=winner_ids,
                 )

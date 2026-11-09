@@ -52,6 +52,8 @@ class RoundRecord(Base):
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     buy_in_pence: Mapped[int] = mapped_column(Integer)
+    # Frozen pot (pence) at close / legacy import; Stats Winners prefers this when set.
+    amount_won: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RoundWinnerRecord(Base):

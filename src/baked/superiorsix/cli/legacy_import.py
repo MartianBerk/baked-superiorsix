@@ -191,6 +191,7 @@ async def load_bundle_into_db(
                     start_date=row.start_date,
                     end_date=row.end_date,
                     buy_in_pence=row.buy_in_pence,
+                    amount_won=row.amount_won,
                 )
             )
 

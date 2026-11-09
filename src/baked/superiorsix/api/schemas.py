@@ -262,6 +262,7 @@ class RoundResponse(BaseModel):
     start_date: date
     end_date: date | None = None
     buy_in_pence: int
+    amount_won: int | None = None
     winner_ids: list[UUID] = Field(default_factory=list)
 
     @classmethod
@@ -272,6 +273,7 @@ class RoundResponse(BaseModel):
             start_date=round_.start_date,
             end_date=round_.end_date,
             buy_in_pence=round_.buy_in_pence,
+            amount_won=round_.amount_won,
             winner_ids=list(round_.winner_ids or []),
         )
 
