@@ -94,6 +94,9 @@ invite already exists.
 | `poetry run baked-superiorsix-auto-score` | Smart live-score pass (selected fixtures by default) |
 | `poetry run baked-superiorsix-db leagues` | List leagues in the DB (TSV) |
 | `poetry run baked-superiorsix-db matches [-l PL] [-d 14-03-2026] …` | List matches with optional filters (TSV) |
+| `poetry run baked-superiorsix-legacy-import validate\|load --data-dir …` | Legacy CSV import (`rounds.amount_won` optional) |
+| `poetry run baked-superiorsix-purge matches --before-date YYYY-MM-DD` | Delete unreferenced old matches (`--dry-run`) |
+| `poetry run baked-superiorsix-purge predictions --before-round-id N` | Delete old closed-round predictions; keep winners/pots |
 
 Providers:
 

@@ -192,6 +192,7 @@ class RoundRow:
     start_date: date
     end_date: date | None
     buy_in_pence: int
+    amount_won: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +323,10 @@ def _load_league_id_map(bundle: LegacyCsvBundle) -> None:
 def _load_rounds(bundle: LegacyCsvBundle) -> None:
     for index, row in enumerate(read_csv(bundle.data_dir / "rounds.csv"), start=2):
         try:
+            amount_raw = pick(row, "amount_won", "jackpot", "prize_pot_pence")
+            amount_won = parse_optional_int(amount_raw)
+            if amount_won is not None and amount_won < 0:
+                raise ValueError("amount_won must be >= 0")
             bundle.rounds.append(
                 RoundRow(
                     id=parse_int(pick(row, "id"), label="id"),
@@ -331,6 +336,7 @@ def _load_rounds(bundle: LegacyCsvBundle) -> None:
                         pick(row, "buy_in_pence", "buy_in", "buyin_pence"),
                         label="buy_in_pence",
                     ),
+                    amount_won=amount_won,
                 )
             )
         except ValueError as exc:

@@ -43,9 +43,11 @@ old_league_id,code
 ```
 
 ```csv
-id,start_date,end_date,buy_in_pence
-1,2024-08-01,2025-05-31,500
+id,start_date,end_date,buy_in_pence,amount_won
+1,2024-08-01,2025-05-31,500,33600
 ```
+
+Optional column **`amount_won`** (integer pence, nullable). When set on a closed round, `GET /stats/winners` uses it as `jackpot` instead of recomputing from predictions/match-days. Use this for hollow legacy rounds (1–19) that have winners but no prediction history. Aliases accepted: `jackpot`, `prize_pot_pence`.
 
 ```csv
 id,league_id,external_id,match_date,status,home_team,away_team,use_match,home_score,away_score,game_number,subround_id

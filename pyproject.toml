@@ -26,6 +26,7 @@ baked-superiorsix-worldcup-extractor = "baked.superiorsix.process.extractors.cli
 baked-superiorsix-auto-score = "baked.superiorsix.process.extractors.cli:auto_score_main"
 baked-superiorsix-db = "baked.superiorsix.cli.db_view:main"
 baked-superiorsix-legacy-import = "baked.superiorsix.cli.legacy_import:main"
+baked-superiorsix-purge = "baked.superiorsix.cli.purge:main"
 
 [dependency-groups]
 dev = [

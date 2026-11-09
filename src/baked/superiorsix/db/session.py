@@ -1,6 +1,8 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -24,9 +26,21 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
     return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
+def _ensure_round_amount_won(connection: Connection) -> None:
+    """Add ``rounds.amount_won`` on existing DBs (create_all does not ALTER)."""
+    inspector = inspect(connection)
+    if "rounds" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("rounds")}
+    if "amount_won" in columns:
+        return
+    connection.execute(text("ALTER TABLE rounds ADD COLUMN amount_won INTEGER"))
+
+
 async def init_db(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_ensure_round_amount_won)
 
 
 @asynccontextmanager

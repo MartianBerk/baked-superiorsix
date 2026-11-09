@@ -100,6 +100,7 @@ class Round:
     buy_in_pence: int
     id: int | None = None
     end_date: date | None = None
+    amount_won: int | None = None
     winner_ids: list[UUID] | None = None
 
 
