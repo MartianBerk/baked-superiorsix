@@ -23,6 +23,17 @@ from baked.superiorsix.services.subrounds import SubroundStatus
 DisplayTeam = Callable[[str], str]
 
 
+class MatchDifficultyPayload(BaseModel):
+    """Prediction difficulty: ``score`` in ``[0, 1]`` (higher = harder), ``band`` 1–5."""
+
+    score: float
+    band: int = Field(ge=1, le=5)
+
+    @classmethod
+    def from_domain(cls, difficulty: MatchDifficultyScore) -> "MatchDifficultyPayload":
+        return cls(score=difficulty.score, band=difficulty.band)
+
+
 class AvailableMatchResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,17 +47,25 @@ class AvailableMatchResponse(BaseModel):
     game_number: int | None = None
     match_date: datetime
     subround_id: int | None = None
+    difficulty: MatchDifficultyPayload | None = None
 
     @classmethod
     def from_domain(
         cls,
         match: Match,
         *,
+        difficulty: MatchDifficultyScore | None = None,
         now: datetime | None = None,
         display_team: DisplayTeam | None = None,
     ) -> "AvailableMatchResponse":
         assert match.id is not None
         show = display_team or (lambda name: name)
+        frozen = difficulty
+        if frozen is None and match.difficulty_score is not None and match.difficulty_band is not None:
+            frozen = MatchDifficultyScore(
+                score=match.difficulty_score,
+                band=match.difficulty_band,
+            )
         return cls(
             id=match.id,
             home_team=show(match.home_team),
@@ -58,22 +77,14 @@ class AvailableMatchResponse(BaseModel):
             game_number=match.game_number,
             match_date=match.match_date,
             subround_id=match.subround_id,
+            difficulty=(
+                None if frozen is None else MatchDifficultyPayload.from_domain(frozen)
+            ),
         )
 
 
 class AvailableMatchesResponse(BaseModel):
     matches: list[AvailableMatchResponse]
-
-
-class MatchDifficultyPayload(BaseModel):
-    """Prediction difficulty: ``score`` in ``[0, 1]`` (higher = harder), ``band`` 1–5."""
-
-    score: float
-    band: int = Field(ge=1, le=5)
-
-    @classmethod
-    def from_domain(cls, difficulty: MatchDifficultyScore) -> "MatchDifficultyPayload":
-        return cls(score=difficulty.score, band=difficulty.band)
 
 
 class MatchDetailPayload(BaseModel):
@@ -159,6 +170,12 @@ class MatchResponse(BaseModel):
     ) -> "MatchResponse":
         assert match.id is not None
         show = display_team or (lambda name: name)
+        frozen = difficulty
+        if frozen is None and match.difficulty_score is not None and match.difficulty_band is not None:
+            frozen = MatchDifficultyScore(
+                score=match.difficulty_score,
+                band=match.difficulty_band,
+            )
         return cls(
             id=match.id,
             external_id=match.external_id,
@@ -175,7 +192,7 @@ class MatchResponse(BaseModel):
             subround_id=match.subround_id,
             last_updated=match.last_updated,
             difficulty=(
-                None if difficulty is None else MatchDifficultyPayload.from_domain(difficulty)
+                None if frozen is None else MatchDifficultyPayload.from_domain(frozen)
             ),
         )
 

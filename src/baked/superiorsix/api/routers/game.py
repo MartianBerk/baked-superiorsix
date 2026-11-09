@@ -67,14 +67,24 @@ async def game_live_matches(
     match_service: Annotated[MatchService, Depends(get_match_service)],
     team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
     match_date: Annotated[str | None, Query(alias="matchDate")] = None,
+    subround_id: Annotated[int | None, Query(alias="subroundId")] = None,
 ) -> AvailableMatchesResponse:
-    if not match_date:
+    """Super Six selections for one slate or legacy UTC calendar day.
+
+    Prefer ``subroundId`` (selected fixtures for that subround). ``matchDate``
+    (``dd-mm-yyyy``) remains for day-scoped discovery. Include frozen
+    prediction ``difficulty`` when persisted on the match row.
+    """
+    if subround_id is not None:
+        matches = await match_service.selected_matches_for_subround(subround_id)
+    elif match_date:
+        day = parse_legacy_date(match_date, field_name="matchDate")
+        matches = await match_service.available_matches(day)
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="missing matchDate",
+            detail="missing matchDate or subroundId",
         )
-    day = parse_legacy_date(match_date, field_name="matchDate")
-    matches = await match_service.available_matches(day)
     display = await load_display(team_xref)
     return AvailableMatchesResponse(
         matches=[
