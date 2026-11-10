@@ -1124,7 +1124,56 @@ async def reset_player_password(
     auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
 ) -> AdminPlayerAuthResponse:
     """Force the invitee first-login flow: clears password → ``must_set_password``."""
-    await _require_rostered_auth_id(token, profiles, auth_id)
+    try:
+        roster_player = await profiles.get_by_auth_id(token, auth_id)
+    except RosterNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Player not on the Superior Six roster.",
+        ) from exc
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
+
+    email = (roster_player.email or roster_player.profile.get("email") or "").strip()
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Roster profile has no email; cannot re-open invite for password reset.",
+        )
+    profile_seed = {
+        key: value
+        for key, value in {
+            "first_name": roster_player.first_name,
+            "last_name": roster_player.last_name,
+            "nickname": roster_player.nickname,
+            "email": email,
+            "avatar_url": roster_player.avatar_url,
+        }.items()
+        if value
+    }
+    membership_roles: list[str] | None = None
+    try:
+        membership = await auth_admin.get_membership(email=email)
+        membership_roles = list(membership.roles)
+    except AuthAdminError:
+        membership_roles = None
+
+    try:
+        await profiles.reopen_invite(
+            token,
+            email,
+            profile=profile_seed or None,
+            roles=membership_roles,
+        )
+    except RosterError as exc:
+        detail = str(exc).lower()
+        if "invite" in detail and "not found" in detail:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+        raise _roster_http_error(exc) from exc
+
     try:
         auth_user = await auth_admin.reset_user_password(user_id=auth_id)
     except AuthAdminError as exc:

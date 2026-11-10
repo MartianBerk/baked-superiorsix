@@ -465,6 +465,7 @@ def test_getplayerroles_requires_admin(client: TestClient) -> None:
 
 def test_roster_admin_auth_reset_and_inactive(
     client: TestClient,
+    user_profiles: FakeUserProfileClient,
     auth_admin: FakeAuthAdminClient,
 ) -> None:
     admin_token, _ = make_access_token(roles=["admin"])
@@ -501,6 +502,17 @@ def test_roster_admin_auth_reset_and_inactive(
     assert reset.status_code == 200, reset.text
     assert reset.json()["must_set_password"] is True
     assert auth_admin.passwords[email] is None
+    assert user_profiles._invites[email].status == "pending"
+
+    auth_admin.set_password(email, "new-password-99")
+    user_profiles.bind_email(email, auth_id)
+    reclaimed = client.post(
+        "/user/acceptinvite",
+        json={"email": email, "password": "new-password-99"},
+    )
+    assert reclaimed.status_code == 201, reclaimed.text
+    assert reclaimed.json()["player"]["auth_id"] == str(auth_id)
+    assert user_profiles._invites[email].status == "accepted"
 
     inactive = client.patch(
         f"/admin/players/{auth_id}/auth",
