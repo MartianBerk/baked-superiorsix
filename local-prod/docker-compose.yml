@@ -1,0 +1,162 @@
+# Superior Six — transitional production stack (Martin's server).
+# Sibling checkouts: baked-auth, baked-user, baked-superiorsix-app next to this repo.
+#
+#   cp .env.example .env   # JWT_SECRET, BAKED_AUTH_CLIENT_GIT_TOKEN, bootstrap, CORS
+#   docker compose up --build
+#
+# Backends stay on the compose network only (no host API ports by default).
+# Front end + API reverse-proxy paths: host :8040 → nginx (see README for host nginx).
+
+x-build-auth-client: &build-auth-client
+  secrets:
+    - baked_auth_client_git_token
+
+services:
+  baked-auth:
+    build:
+      context: ../../baked-auth
+      <<: *build-auth-client
+    image: baked-auth:local-prod
+    container_name: baked-auth
+    environment:
+      AUTH_ENVIRONMENT: ${AUTH_ENVIRONMENT:-production}
+      AUTH_JWT_SECRET_KEY: ${JWT_SECRET:?set JWT_SECRET in .env}
+      AUTH_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      AUTH_JWT_KEY_ID: ${JWT_KEY_ID:-}
+      AUTH_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
+      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      AUTH_DEFAULT_AUDIENCE: ${AUTH_DEFAULT_AUDIENCE:-}
+      AUTH_CORS_ORIGINS: ${CORS_ORIGINS:-'["https://superiorsix.co.uk","http://127.0.0.1:8040"]'}
+      AUTH_DATABASE_URL: sqlite+aiosqlite:////data/baked_auth.db
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:?set AUTH_BOOTSTRAP_EMAIL in .env}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:?set AUTH_BOOTSTRAP_PASSWORD in .env}
+    volumes:
+      - baked-auth-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  baked-user:
+    build:
+      context: ../../baked-user
+      <<: *build-auth-client
+    image: baked-user:local-prod
+    container_name: baked-user
+    depends_on:
+      baked-auth:
+        condition: service_healthy
+    environment:
+      USER_ENVIRONMENT: ${USER_ENVIRONMENT:-production}
+      USER_JWT_SECRET_KEY: ${JWT_SECRET:?set JWT_SECRET in .env}
+      USER_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      USER_JWT_KEY_ID: ${JWT_KEY_ID:-}
+      USER_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
+      USER_JWT_AUDIENCE: ${USER_JWT_AUDIENCE:-superiorsix}
+      USER_MANIFEST_PATH: /app/config/applications.yaml
+      USER_CORS_ORIGINS: ${CORS_ORIGINS:-'["https://superiorsix.co.uk","http://127.0.0.1:8040"]'}
+      USER_DATABASE_URL: sqlite+aiosqlite:////data/baked_user.db
+      USER_AUTH_TOKEN_URL: http://baked-auth:8000/v1/auth/token
+    volumes:
+      - baked-user-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  baked-superiorsix:
+    build:
+      context: ..
+      <<: *build-auth-client
+    image: baked-superiorsix:local-prod
+    container_name: baked-superiorsix
+    depends_on:
+      baked-auth:
+        condition: service_healthy
+      baked-user:
+        condition: service_healthy
+    environment:
+      SUPERIORSIX_ENVIRONMENT: ${SUPERIORSIX_ENVIRONMENT:-production}
+      SUPERIORSIX_JWT_SECRET_KEY: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SUPERIORSIX_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      SUPERIORSIX_JWT_KEY_ID: ${JWT_KEY_ID:-}
+      SUPERIORSIX_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
+      SUPERIORSIX_JWT_AUDIENCE: ${SUPERIORSIX_JWT_AUDIENCE:-superiorsix}
+      SUPERIORSIX_CORS_ORIGINS: ${CORS_ORIGINS:-'["https://superiorsix.co.uk","http://127.0.0.1:8040"]'}
+      SUPERIORSIX_DATABASE_URL: sqlite+aiosqlite:////data/baked_superiorsix.db
+      SUPERIORSIX_AUTH_TOKEN_URL: http://baked-auth:8000/v1/auth/token
+      SUPERIORSIX_USER_SERVICE_URL: http://baked-user:8000
+      SUPERIORSIX_USER_APP_NAME: superiorsix
+      SUPERIORSIX_AUTH_ADMIN_EMAIL: ${SUPERIORSIX_AUTH_ADMIN_EMAIL:-${AUTH_BOOTSTRAP_EMAIL}}
+      SUPERIORSIX_AUTH_ADMIN_PASSWORD: ${SUPERIORSIX_AUTH_ADMIN_PASSWORD:-${AUTH_BOOTSTRAP_PASSWORD}}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:?set AUTH_BOOTSTRAP_EMAIL in .env}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:?set AUTH_BOOTSTRAP_PASSWORD in .env}
+      FOOTBALL_DATA_API_TOKEN: ${FOOTBALL_DATA_API_TOKEN:-}
+      GOAL_API_KEY: ${GOAL_API_KEY:-}
+    volumes:
+      - baked-superiorsix-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  baked-superiorsix-app:
+    build:
+      context: ../../baked-superiorsix-app
+      args:
+        EXPO_PUBLIC_AUTH_URL: ${EXPO_PUBLIC_AUTH_URL:-/auth}
+        EXPO_PUBLIC_USER_URL: ${EXPO_PUBLIC_USER_URL:-/user}
+        EXPO_PUBLIC_SUPERSIX_URL: ${EXPO_PUBLIC_SUPERSIX_URL:-/superiorsix}
+        EXPO_BASE_URL: ${EXPO_BASE_URL:-/super}
+    image: baked-superiorsix-app:local-prod
+    container_name: baked-superiorsix-app
+    depends_on:
+      baked-auth:
+        condition: service_healthy
+      baked-user:
+        condition: service_healthy
+      baked-superiorsix:
+        condition: service_healthy
+    ports:
+      - "${FE_HOST_PORT:-8040}:80"
+    environment:
+      AUTH_UPSTREAM: http://baked-auth:8000
+      USER_UPSTREAM: http://baked-user:8000
+      SUPERSIX_UPSTREAM: http://baked-superiorsix:8000
+    restart: unless-stopped
+
+secrets:
+  baked_auth_client_git_token:
+    environment: BAKED_AUTH_CLIENT_GIT_TOKEN
+
+volumes:
+  baked-auth-data:
+  baked-user-data:
+  baked-superiorsix-data:
