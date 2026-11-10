@@ -123,6 +123,15 @@ class UserProfileGateway(Protocol):
 
     async def get_invite(self, bearer_token: str, email: str) -> RosterInvite: ...
 
+    async def reopen_invite(
+        self,
+        bearer_token: str,
+        email: str,
+        *,
+        profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
+    ) -> RosterInvite: ...
+
     async def create_me(
         self,
         bearer_token: str,
@@ -255,6 +264,29 @@ class UserProfileClient:
             "GET",
             f"/{self._app_name}/invites/{quote(email.strip().lower(), safe='')}",
             bearer_token,
+        )
+        assert isinstance(payload, dict)
+        return RosterInvite.from_api(payload)
+
+    async def reopen_invite(
+        self,
+        bearer_token: str,
+        email: str,
+        *,
+        profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
+    ) -> RosterInvite:
+        encoded = quote(email.strip().lower(), safe="")
+        body: dict[str, Any] = {}
+        if profile:
+            body["profile"] = profile
+        if roles is not None:
+            body["roles"] = list(roles)
+        payload = await self._request(
+            "POST",
+            f"/{self._app_name}/invites/{encoded}/reopen",
+            bearer_token,
+            json=body or None,
         )
         assert isinstance(payload, dict)
         return RosterInvite.from_api(payload)

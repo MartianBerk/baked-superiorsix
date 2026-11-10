@@ -85,7 +85,30 @@ class FakeUserProfileClient:
                 f"No pending invite for email '{email}' on 'superiorsix'."
             )
         if auth_id in self._by_auth:
-            raise RosterError("A profile already exists for this auth id.")
+            existing = self._by_auth[auth_id]
+            if payload := profile:
+                merged = {**existing.profile, **payload}
+                existing = RosterProfile(
+                    id=existing.id,
+                    auth_id=existing.auth_id,
+                    first_name=str(merged.get("first_name") or existing.first_name),
+                    last_name=str(merged.get("last_name") or existing.last_name),
+                    nickname=merged.get("nickname"),
+                    email=merged.get("email") or existing.email,
+                    avatar_url=merged.get("avatar_url"),
+                    active=bool(merged.get("active", True)),
+                    profile={**merged, "active": bool(merged.get("active", True))},
+                )
+                self._by_auth[auth_id] = existing
+            self._invites[email.lower()] = RosterInvite(
+                id=invite.id,
+                email=invite.email,
+                status="accepted",
+                auth_id=auth_id,
+                profile=dict(invite.profile),
+                roles=list(invite.roles),
+            )
+            return existing
         merged = {**invite.profile, **profile}
         created = RosterProfile(
             id=uuid4(),
@@ -194,6 +217,55 @@ class FakeUserProfileClient:
         if invite is None:
             raise RosterError(f"No invite for email '{email}' on 'superiorsix'.")
         return invite
+
+    async def reopen_invite(
+        self,
+        bearer_token: str,
+        email: str,
+        *,
+        profile: dict[str, Any] | None = None,
+        roles: list[str] | None = None,
+    ) -> RosterInvite:
+        del bearer_token
+        key = email.lower()
+        invite = self._invites.get(key)
+        if invite is None:
+            created = RosterInvite(
+                id=uuid4(),
+                email=key,
+                status="pending",
+                auth_id=None,
+                profile=dict(profile or {}),
+                roles=list(roles or ["player"]),
+            )
+            self._invites[key] = created
+            return created
+        if invite.status == "pending":
+            if profile:
+                invite = RosterInvite(
+                    id=invite.id,
+                    email=invite.email,
+                    status="pending",
+                    auth_id=invite.auth_id,
+                    profile={**invite.profile, **profile},
+                    roles=list(roles) if roles is not None else list(invite.roles),
+                )
+                self._invites[key] = invite
+            return invite
+        if invite.status != "accepted":
+            raise RosterError(
+                f"No accepted invite to reopen for email '{email}' on 'superiorsix'."
+            )
+        reopened = RosterInvite(
+            id=invite.id,
+            email=invite.email,
+            status="pending",
+            auth_id=invite.auth_id,
+            profile=dict(profile or invite.profile),
+            roles=list(roles) if roles is not None else list(invite.roles),
+        )
+        self._invites[key] = reopened
+        return reopened
 
 
 class FakeAuthAdminClient:
