@@ -44,6 +44,8 @@ FastAPI + Poetry matching the baked-auth / baked-user layout. `leagues` /
 - Roster (proxied to baked-user by auth `sub`):
   `GET /admin/listplayers`, `POST /admin/inviteplayer`, `POST /admin/addplayer`,
   `GET /admin/dropplayer?authId=`, `GET /admin/reactivateplayer?authId=`,
+  `GET|PATCH /admin/players/{authId}/auth` (baked-auth ``is_active``),
+  `POST /admin/players/{authId}/reset-password` (force first-login / set-password),
   `POST /user/updatedetails`
 - Predictions require JWT `player` **and** an active baked-user roster profile
   (invite accepted). Uninvited callers get 403 even with a valid token.
