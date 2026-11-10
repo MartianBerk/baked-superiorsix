@@ -664,6 +664,21 @@ class PlayersResponse(BaseModel):
     players: list[PlayerResponse]
 
 
+class AdminPatchPlayerAuthRequest(BaseModel):
+    """Toggle baked-auth account active flag (blocks all login when false)."""
+
+    is_active: bool
+
+
+class AdminPlayerAuthResponse(BaseModel):
+    """Auth account state for a roster player (JWT ``sub`` = ``auth_id``)."""
+
+    auth_id: UUID
+    email: str
+    is_active: bool
+    must_set_password: bool
+
+
 class AggregateScorePoint(BaseModel):
     """One scored match-day for a player."""
 

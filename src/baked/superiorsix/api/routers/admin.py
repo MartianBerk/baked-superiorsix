@@ -29,6 +29,8 @@ from baked.superiorsix.api.schemas import (
     AdminAddPredictionRequest,
     AdminBulkAddPredictionItem,
     AdminFlatPredictionResponse,
+    AdminPatchPlayerAuthRequest,
+    AdminPlayerAuthResponse,
     AdminPlayerPickResponse,
     AdminPlayerPredictionsResponse,
     AdminPredictionBoardResponse,
@@ -105,6 +107,38 @@ def _roster_http_error(exc: RosterError) -> HTTPException:
     if "invite" in detail:
         return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+
+def _auth_admin_http_error(exc: AuthAdminError) -> HTTPException:
+    detail = str(exc)
+    lowered = detail.lower()
+    if "not configured" in lowered:
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Auth admin credentials are not configured: set "
+                "SUPERIORSIX_AUTH_ADMIN_EMAIL / SUPERIORSIX_AUTH_ADMIN_PASSWORD."
+            ),
+        )
+    if "user not found" in lowered:
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+
+async def _require_rostered_auth_id(
+    token: str,
+    profiles: UserProfileGateway,
+    auth_id: UUID,
+) -> None:
+    try:
+        await profiles.get_by_auth_id(token, auth_id)
+    except RosterNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Player not on the Superior Six roster.",
+        ) from exc
+    except RosterError as exc:
+        raise _roster_http_error(exc) from exc
 
 
 def _pick_from_prediction(
@@ -1034,6 +1068,73 @@ async def get_special_message(_: RequireAdmin) -> dict[str, Any]:
 @router.get("/endspecialmessage")
 async def end_special_message(_: RequireAdmin) -> dict[str, Any]:
     return noop()
+
+
+@router.get("/players/{auth_id}/auth", response_model=AdminPlayerAuthResponse)
+async def get_player_auth_state(
+    _: RequireAdmin,
+    auth_id: UUID,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+) -> AdminPlayerAuthResponse:
+    """Read baked-auth account flags for a rostered player (``sub`` = ``auth_id``)."""
+    await _require_rostered_auth_id(token, profiles, auth_id)
+    try:
+        auth_user = await auth_admin.get_user(user_id=auth_id)
+    except AuthAdminError as exc:
+        raise _auth_admin_http_error(exc) from exc
+    return AdminPlayerAuthResponse(
+        auth_id=auth_user.id,
+        email=auth_user.email,
+        is_active=auth_user.is_active,
+        must_set_password=auth_user.must_set_password,
+    )
+
+
+@router.patch("/players/{auth_id}/auth", response_model=AdminPlayerAuthResponse)
+async def patch_player_auth_state(
+    _: RequireAdmin,
+    auth_id: UUID,
+    payload: AdminPatchPlayerAuthRequest,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+) -> AdminPlayerAuthResponse:
+    """Set baked-auth ``is_active`` (inactive users cannot log in or refresh tokens)."""
+    await _require_rostered_auth_id(token, profiles, auth_id)
+    try:
+        auth_user = await auth_admin.patch_user(user_id=auth_id, is_active=payload.is_active)
+    except AuthAdminError as exc:
+        raise _auth_admin_http_error(exc) from exc
+    return AdminPlayerAuthResponse(
+        auth_id=auth_user.id,
+        email=auth_user.email,
+        is_active=auth_user.is_active,
+        must_set_password=auth_user.must_set_password,
+    )
+
+
+@router.post("/players/{auth_id}/reset-password", response_model=AdminPlayerAuthResponse)
+async def reset_player_password(
+    _: RequireAdmin,
+    auth_id: UUID,
+    token: Annotated[str, Depends(get_bearer_token)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+) -> AdminPlayerAuthResponse:
+    """Force the invitee first-login flow: clears password → ``must_set_password``."""
+    await _require_rostered_auth_id(token, profiles, auth_id)
+    try:
+        auth_user = await auth_admin.reset_user_password(user_id=auth_id)
+    except AuthAdminError as exc:
+        raise _auth_admin_http_error(exc) from exc
+    return AdminPlayerAuthResponse(
+        auth_id=auth_user.id,
+        email=auth_user.email,
+        is_active=auth_user.is_active,
+        must_set_password=auth_user.must_set_password,
+    )
 
 
 @router.get("/dropplayer", response_model=PlayerResponse)

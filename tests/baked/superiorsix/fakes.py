@@ -1,7 +1,11 @@
 from typing import Any
 from uuid import UUID, uuid4
 
-from baked.superiorsix.clients.auth_admin import InviteReadyUserResult, MembershipResult
+from baked.superiorsix.clients.auth_admin import (
+    AuthUserAdminResult,
+    InviteReadyUserResult,
+    MembershipResult,
+)
 from baked.superiorsix.clients.user_profiles import RosterInvite, RosterProfile
 from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError, RosterNotFoundError
 
@@ -198,12 +202,22 @@ class FakeAuthAdminClient:
     def __init__(self) -> None:
         self.memberships: dict[str, list[str]] = {}
         self.passwords: dict[str, str | None] = {}
+        self.user_ids: dict[str, UUID] = {}
+        self.is_active: dict[str, bool] = {}
         self.tokens_issued: list[tuple[str, str]] = []
         self.fail_login_for: set[str] = set()
         self.created_invite_ready: list[str] = []
 
     def register(self, email: str, password: str) -> None:
-        self.passwords[email.lower()] = password
+        key = email.lower()
+        self.passwords[key] = password
+        self.user_ids.setdefault(key, uuid4())
+        self.is_active.setdefault(key, True)
+
+    def link_auth_id(self, email: str, auth_id: UUID) -> None:
+        key = email.lower()
+        self.user_ids[key] = auth_id
+        self.is_active.setdefault(key, True)
 
     def set_password(self, email: str, password: str) -> None:
         key = email.lower()
@@ -225,13 +239,43 @@ class FakeAuthAdminClient:
             raise AuthAdminError("EMAIL_EXISTS:Email is already registered.")
         self.passwords[key] = None
         self.memberships[key] = list(roles)
+        self.user_ids[key] = uuid4()
+        self.is_active[key] = True
         self.created_invite_ready.append(key)
         return InviteReadyUserResult(
-            id=uuid4(),
+            id=self.user_ids[key],
             email=key,
             must_set_password=True,
             memberships=[MembershipResult(application=application, roles=list(roles))],
         )
+
+    def _auth_user(self, user_id: UUID) -> AuthUserAdminResult:
+        for email, stored_id in self.user_ids.items():
+            if stored_id == user_id:
+                return AuthUserAdminResult(
+                    id=user_id,
+                    email=email,
+                    is_active=self.is_active.get(email, True),
+                    must_set_password=self.passwords.get(email) is None,
+                )
+        raise AuthAdminError("User not found.")
+
+    async def get_user(self, *, user_id: UUID) -> AuthUserAdminResult:
+        return self._auth_user(user_id)
+
+    async def patch_user(self, *, user_id: UUID, is_active: bool) -> AuthUserAdminResult:
+        for email, stored_id in self.user_ids.items():
+            if stored_id == user_id:
+                self.is_active[email] = is_active
+                return self._auth_user(user_id)
+        raise AuthAdminError("User not found.")
+
+    async def reset_user_password(self, *, user_id: UUID) -> AuthUserAdminResult:
+        for email, stored_id in self.user_ids.items():
+            if stored_id == user_id:
+                self.passwords[email] = None
+                return self._auth_user(user_id)
+        raise AuthAdminError("User not found.")
 
     async def get_membership(
         self,
@@ -269,6 +313,8 @@ class FakeAuthAdminClient:
             )
         if stored != password:
             raise AuthAdminError("Incorrect email or password.")
+        if not self.is_active.get(key, True):
+            raise AuthAdminError("User account is inactive.")
         if (
             audience == "superiorsix"
             and key not in self.memberships

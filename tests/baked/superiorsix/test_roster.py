@@ -461,3 +461,52 @@ def test_getplayerroles_requires_admin(client: TestClient) -> None:
         params={"email": "x@example.com"},
     )
     assert response.status_code == 403
+
+
+def test_roster_admin_auth_reset_and_inactive(
+    client: TestClient,
+    auth_admin: FakeAuthAdminClient,
+) -> None:
+    admin_token, _ = make_access_token(roles=["admin"])
+    admin = auth_header(admin_token)
+    auth_id = uuid4()
+    email = "auth-ops@example.com"
+
+    client.post(
+        "/admin/inviteplayer",
+        headers=admin,
+        json={"email": email, "first_name": "Auth", "last_name": "Ops", "roles": ["player"]},
+    )
+    auth_admin.link_auth_id(email, auth_id)
+    auth_admin.passwords[email] = "password123"
+    auth_admin.is_active[email] = True
+
+    client.post(
+        "/admin/addplayer",
+        headers=admin,
+        json={
+            "auth_id": str(auth_id),
+            "first_name": "Auth",
+            "last_name": "Ops",
+            "email": email,
+        },
+    )
+
+    auth_state = client.get(f"/admin/players/{auth_id}/auth", headers=admin)
+    assert auth_state.status_code == 200, auth_state.text
+    assert auth_state.json()["must_set_password"] is False
+    assert auth_state.json()["is_active"] is True
+
+    reset = client.post(f"/admin/players/{auth_id}/reset-password", headers=admin)
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["must_set_password"] is True
+    assert auth_admin.passwords[email] is None
+
+    inactive = client.patch(
+        f"/admin/players/{auth_id}/auth",
+        headers=admin,
+        json={"is_active": False},
+    )
+    assert inactive.status_code == 200, inactive.text
+    assert inactive.json()["is_active"] is False
+    assert auth_admin.is_active[email] is False
