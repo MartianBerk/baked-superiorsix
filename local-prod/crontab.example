@@ -1,0 +1,49 @@
+# Superior Six — host crontab (local-prod)
+#
+# Install (review paths first):
+#   crontab -l 2>/dev/null; echo; cat /path/to/baked-superiorsix/local-prod/crontab.example
+#   crontab /path/to/baked-superiorsix/local-prod/crontab.example
+#
+# Requires: stack up (`docker compose up -d` in LOCAL_PROD_DIR).
+# Match lines use `baked-superiorsix-match-extractor --days-ahead 7` (default span)
+# with no `--from` (starts at max match_date per league, else today UTC + warning).
+# Rebuild `baked-superiorsix:local-prod` from a commit that includes the match
+# extractor relative-date CLI (PR #54 / SS-211) before relying on --days-ahead.
+#
+# Logs: jobs append to LOCAL_PROD_DIR/logs/*.log (create `logs/` once).
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# All times Europe/London (BST/GMT handled by the zone).
+CRON_TZ=Europe/London
+
+# Absolute path to this directory (directory that contains docker-compose.yml).
+LOCAL_PROD_DIR=/home/CHANGE_ME/parent/baked-superiorsix/local-prod
+
+DOCKER_COMPOSE=cd "$LOCAL_PROD_DIR" && docker compose exec -T baked-superiorsix
+
+# --- League catalog: Monday 08:00 -------------------------------------------
+0 8 * * 1 $DOCKER_COMPOSE baked-superiorsix-league-extractor >>"$LOCAL_PROD_DIR/logs/league-extractor.log" 2>&1
+
+# --- Match fixtures: Mon–Wed afternoons; Thu final pass by 12:00 --------------
+# One job per league, 5 minutes apart; 7-day inclusive window ahead of resolved --from.
+0 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+5 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+10 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+
+0 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+5 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+10 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+
+# --- Auto-score (optional; not enabled by default) ---------------------------
+# Single pass per run; schedule ~every 15 minutes on fixture-heavy days (legacy
+# supersix ran Saturdays 15:00–17:59 every 10m). Uncomment ONE of the blocks below.
+#
+# Every 15 minutes, all week (simplest):
+# */15 * * * * $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+#
+# Match-day heavy window (Sat + Sun), every 15 minutes 11:00–22:59:
+# */15 11-22 * * 0,6 $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
