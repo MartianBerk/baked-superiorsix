@@ -1,16 +1,29 @@
 # Superior Six — host crontab (local-prod)
 #
-# Install (review paths first):
+# Install (set LOCAL_PROD_DIR below, then):
+#   mkdir -p "$LOCAL_PROD_DIR/logs"
 #   crontab -l 2>/dev/null; echo; cat /path/to/baked-superiorsix/local-prod/crontab.example
 #   crontab /path/to/baked-superiorsix/local-prod/crontab.example
 #
 # Requires: stack up (`docker compose up -d` in LOCAL_PROD_DIR).
-# Match lines use `baked-superiorsix-match-extractor --days-ahead 7` (default span)
-# with no `--from` (starts at max match_date per league, else today UTC + warning).
-# Rebuild `baked-superiorsix:local-prod` from a commit that includes the match
-# extractor relative-date CLI (PR #54 / SS-211) before relying on --days-ahead.
 #
-# Logs: jobs append to LOCAL_PROD_DIR/logs/*.log (create `logs/` once).
+# League catalog / matchday:
+#   There is no `current_matchday` (or equivalent) column on `leagues` in
+#   baked-superiorsix. Legacy supersix stored it; the new schema keeps only
+#   name, code, and season start_date. `baked-superiorsix-league-extractor`
+#   upserts those fields from football-data.org v2 `currentSeason.startDate`
+#   and ignores API `currentMatchday`. Match rounds are not tracked on the
+#   league row — fixture coverage is driven by match-extractor date windows.
+#
+# Match extractor (PR #54 / SS-211):
+#   Lines use `--days-ahead 7` with no `--from` (7-day inclusive window).
+#   When `--from` is omitted, the CLI anchors at the latest kickoff among
+#   incomplete fixtures (SCHEDULED / IN PLAY / HALF TIME) for that league;
+#   FINISHED and POSTPONED are ignored. Empty DB → today (UTC) + warning.
+#   Rebuild `baked-superiorsix:local-prod` from a commit that includes the
+#   relative-date match-extractor CLI before relying on `--days-ahead`.
+#
+# Logs: jobs append to LOCAL_PROD_DIR/logs/*.log
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
@@ -18,32 +31,49 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 # All times Europe/London (BST/GMT handled by the zone).
 CRON_TZ=Europe/London
 
-# Absolute path to this directory (directory that contains docker-compose.yml).
-LOCAL_PROD_DIR=/home/CHANGE_ME/parent/baked-superiorsix/local-prod
+# Absolute path to local-prod (directory that contains docker-compose.yml).
+# Example sibling layout from README: .../parent/baked-superiorsix/local-prod
+LOCAL_PROD_DIR=/home/REPLACE_ME/parent/baked-superiorsix/local-prod
 
 DOCKER_COMPOSE=cd "$LOCAL_PROD_DIR" && docker compose exec -T baked-superiorsix
 
-# --- League catalog: Monday 08:00 -------------------------------------------
+# --- League catalog: Monday 08:00 (weekly; season name/code/start_date) -----
 0 8 * * 1 $DOCKER_COMPOSE baked-superiorsix-league-extractor >>"$LOCAL_PROD_DIR/logs/league-extractor.log" 2>&1
 
-# --- Match fixtures: Mon–Wed afternoons; Thu final pass by 12:00 --------------
-# One job per league, 5 minutes apart; 7-day inclusive window ahead of resolved --from.
+# --- Match fixtures: forward window + post-weekend score sync ---------------
+# One job per league (PL, ELC, EL1, EL2), 5 minutes apart; --days-ahead 7.
+# Mon–Wed 15:00 — keep ~1 week of fixtures fresh for selection.
 0 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
 5 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
 10 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
 15 15 * * 1-3 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
+# Thu 12:00 — last weekday pass before typical Super Six lock.
 0 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
 5 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
 10 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
 15 12 * * 4 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
-# --- Auto-score (optional; not enabled by default) ---------------------------
-# Single pass per run; schedule ~every 15 minutes on fixture-heavy days (legacy
-# supersix ran Saturdays 15:00–17:59 every 10m). Uncomment ONE of the blocks below.
-#
-# Every 15 minutes, all week (simplest):
-# */15 * * * * $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
-#
-# Match-day heavy window (Sat + Sun), every 15 minutes 11:00–22:59:
-# */15 11-22 * * 0,6 $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+# Fri 15:00 — bridge into the weekend fixture list.
+0 15 * * 5 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+5 15 * * 5 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+10 15 * * 5 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 15 * * 5 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+
+# Sat 21:00 — post–main-kickoff pass (non-live); upserts finals auto-score missed.
+0 21 * * 6 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+5 21 * * 6 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+10 21 * * 6 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 21 * * 6 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+
+# Sun 18:00 — optional light pass (Sunday fixtures / late stragglers).
+0 18 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+5 18 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+10 18 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 18 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+
+# --- Auto-score: Saturday kickoff window only (single pass per run) ---------
+# Most Super Six fixtures kick off ~15:00 London. Poll every 15m from 14:30
+# through 19:00 — not a constant live loop (see README auto-score).
+30,45 14 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+0,15,30,45 15-19 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
