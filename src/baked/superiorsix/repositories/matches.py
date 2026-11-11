@@ -1,8 +1,8 @@
 from collections.abc import Collection, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Protocol
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from baked.superiorsix.db.models import LeagueRecord, MatchRecord
@@ -53,6 +53,8 @@ class MatchRepository(Protocol):
     ) -> list[Match]: ...
 
     async def list_by_league(self, league_id: int) -> list[Match]: ...
+
+    async def max_match_date_for_league_code(self, league_code: str) -> date | None: ...
 
     async def list_finished_for_team_before(
         self,
@@ -167,6 +169,21 @@ class SqlAlchemyMatchRepository:
             .order_by(MatchRecord.match_date)
         )
         return _rows_to_domain(result.all())
+
+    async def max_match_date_for_league_code(self, league_code: str) -> date | None:
+        """Latest kickoff among actionable fixtures (not FINISHED or POSTPONED) for relative --from."""
+        result = await self._session.scalar(
+            select(func.max(MatchRecord.match_date))
+            .select_from(MatchRecord)
+            .join(LeagueRecord, MatchRecord.league_id == LeagueRecord.id)
+            .where(
+                LeagueRecord.code == league_code,
+                MatchRecord.status.not_in((MatchStatus.FINISHED, MatchStatus.POSTPONED)),
+            )
+        )
+        if result is None:
+            return None
+        return _as_utc(result).date()
 
     async def list_finished_for_team_before(
         self,

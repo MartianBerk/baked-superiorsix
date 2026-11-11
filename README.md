@@ -89,7 +89,10 @@ invite already exists.
 | CLI | Purpose |
 |-----|---------|
 | `poetry run baked-superiorsix-league-extractor` | Upsert league catalog (name / code / start date) |
-| `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive date range |
+| `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-01 [--to 2026-11-03]` | Upsert fixtures for **one** league over an inclusive UTC date range |
+| `poetry run baked-superiorsix-match-extractor -l PL --to 2026-11-15` | From = latest actionable PL `match_date` (excludes finished/postponed; else today UTC + warning) through `--to` |
+| `poetry run baked-superiorsix-match-extractor -l PL --days-ahead 7` | From = latest actionable PL `match_date` (or today UTC); to = from + 7 days |
+| `poetry run baked-superiorsix-match-extractor -l PL --from 2026-11-11 --days-ahead 7` | Explicit start; end = from + 7 (`--to` and `--days-ahead` are mutually exclusive; default span 7 when neither end flag is set) |
 | `poetry run baked-superiorsix-match-extractor -l EL1 --live` | Upsert in-play fixtures (Goal API live feed; football-data ≈ today) |
 | `poetry run baked-superiorsix-tournament-extractor` | Upsert tournament catalog (`FAC`, `EC`, `WC`) into shared `leagues` |
 | `poetry run baked-superiorsix-tournament-extractor -l FAC --from 2026-01-10 [--to …]` | Upsert FAC fixtures into Super Six `matches` |
