@@ -293,3 +293,91 @@ async def test_max_match_date_for_league_code(client) -> None:
         repo = SqlAlchemyMatchRepository(session)
         assert await repo.max_match_date_for_league_code("PL") == date(2025, 11, 3)
         assert await repo.max_match_date_for_league_code("EL1") is None
+
+
+@pytest.mark.asyncio
+async def test_max_match_date_for_league_code_ignores_finished(client) -> None:
+    """Relative --from uses the latest incomplete fixture, not a newer finished one."""
+    session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
+    async with session_factory() as session:
+        ingest, _ = _services(session)
+        pl = await ingest.upsert_league(
+            League(
+                name="Premier League",
+                code="PL",
+                start_date=date(2025, 8, 1),
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-in-play",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 1, 15, 0, tzinfo=UTC),
+                status=MatchStatus.IN_PLAY,
+                home_team="A",
+                away_team="B",
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-finished-later",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 10, 15, 0, tzinfo=UTC),
+                status=MatchStatus.FINISHED,
+                home_team="C",
+                away_team="D",
+                home_score=2,
+                away_score=1,
+                match_minute=90,
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        repo = SqlAlchemyMatchRepository(session)
+        assert await repo.max_match_date_for_league_code("PL") == date(2025, 11, 1)
+
+
+@pytest.mark.asyncio
+async def test_max_match_date_for_league_code_all_finished_returns_none(client) -> None:
+    session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
+    async with session_factory() as session:
+        ingest, _ = _services(session)
+        pl = await ingest.upsert_league(
+            League(
+                name="Premier League",
+                code="PL",
+                start_date=date(2025, 8, 1),
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-done",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 10, 15, 0, tzinfo=UTC),
+                status=MatchStatus.FINISHED,
+                home_team="A",
+                away_team="B",
+                home_score=1,
+                away_score=0,
+                match_minute=90,
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        repo = SqlAlchemyMatchRepository(session)
+        assert await repo.max_match_date_for_league_code("PL") is None
+
+
+def test_resolve_match_extractor_date_range_uses_incomplete_latest() -> None:
+    """When latest DB row is finished, resolved from follows max incomplete match_date."""
+    incomplete_latest = date(2025, 11, 1)
+    resolved_from, resolved_to, fallback = resolve_match_extractor_date_range(
+        date_from=None,
+        date_to=date(2025, 11, 20),
+        days_ahead=None,
+        latest_match_date=incomplete_latest,
+        today_utc=date(2025, 11, 15),
+    )
+    assert (resolved_from, resolved_to, fallback) == (incomplete_latest, date(2025, 11, 20), False)

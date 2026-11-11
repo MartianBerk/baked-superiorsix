@@ -74,7 +74,7 @@ def resolve_match_extractor_date_range(
     """Resolve inclusive UTC date bounds for the match extractor.
 
     Returns ``(date_from, date_to, used_today_fallback)`` where the fallback flag
-    is set when ``date_from`` was omitted and no matches exist for the league.
+    is set when ``date_from`` was omitted and no non-finished matches exist for the league.
     """
     used_today_fallback = False
     resolved_from = date_from
@@ -155,7 +155,7 @@ async def _run_match(
                 return 2
             if used_today_fallback:
                 logging.getLogger(__name__).warning(
-                    "No matches in DB for league %s; using today UTC %s as --from",
+                    "No non-finished matches in DB for league %s; using today UTC %s as --from",
                     league_code,
                     today.isoformat(),
                 )
@@ -316,7 +316,8 @@ def match_main(argv: list[str] | None = None) -> None:
         metavar="YYYY-MM-DD",
         help=(
             "Inclusive start date (UTC). When omitted (and not --live), defaults to "
-            "the latest match_date for this league in the DB, or today UTC with a warning."
+            "the latest match_date among non-finished fixtures for this league in the DB, "
+            "or today UTC with a warning if none."
         ),
     )
     end_group = parser.add_mutually_exclusive_group()
