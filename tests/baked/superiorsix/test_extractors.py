@@ -339,6 +339,46 @@ async def test_max_match_date_for_league_code_ignores_finished(client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_max_match_date_for_league_code_ignores_postponed(client) -> None:
+    """POSTPONED is treated like FINISHED for relative --from anchoring."""
+    session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
+    async with session_factory() as session:
+        ingest, _ = _services(session)
+        pl = await ingest.upsert_league(
+            League(
+                name="Premier League",
+                code="PL",
+                start_date=date(2025, 8, 1),
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-scheduled",
+                league_id=pl.id,
+                match_date=datetime(2025, 10, 20, 15, 0, tzinfo=UTC),
+                status=MatchStatus.SCHEDULED,
+                home_team="A",
+                away_team="B",
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-postponed-later",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 15, 15, 0, tzinfo=UTC),
+                status=MatchStatus.POSTPONED,
+                home_team="C",
+                away_team="D",
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        repo = SqlAlchemyMatchRepository(session)
+        assert await repo.max_match_date_for_league_code("PL") == date(2025, 10, 20)
+
+
+@pytest.mark.asyncio
 async def test_max_match_date_for_league_code_all_finished_returns_none(client) -> None:
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
@@ -361,6 +401,35 @@ async def test_max_match_date_for_league_code_all_finished_returns_none(client) 
                 home_score=1,
                 away_score=0,
                 match_minute=90,
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        repo = SqlAlchemyMatchRepository(session)
+        assert await repo.max_match_date_for_league_code("PL") is None
+
+
+@pytest.mark.asyncio
+async def test_max_match_date_for_league_code_only_postponed_returns_none(client) -> None:
+    session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
+    async with session_factory() as session:
+        ingest, _ = _services(session)
+        pl = await ingest.upsert_league(
+            League(
+                name="Premier League",
+                code="PL",
+                start_date=date(2025, 8, 1),
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-postponed",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 10, 15, 0, tzinfo=UTC),
+                status=MatchStatus.POSTPONED,
+                home_team="A",
+                away_team="B",
             )
         )
         await session.commit()

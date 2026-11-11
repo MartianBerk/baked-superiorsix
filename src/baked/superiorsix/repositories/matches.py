@@ -171,14 +171,14 @@ class SqlAlchemyMatchRepository:
         return _rows_to_domain(result.all())
 
     async def max_match_date_for_league_code(self, league_code: str) -> date | None:
-        """Latest kickoff date for non-finished fixtures in a league (for relative --from)."""
+        """Latest kickoff among actionable fixtures (not FINISHED or POSTPONED) for relative --from."""
         result = await self._session.scalar(
             select(func.max(MatchRecord.match_date))
             .select_from(MatchRecord)
             .join(LeagueRecord, MatchRecord.league_id == LeagueRecord.id)
             .where(
                 LeagueRecord.code == league_code,
-                MatchRecord.status != MatchStatus.FINISHED,
+                MatchRecord.status.not_in((MatchStatus.FINISHED, MatchStatus.POSTPONED)),
             )
         )
         if result is None:
