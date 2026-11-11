@@ -29,13 +29,13 @@ services:
       AUTH_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       AUTH_JWT_KEY_ID: ${JWT_KEY_ID:-}
       AUTH_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
-      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-44640}
       AUTH_DEFAULT_AUDIENCE: ${AUTH_DEFAULT_AUDIENCE:-}
       # Default is a quoted JSON string so Compose does not expand [...] as a list.
       AUTH_CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:8081","http://127.0.0.1:8081","http://localhost:19006","http://127.0.0.1:19006","http://localhost:8040","http://127.0.0.1:8040","http://localhost:3000"]'}
       AUTH_DATABASE_URL: sqlite+aiosqlite:////data/baked_auth.db
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-ops@example.com}
-      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-LocalDevChangeMe1}
     volumes:
       - baked-auth-data:/data
     healthcheck:
@@ -119,9 +119,9 @@ services:
       # Server-side auth-admin for inviteplayer → POST /v1/users (aud=auth).
       # Nested default: SUPERIORSIX_AUTH_ADMIN_* → AUTH_BOOTSTRAP_* → local-dev default.
       SUPERIORSIX_AUTH_ADMIN_EMAIL: ${SUPERIORSIX_AUTH_ADMIN_EMAIL:-${AUTH_BOOTSTRAP_EMAIL:-ops@example.com}}
-      SUPERIORSIX_AUTH_ADMIN_PASSWORD: ${SUPERIORSIX_AUTH_ADMIN_PASSWORD:-${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}}
+      SUPERIORSIX_AUTH_ADMIN_PASSWORD: ${SUPERIORSIX_AUTH_ADMIN_PASSWORD:-${AUTH_BOOTSTRAP_PASSWORD:-LocalDevChangeMe1}}
       AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-ops@example.com}
-      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-LocalDevChangeMe1}
       FOOTBALL_DATA_API_TOKEN: ${FOOTBALL_DATA_API_TOKEN:-}
       GOAL_API_KEY: ${GOAL_API_KEY:-}
     volumes:

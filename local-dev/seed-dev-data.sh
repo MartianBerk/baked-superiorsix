@@ -21,8 +21,8 @@ SUPERSIX_URL="${SUPERSIX_URL:-http://127.0.0.1:8030}"
 
 # Defaults match local-dev/.env.example
 OPS_EMAIL="${AUTH_BOOTSTRAP_EMAIL:-ops@example.com}"
-OPS_PASSWORD="${AUTH_BOOTSTRAP_PASSWORD:-local-dev-change-me}"
-PLAYER_PASSWORD="${SEED_PLAYER_PASSWORD:-local-dev-player}"
+OPS_PASSWORD="${AUTH_BOOTSTRAP_PASSWORD:-LocalDevChangeMe1}"
+PLAYER_PASSWORD="${SEED_PLAYER_PASSWORD:-LocalDevPlayer1}"
 
 # Inclusive fixture window (UTC). Override with SEED_FROM / SEED_TO.
 DATE_FROM="${SEED_FROM:-2026-10-31}"
