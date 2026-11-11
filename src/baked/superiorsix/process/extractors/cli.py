@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from baked.superiorsix.core.config import Settings, get_settings
 from baked.superiorsix.db.session import (
@@ -60,6 +60,39 @@ def _parse_iso_date(value: str) -> date:
         raise argparse.ArgumentTypeError(f"invalid date {value!r}, expected YYYY-MM-DD") from exc
 
 
+DEFAULT_MATCH_EXTRACTOR_DAYS_AHEAD = 7
+
+
+def resolve_match_extractor_date_range(
+    *,
+    date_from: date | None,
+    date_to: date | None,
+    days_ahead: int | None,
+    latest_match_date: date | None,
+    today_utc: date,
+) -> tuple[date, date, bool]:
+    """Resolve inclusive UTC date bounds for the match extractor.
+
+    Returns ``(date_from, date_to, used_today_fallback)`` where the fallback flag
+    is set when ``date_from`` was omitted and no actionable (non-finished, non-postponed)
+    matches exist for the league.
+    """
+    used_today_fallback = False
+    resolved_from = date_from
+    if resolved_from is None:
+        if latest_match_date is not None:
+            resolved_from = latest_match_date
+        else:
+            resolved_from = today_utc
+            used_today_fallback = True
+    if date_to is not None:
+        if date_to < resolved_from:
+            raise ValueError("--to must be on or after --from")
+        return resolved_from, date_to, used_today_fallback
+    span = days_ahead if days_ahead is not None else DEFAULT_MATCH_EXTRACTOR_DAYS_AHEAD
+    return resolved_from, resolved_from + timedelta(days=span), used_today_fallback
+
+
 def _build_services(session):
     leagues = LeagueService(SqlAlchemyLeagueRepository(session), SqlAlchemyMatchRepository(session))
     matches = MatchService(SqlAlchemyMatchRepository(session), leagues)
@@ -92,8 +125,9 @@ async def _run_match(
     settings: Settings,
     *,
     league_code: str,
-    date_from: date,
-    date_to: date,
+    date_from: date | None,
+    date_to: date | None,
+    days_ahead: int | None,
     live: bool,
 ) -> int:
     engine = create_engine(settings.database_url)
@@ -101,25 +135,50 @@ async def _run_match(
     session_factory = create_session_factory(engine)
     async with session_scope(session_factory) as session:
         ingest, leagues, _, _ = _build_services(session)
+        match_repo = SqlAlchemyMatchRepository(session)
+        if live:
+            today = datetime.now(UTC).date()
+            resolved_from = resolved_to = today
+            used_today_fallback = False
+        else:
+            latest = await match_repo.max_match_date_for_league_code(league_code)
+            today = datetime.now(UTC).date()
+            try:
+                resolved_from, resolved_to, used_today_fallback = resolve_match_extractor_date_range(
+                    date_from=date_from,
+                    date_to=date_to,
+                    days_ahead=days_ahead,
+                    latest_match_date=latest,
+                    today_utc=today,
+                )
+            except ValueError as exc:
+                logging.getLogger(__name__).error("%s", exc)
+                return 2
+            if used_today_fallback:
+                logging.getLogger(__name__).warning(
+                    "No actionable matches in DB for league %s; using today UTC %s as --from",
+                    league_code,
+                    today.isoformat(),
+                )
         extractor = MatchExtractor(
             ingest,
             leagues,
             league_code=league_code,
-            date_from=date_from,
-            date_to=date_to,
+            date_from=resolved_from,
+            date_to=resolved_to,
             football_data_token=_secret(settings.football_data_api_token),
             goal_api_key=_secret(settings.goal_api_key),
             live=live,
         )
-        matches = await extractor.process()
+        pulled = await extractor.process()
         await session.commit()
     logging.getLogger(__name__).info(
         "match extractor finished league=%s live=%s from=%s to=%s count=%s",
         league_code,
         live,
-        date_from.isoformat(),
-        date_to.isoformat(),
-        len(matches),
+        resolved_from.isoformat(),
+        resolved_to.isoformat(),
+        len(pulled),
     )
     return 0
 
@@ -256,14 +315,29 @@ def match_main(argv: list[str] | None = None) -> None:
         type=_parse_iso_date,
         dest="date_from",
         metavar="YYYY-MM-DD",
-        help="Inclusive start date (UTC). Required unless --live.",
+        help=(
+            "Inclusive start date (UTC). When omitted (and not --live), defaults to "
+            "the latest match_date among actionable fixtures (not finished or postponed) "
+            "for this league in the DB, or today UTC with a warning if none."
+        ),
     )
-    parser.add_argument(
+    end_group = parser.add_mutually_exclusive_group()
+    end_group.add_argument(
         "--to",
         type=_parse_iso_date,
         dest="date_to",
         metavar="YYYY-MM-DD",
-        help="Inclusive end date (UTC); defaults to --from",
+        help="Inclusive end date (UTC). Mutually exclusive with --days-ahead.",
+    )
+    end_group.add_argument(
+        "--days-ahead",
+        type=int,
+        dest="days_ahead",
+        metavar="N",
+        help=(
+            "Inclusive end date is --from + N days (default 7 when --to is omitted). "
+            "Mutually exclusive with --to."
+        ),
     )
     parser.add_argument(
         "--live",
@@ -275,24 +349,17 @@ def match_main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
-    if args.live:
-        today = datetime.now(UTC).date()
-        date_from = date_to = today
-    else:
-        if args.date_from is None:
-            parser.error("--from is required unless --live is set")
-        date_from = args.date_from
-        date_to = args.date_to or args.date_from
-        if date_to < date_from:
-            parser.error("--to must be on or after --from")
+    if args.days_ahead is not None and args.days_ahead < 0:
+        parser.error("--days-ahead must be zero or positive")
     _configure_logging(args.verbose)
     raise SystemExit(
         asyncio.run(
             _run_match(
                 get_settings(),
                 league_code=args.league,
-                date_from=date_from,
-                date_to=date_to,
+                date_from=None if args.live else args.date_from,
+                date_to=None if args.live else args.date_to,
+                days_ahead=None if args.live else args.days_ahead,
                 live=args.live,
             )
         )
