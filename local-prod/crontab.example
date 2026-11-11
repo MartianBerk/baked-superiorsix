@@ -66,7 +66,10 @@ DOCKER_COMPOSE=cd "$LOCAL_PROD_DIR" && docker compose exec -T baked-superiorsix
 10 22 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
 15 22 * * 0 $DOCKER_COMPOSE baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
-# --- Auto-score: Saturday kickoff window (one CLI pass per cron line) -------
-# Most Super Six fixtures kick off ~15:00 London. Cron fires every 15m 15:00–
-# 19:00; each run is a single auto-score pass (default -s 0), not a daemon loop.
-0,15,30,45 15-19 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+# --- Auto-score: Saturday staggered long runs (internal ~2m recheck loop) -----
+# Super Six fixtures mostly ~15:00 London. Hourly jobs from 15:00, each loops
+# 55 minutes (`-s 3300`): passes at 15:00, 16:00, 17:00, 18:00; last ends ~18:55.
+0 15 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+0 16 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+0 17 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+0 18 * * 6 $DOCKER_COMPOSE baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
