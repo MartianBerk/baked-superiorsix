@@ -115,6 +115,7 @@ class Round:
     id: int | None = None
     end_date: date | None = None
     amount_won: int | None = None
+    n_players: int | None = None
     winner_ids: list[UUID] | None = None
 
 

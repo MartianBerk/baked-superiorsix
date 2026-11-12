@@ -102,10 +102,26 @@ async def get_match_service(
     return MatchService(SqlAlchemyMatchRepository(session), leagues, team_xref)
 
 
+def get_user_profiles(request: Request) -> UserProfileGateway:
+    return request.app.state.user_profiles
+
+
+def get_auth_admin(request: Request) -> AuthAdminGateway:
+    return request.app.state.auth_admin
+
+
 async def get_round_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    profiles: Annotated[UserProfileGateway, Depends(get_user_profiles)],
+    auth_admin: Annotated[AuthAdminGateway, Depends(get_auth_admin)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> RoundService:
-    return RoundService(SqlAlchemyRoundRepository(session))
+    return RoundService(
+        SqlAlchemyRoundRepository(session),
+        profiles=profiles,
+        auth_admin=auth_admin,
+        settings=settings,
+    )
 
 
 async def get_subround_service(
@@ -125,14 +141,6 @@ async def get_prediction_service(
     matches: Annotated[MatchService, Depends(get_match_service)],
 ) -> PredictionService:
     return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
-
-
-def get_user_profiles(request: Request) -> UserProfileGateway:
-    return request.app.state.user_profiles
-
-
-def get_auth_admin(request: Request) -> AuthAdminGateway:
-    return request.app.state.auth_admin
 
 
 async def get_gameday_service(
