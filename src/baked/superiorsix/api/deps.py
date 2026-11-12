@@ -20,12 +20,13 @@ from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
 from baked.superiorsix.repositories.predictions import SqlAlchemyPredictionRepository
 from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
 from baked.superiorsix.repositories.subrounds import SqlAlchemySubroundRepository
+from baked.superiorsix.repositories.team_xref import SqlAlchemyTeamXrefRepository
 from baked.superiorsix.repositories.worldcup_matches import SqlAlchemyWorldcupMatchRepository
 from baked.superiorsix.repositories.worldcup_predictions import (
     SqlAlchemyWorldcupPredictionRepository,
 )
-from baked.superiorsix.repositories.team_xref import SqlAlchemyTeamXrefRepository
 from baked.superiorsix.repositories.worldcup_settings import SqlAlchemyWorldcupSettingsRepository
+from baked.superiorsix.services.autopick import AutopickService
 from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.gameday import GamedayService
 from baked.superiorsix.services.leagues import LeagueService
@@ -45,6 +46,7 @@ __all__ = [
     "RequireUserProfile",
     "RequireWorldcup",
     "get_auth_admin",
+    "get_autopick_service",
     "get_bearer_token",
     "get_current_principal",
     "get_db_session",
@@ -141,6 +143,20 @@ async def get_prediction_service(
     matches: Annotated[MatchService, Depends(get_match_service)],
 ) -> PredictionService:
     return PredictionService(SqlAlchemyPredictionRepository(session), rounds, matches)
+
+
+async def get_autopick_service(
+    rounds: Annotated[RoundService, Depends(get_round_service)],
+    subrounds: Annotated[SubroundService, Depends(get_subround_service)],
+    matches: Annotated[MatchService, Depends(get_match_service)],
+    predictions: Annotated[PredictionService, Depends(get_prediction_service)],
+) -> AutopickService:
+    return AutopickService(
+        rounds=rounds,
+        subrounds=subrounds,
+        matches=matches,
+        predictions=predictions,
+    )
 
 
 async def get_gameday_service(

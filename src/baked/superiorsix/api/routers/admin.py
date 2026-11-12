@@ -13,6 +13,7 @@ from baked.superiorsix.api.dates import parse_legacy_date
 from baked.superiorsix.api.deps import (
     RequireAdmin,
     get_auth_admin,
+    get_autopick_service,
     get_bearer_token,
     get_euros_service,
     get_league_service,
@@ -35,6 +36,8 @@ from baked.superiorsix.api.schemas import (
     AdminPlayerPredictionsResponse,
     AdminPredictionBoardResponse,
     AdminPredictionsListResponse,
+    AutopickMatchesRequest,
+    AutopickMatchesResponse,
     BulkSelectMatchItem,
     CurrentRoundResponse,
     CurrentSubroundResponse,
@@ -88,6 +91,7 @@ from baked.superiorsix.domain.exceptions import (
 )
 from baked.superiorsix.domain.models import Match, Prediction, TeamXref
 from baked.superiorsix.noop import noop
+from baked.superiorsix.services.autopick import AutopickService
 from baked.superiorsix.services.euros import EurosService
 from baked.superiorsix.services.leagues import LeagueService
 from baked.superiorsix.services.matches import MatchService, day_bounds
@@ -1014,6 +1018,53 @@ async def add_matches(
     display = await load_display(team_xref)
     return MatchesResponse(
         matches=[MatchResponse.from_domain(match, display_team=display) for match in matches]
+    )
+
+
+@router.post("/autopickmatches", response_model=AutopickMatchesResponse)
+async def autopick_matches(
+    _: RequireAdmin,
+    payload: AutopickMatchesRequest,
+    autopick: Annotated[AutopickService, Depends(get_autopick_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
+) -> AutopickMatchesResponse:
+    """Automatically select the next subround slate of exactly six fixtures (SS-229).
+
+    Requires ``match_date`` (the Matches scrubber day). Only fixtures on that
+    UK calendar day are considered — no Saturday look-ahead (CLI keeps that).
+
+    Expected gate failures return HTTP 200 with ``status=\"noop\"`` and a stable
+    ``reason`` (see AutopickMatchesResponse). Auth failures remain 401/403.
+    """
+    try:
+        result = await autopick.run(match_date=payload.match_date)
+    except MatchSelectionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    display = await load_display(team_xref)
+    subround_payload = None
+    if result.subround_status is not None:
+        subround_payload = SubroundResponse.from_status(result.subround_status)
+    elif result.subround is not None and result.subround.id is not None:
+        subround_payload = SubroundResponse(
+            id=result.subround.id,
+            round_id=result.subround.round_id,
+            sequence=result.subround.sequence,
+            created_at=result.subround.created_at,
+            closed_at=result.subround.closed_at,
+            match_count=len(result.matches),
+        )
+    return AutopickMatchesResponse(
+        status="selected" if result.status == "selected" else "noop",
+        reason=None if result.reason is None else result.reason.value,
+        message=result.message,
+        subround=subround_payload,
+        matches=[
+            MatchResponse.from_domain(match, display_team=display) for match in result.matches
+        ],
+        kickoff=result.kickoff,
+        target_difficulty_band=result.target_difficulty_band,
+        average_difficulty_band=result.average_difficulty_band,
     )
 
 
