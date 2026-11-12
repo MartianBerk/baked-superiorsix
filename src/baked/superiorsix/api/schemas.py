@@ -328,6 +328,22 @@ class SubroundResponse(BaseModel):
         )
 
 
+class AutopickMatchesResponse(BaseModel):
+    """Admin trigger for automated slate pick (SS-229).
+
+    Gate failures are HTTP 200 with ``status=\"noop\"`` and a stable ``reason``.
+    """
+
+    status: Literal["selected", "noop"]
+    reason: str | None = None
+    message: str
+    subround: SubroundResponse | None = None
+    matches: list[MatchResponse] = Field(default_factory=list)
+    kickoff: datetime | None = None
+    target_difficulty_band: float | None = None
+    average_difficulty_band: float | None = None
+
+
 class GameMetaResponse(BaseModel):
     """Player shell header + slate navigation (SS-16).
 
