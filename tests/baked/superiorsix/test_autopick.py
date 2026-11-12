@@ -248,18 +248,54 @@ def test_autopick_noop_no_open_round(client: TestClient) -> None:
     assert body["matches"] == []
 
 
-def test_autopick_noop_previous_missing(client: TestClient) -> None:
+def test_autopick_first_slate_when_no_previous_subround(client: TestClient) -> None:
+    """First subround may be autopicked; previous-closed gate only when a previous exists."""
     headers = _admin_headers()
     _open_round(client, headers)
+
+    saturday = next_saturday(datetime.now(UK).date())
+    candidate_kickoff = _kickoff_uk(saturday, 15, 0)
+
+    async def _seed(session_factory):
+        async with session_factory() as session:
+            ingest = _ingest(session)
+            season_start_year = saturday.year if saturday.month >= 8 else saturday.year - 1
+            pl = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert pl.id is not None
+            for index in range(6):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"first-slate-{index}",
+                        league_id=pl.id,
+                        match_date=candidate_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"FirstH{index}",
+                        away_team=f"FirstA{index}",
+                    )
+                )
+            await session.commit()
+
+    anyio.run(_seed, client.app.state.session_factory)
+
     response = client.post(
         "/admin/autopickmatches",
         headers=headers,
-        json={"match_date": date.today().isoformat()},
+        json={"match_date": saturday.isoformat()},
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == "noop"
-    assert body["reason"] == AutopickReason.PREVIOUS_SUBROUND_MISSING
+    assert body["status"] == "selected", body
+    assert body["reason"] is None
+    assert len(body["matches"]) == 6
+    assert body["subround"] is not None
+    assert body["subround"]["sequence"] == 1
+    assert all(match["home_team"].startswith("FirstH") for match in body["matches"])
 
 
 def test_autopick_noop_previous_not_closed(client: TestClient) -> None:

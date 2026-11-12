@@ -40,7 +40,6 @@ PREFERRED_KICKOFF_TIME = time(15, 0)
 
 class AutopickReason(StrEnum):
     NO_OPEN_ROUND = "no_open_round"
-    PREVIOUS_SUBROUND_MISSING = "previous_subround_missing"
     PREVIOUS_SUBROUND_NOT_CLOSED = "previous_subround_not_closed"
     PERFECT_SLATE_EXISTS = "perfect_slate_exists"
     INSUFFICIENT_SAME_KICKOFF = "insufficient_same_kickoff"
@@ -49,9 +48,6 @@ class AutopickReason(StrEnum):
 
 _NOOP_MESSAGES: dict[AutopickReason, str] = {
     AutopickReason.NO_OPEN_ROUND: "No round in progress; autopick skipped.",
-    AutopickReason.PREVIOUS_SUBROUND_MISSING: (
-        "No previous subround to evaluate; autopick does not seed the first slate."
-    ),
     AutopickReason.PREVIOUS_SUBROUND_NOT_CLOSED: (
         "Previous subround is not fully finished; autopick skipped."
     ),
@@ -298,22 +294,23 @@ class AutopickService:
 
         statuses = await self._subrounds.list_for_round(round_.id, now=clock)
         previous = _previous_subround_for_gates(statuses)
-        if previous is None:
-            return AutopickResult.noop(AutopickReason.PREVIOUS_SUBROUND_MISSING)
+        # First slate is allowed when no previous subround exists. Closed + no
+        # perfect-winner gates apply only when a previous slate is present.
+        if previous is not None:
+            assert previous.subround.id is not None
+            previous_matches = await self._matches.selected_matches_for_subround(
+                previous.subround.id
+            )
+            if not previous_matches or not all(
+                match.status == MatchStatus.FINISHED for match in previous_matches
+            ):
+                return AutopickResult.noop(AutopickReason.PREVIOUS_SUBROUND_NOT_CLOSED)
 
-        previous_matches = await self._matches.selected_matches_for_subround(
-            previous.subround.id  # type: ignore[arg-type]
-        )
-        if not previous_matches or not all(
-            match.status == MatchStatus.FINISHED for match in previous_matches
-        ):
-            return AutopickResult.noop(AutopickReason.PREVIOUS_SUBROUND_NOT_CLOSED)
-
-        if await self._has_perfect_slate(
-            round_id=round_.id,
-            matches=previous_matches,
-        ):
-            return AutopickResult.noop(AutopickReason.PERFECT_SLATE_EXISTS)
+            if await self._has_perfect_slate(
+                round_id=round_.id,
+                matches=previous_matches,
+            ):
+                return AutopickResult.noop(AutopickReason.PERFECT_SLATE_EXISTS)
 
         editing = await self._subrounds.current_open_for_editing(now=clock)
         if editing is not None and editing.match_count >= SLATE_SIZE:
@@ -364,12 +361,13 @@ class AutopickService:
         if len(scored) < SLATE_SIZE:
             return AutopickResult.noop(AutopickReason.INSUFFICIENT_SAME_KICKOFF)
 
-        # Next sequence = previous.sequence + 1 when creating; else editing.sequence.
-        next_sequence = (
-            editing.subround.sequence
-            if editing is not None
-            else previous.subround.sequence + 1
-        )
+        # Editing sequence when open; else next after previous; else first slate (=1).
+        if editing is not None:
+            next_sequence = editing.subround.sequence
+        elif previous is not None:
+            next_sequence = previous.subround.sequence + 1
+        else:
+            next_sequence = 1
         target = target_difficulty_band(next_sequence)
         picked = select_six_hierarchy_then_difficulty(scored, target_band=target)
         if len(picked) < SLATE_SIZE:
@@ -434,6 +432,7 @@ def _previous_subround_for_gates(
 ) -> SubroundStatus | None:
     """Resolve the subround whose finished state gates the next autopick.
 
+    ``None`` means no previous slate (first-slate autopick is allowed).
     Empty latest (force-opened / pending edit) → evaluate the one before it.
     Otherwise evaluate the latest slate that has matches.
     """
