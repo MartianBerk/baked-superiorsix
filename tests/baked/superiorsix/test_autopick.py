@@ -113,7 +113,7 @@ def test_choose_kickoff_prefers_saturday_1500_when_enough() -> None:
         for i in range(1, 8)
     ]
     groups = group_by_kickoff(matches_1500 + matches_1730)
-    assert choose_kickoff_group(groups, saturday=sat) == k1500.astimezone(UTC)
+    assert choose_kickoff_group(groups, day=sat) == k1500.astimezone(UTC)
 
 
 def test_choose_kickoff_falls_back_when_1500_short() -> None:
@@ -145,7 +145,7 @@ def test_choose_kickoff_falls_back_when_1500_short() -> None:
         for i in range(1, 7)
     ]
     groups = group_by_kickoff(short_1500 + full_1730)
-    assert choose_kickoff_group(groups, saturday=sat) == k1730.astimezone(UTC)
+    assert choose_kickoff_group(groups, day=sat) == k1730.astimezone(UTC)
 
 
 def test_hierarchy_prefers_pl_before_lower_leagues() -> None:
@@ -217,13 +217,30 @@ def _open_round(client: TestClient, headers: dict[str, str]) -> None:
 
 
 def test_autopick_requires_admin(client: TestClient) -> None:
-    assert client.post("/admin/autopickmatches").status_code == 401
-    forbidden = client.post("/admin/autopickmatches", headers=_player_headers())
+    body = {"match_date": date.today().isoformat()}
+    assert client.post("/admin/autopickmatches", json=body).status_code == 401
+    forbidden = client.post(
+        "/admin/autopickmatches",
+        headers=_player_headers(),
+        json=body,
+    )
     assert forbidden.status_code == 403
 
 
+def test_autopick_requires_match_date(client: TestClient) -> None:
+    headers = _admin_headers()
+    missing = client.post("/admin/autopickmatches", headers=headers, json={})
+    assert missing.status_code == 422
+    bare = client.post("/admin/autopickmatches", headers=headers)
+    assert bare.status_code == 422
+
+
 def test_autopick_noop_no_open_round(client: TestClient) -> None:
-    response = client.post("/admin/autopickmatches", headers=_admin_headers())
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=_admin_headers(),
+        json={"match_date": date.today().isoformat()},
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "noop"
@@ -234,7 +251,11 @@ def test_autopick_noop_no_open_round(client: TestClient) -> None:
 def test_autopick_noop_previous_missing(client: TestClient) -> None:
     headers = _admin_headers()
     _open_round(client, headers)
-    response = client.post("/admin/autopickmatches", headers=headers)
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": date.today().isoformat()},
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "noop"
@@ -281,7 +302,11 @@ def test_autopick_noop_previous_not_closed(client: TestClient) -> None:
     )
     assert selected.status_code == 200, selected.text
 
-    response = client.post("/admin/autopickmatches", headers=headers)
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": date.today().isoformat()},
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "noop"
@@ -406,7 +431,11 @@ def test_autopick_selects_six_same_kickoff_preferring_hierarchy(
     # have finished gate. Autopick evaluates statuses[-2] when latest is empty.
     assert opened.status_code == 200, opened.text
 
-    response = client.post("/admin/autopickmatches", headers=headers)
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": saturday.isoformat()},
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "selected", body
@@ -512,8 +541,301 @@ def test_autopick_noop_perfect_slate(client: TestClient) -> None:
     opened = client.post("/admin/opensubround", headers=headers)
     assert opened.status_code == 200, opened.text
 
-    response = client.post("/admin/autopickmatches", headers=headers)
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": date.today().isoformat()},
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["status"] == "noop"
     assert body["reason"] == AutopickReason.PERFECT_SLATE_EXISTS
+
+
+def _prepare_finished_previous_and_open_next(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    previous_kickoff: datetime,
+) -> None:
+    """Seed one finished selected match, then force-open an empty next subround."""
+
+    async def _seed(session_factory):
+        async with session_factory() as session:
+            ingest = _ingest(session)
+            day = previous_kickoff.astimezone(UK).date()
+            season_start_year = day.year if day.month >= 8 else day.year - 1
+            league = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert league.id is not None
+            match = await ingest.upsert_match(
+                Match(
+                    external_id="gate-prev-finished",
+                    league_id=league.id,
+                    match_date=previous_kickoff,
+                    status=MatchStatus.FINISHED,
+                    home_team="Arsenal",
+                    away_team="Chelsea",
+                    home_score=2,
+                    away_score=1,
+                    match_minute=90,
+                )
+            )
+            await session.commit()
+            return match
+
+    previous = anyio.run(_seed, client.app.state.session_factory)
+    assert previous.id is not None
+    selected = client.post(
+        "/admin/addmatch",
+        headers=headers,
+        json={"id": previous.id, "game_number": 1},
+    )
+    assert selected.status_code == 200, selected.text
+
+    async def _finish(session_factory):
+        async with session_factory() as session:
+            repo = SqlAlchemyMatchRepository(session)
+            match = await repo.get(previous.id)
+            assert match is not None
+            match.status = MatchStatus.FINISHED
+            match.home_score = 2
+            match.away_score = 1
+            match.match_minute = 90
+            await repo.save(match)
+            await session.commit()
+
+    anyio.run(_finish, client.app.state.session_factory)
+    opened = client.post("/admin/opensubround", headers=headers)
+    assert opened.status_code == 200, opened.text
+
+
+def test_api_autopick_uses_requested_day_not_next_saturday(client: TestClient) -> None:
+    """Admin API must stay on match_date even when a later Saturday also has 6+."""
+    headers = _admin_headers()
+    _open_round(client, headers)
+
+    thursday = date(2026, 11, 12)  # fixed non-Saturday
+    saturday = date(2026, 11, 14)
+    assert thursday.weekday() == 3
+    assert saturday.weekday() == 5
+    previous_kickoff = _kickoff_uk(thursday - timedelta(days=7), 15)
+    thu_kickoff = _kickoff_uk(thursday, 15)
+    sat_kickoff = _kickoff_uk(saturday, 15)
+
+    _prepare_finished_previous_and_open_next(
+        client, headers, previous_kickoff=previous_kickoff
+    )
+
+    async def _seed_candidates(session_factory):
+        async with session_factory() as session:
+            ingest = _ingest(session)
+            season_start_year = thursday.year if thursday.month >= 8 else thursday.year - 1
+            pl = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert pl.id is not None
+            for index in range(6):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"thu-cand-{index}",
+                        league_id=pl.id,
+                        match_date=thu_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"ThuH{index}",
+                        away_team=f"ThuA{index}",
+                    )
+                )
+            for index in range(6):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"sat-cand-extra-{index}",
+                        league_id=pl.id,
+                        match_date=sat_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"SatH{index}",
+                        away_team=f"SatA{index}",
+                    )
+                )
+            await session.commit()
+
+    anyio.run(_seed_candidates, client.app.state.session_factory)
+
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": thursday.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "selected", body
+    assert len(body["matches"]) == 6
+    for match in body["matches"]:
+        assert match["home_team"].startswith("ThuH")
+    assert (
+        datetime.fromisoformat(body["kickoff"].replace("Z", "+00:00")) == thu_kickoff
+    )
+
+
+def test_api_autopick_does_not_lookahead_when_day_insufficient(
+    client: TestClient,
+) -> None:
+    """If match_date lacks a ≥6 kickoff group, API no-ops even if Saturday has one."""
+    headers = _admin_headers()
+    _open_round(client, headers)
+
+    thursday = date(2026, 11, 12)
+    saturday = date(2026, 11, 14)
+    previous_kickoff = _kickoff_uk(thursday - timedelta(days=7), 15)
+    thu_kickoff = _kickoff_uk(thursday, 15)
+    sat_kickoff = _kickoff_uk(saturday, 15)
+
+    _prepare_finished_previous_and_open_next(
+        client, headers, previous_kickoff=previous_kickoff
+    )
+
+    async def _seed_candidates(session_factory):
+        async with session_factory() as session:
+            ingest = _ingest(session)
+            season_start_year = thursday.year if thursday.month >= 8 else thursday.year - 1
+            pl = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert pl.id is not None
+            # Only 3 on Thursday — insufficient for API day scope.
+            for index in range(3):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"thu-short-{index}",
+                        league_id=pl.id,
+                        match_date=thu_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"ShortH{index}",
+                        away_team=f"ShortA{index}",
+                    )
+                )
+            for index in range(6):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"sat-full-{index}",
+                        league_id=pl.id,
+                        match_date=sat_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"FullH{index}",
+                        away_team=f"FullA{index}",
+                    )
+                )
+            await session.commit()
+
+    anyio.run(_seed_candidates, client.app.state.session_factory)
+
+    response = client.post(
+        "/admin/autopickmatches",
+        headers=headers,
+        json={"match_date": thursday.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "noop"
+    assert body["reason"] == AutopickReason.INSUFFICIENT_SAME_KICKOFF
+
+
+def test_cli_lookahead_picks_next_saturday_without_match_date(client: TestClient) -> None:
+    """Service/CLI path (match_date=None) looks ahead to next Saturday from now."""
+    headers = _admin_headers()
+    _open_round(client, headers)
+
+    # Wednesday → next Saturday is +3 days.
+    wednesday = date(2026, 11, 11)
+    saturday = date(2026, 11, 14)
+    assert next_saturday(wednesday) == saturday
+    previous_kickoff = _kickoff_uk(saturday - timedelta(days=7), 15)
+    sat_kickoff = _kickoff_uk(saturday, 15)
+
+    _prepare_finished_previous_and_open_next(
+        client, headers, previous_kickoff=previous_kickoff
+    )
+
+    async def _seed_and_run(session_factory):
+        async with session_factory() as session:
+            ingest = _ingest(session)
+            season_start_year = saturday.year if saturday.month >= 8 else saturday.year - 1
+            pl = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert pl.id is not None
+            for index in range(6):
+                await ingest.upsert_match(
+                    Match(
+                        external_id=f"cli-sat-{index}",
+                        league_id=pl.id,
+                        match_date=sat_kickoff,
+                        status=MatchStatus.SCHEDULED,
+                        home_team=f"CliH{index}",
+                        away_team=f"CliA{index}",
+                    )
+                )
+            await session.commit()
+
+            from baked.superiorsix.repositories.predictions import (
+                SqlAlchemyPredictionRepository,
+            )
+            from baked.superiorsix.repositories.rounds import SqlAlchemyRoundRepository
+            from baked.superiorsix.repositories.subrounds import (
+                SqlAlchemySubroundRepository,
+            )
+            from baked.superiorsix.services.autopick import AutopickService
+            from baked.superiorsix.services.predictions import PredictionService
+            from baked.superiorsix.services.rounds import RoundService
+            from baked.superiorsix.services.subrounds import SubroundService
+
+            leagues = LeagueService(
+                SqlAlchemyLeagueRepository(session),
+                SqlAlchemyMatchRepository(session),
+            )
+            matches = MatchService(SqlAlchemyMatchRepository(session), leagues)
+            rounds = RoundService(SqlAlchemyRoundRepository(session))
+            subrounds = SubroundService(
+                SqlAlchemySubroundRepository(session),
+                SqlAlchemyMatchRepository(session),
+                rounds,
+            )
+            predictions = PredictionService(
+                SqlAlchemyPredictionRepository(session),
+                rounds,
+                matches,
+            )
+            autopick = AutopickService(
+                rounds=rounds,
+                subrounds=subrounds,
+                matches=matches,
+                predictions=predictions,
+            )
+            # No match_date → look ahead from Wednesday to Saturday.
+            now = datetime(2026, 11, 11, 12, 0, tzinfo=UK)
+            result = await autopick.run(now=now, match_date=None)
+            await session.commit()
+            return result
+
+    result = anyio.run(_seed_and_run, client.app.state.session_factory)
+    assert result.status == "selected", result.message
+    assert len(result.matches) == 6
+    assert all(match.home_team.startswith("CliH") for match in result.matches)
+    assert result.kickoff == sat_kickoff.astimezone(UTC)

@@ -36,6 +36,7 @@ from baked.superiorsix.api.schemas import (
     AdminPlayerPredictionsResponse,
     AdminPredictionBoardResponse,
     AdminPredictionsListResponse,
+    AutopickMatchesRequest,
     AutopickMatchesResponse,
     BulkSelectMatchItem,
     CurrentRoundResponse,
@@ -1023,16 +1024,20 @@ async def add_matches(
 @router.post("/autopickmatches", response_model=AutopickMatchesResponse)
 async def autopick_matches(
     _: RequireAdmin,
+    payload: AutopickMatchesRequest,
     autopick: Annotated[AutopickService, Depends(get_autopick_service)],
     team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
 ) -> AutopickMatchesResponse:
     """Automatically select the next subround slate of exactly six fixtures (SS-229).
 
+    Requires ``match_date`` (the Matches scrubber day). Only fixtures on that
+    UK calendar day are considered — no Saturday look-ahead (CLI keeps that).
+
     Expected gate failures return HTTP 200 with ``status=\"noop\"`` and a stable
     ``reason`` (see AutopickMatchesResponse). Auth failures remain 401/403.
     """
     try:
-        result = await autopick.run()
+        result = await autopick.run(match_date=payload.match_date)
     except MatchSelectionError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

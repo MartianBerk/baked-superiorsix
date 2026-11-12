@@ -328,6 +328,15 @@ class SubroundResponse(BaseModel):
         )
 
 
+class AutopickMatchesRequest(BaseModel):
+    """Admin autopick day scope (SS-229).
+
+    ``match_date`` is the Matches scrubber day — API does not look ahead.
+    """
+
+    match_date: date = Field(description="Calendar day currently viewed (ISO YYYY-MM-DD)")
+
+
 class AutopickMatchesResponse(BaseModel):
     """Admin trigger for automated slate pick (SS-229).
 

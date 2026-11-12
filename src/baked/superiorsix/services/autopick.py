@@ -59,7 +59,7 @@ _NOOP_MESSAGES: dict[AutopickReason, str] = {
         "A perfect slate already exists on the previous subround; end the round instead."
     ),
     AutopickReason.INSUFFICIENT_SAME_KICKOFF: (
-        "Not enough eligible fixtures share one kickoff on the next Saturday."
+        "Not enough eligible fixtures share one kickoff on the selected day."
     ),
     AutopickReason.SLATE_ALREADY_COMPLETE: (
         "Editing subround already has a full slate of 6; autopick skipped."
@@ -175,13 +175,18 @@ def uk_local(value: datetime) -> datetime:
     return value.astimezone(UK_TZ)
 
 
-def is_preferred_saturday_1500(kickoff: datetime) -> bool:
+def is_preferred_1500(kickoff: datetime) -> bool:
+    """True when kickoff is 15:00 UK local (any weekday)."""
     local = uk_local(kickoff)
     return (
-        local.weekday() == 5
-        and local.hour == PREFERRED_KICKOFF_TIME.hour
+        local.hour == PREFERRED_KICKOFF_TIME.hour
         and local.minute == PREFERRED_KICKOFF_TIME.minute
     )
+
+
+def is_preferred_saturday_1500(kickoff: datetime) -> bool:
+    local = uk_local(kickoff)
+    return local.weekday() == 5 and is_preferred_1500(kickoff)
 
 
 def group_by_kickoff(matches: list[Match]) -> dict[datetime, list[Match]]:
@@ -196,17 +201,17 @@ def group_by_kickoff(matches: list[Match]) -> dict[datetime, list[Match]]:
 def choose_kickoff_group(
     groups: dict[datetime, list[Match]],
     *,
-    saturday: date,
+    day: date,
 ) -> datetime | None:
-    """Pick one shared kickoff on ``saturday`` with ≥6 fixtures.
+    """Pick one shared kickoff on UK calendar ``day`` with ≥6 fixtures.
 
-    Prefer Saturday 15:00 UK when that group qualifies; otherwise the largest
-    qualifying group on that Saturday (earliest kickoff as tie-break).
+    Prefer 15:00 UK when that group qualifies; otherwise the largest
+    qualifying group on that day (earliest kickoff as tie-break).
     """
     qualifying: list[tuple[datetime, list[Match]]] = []
     for kickoff, fixtures in groups.items():
         local = uk_local(kickoff)
-        if local.date() != saturday:
+        if local.date() != day:
             continue
         if len(fixtures) < SLATE_SIZE:
             continue
@@ -214,11 +219,7 @@ def choose_kickoff_group(
     if not qualifying:
         return None
 
-    preferred = [
-        kickoff
-        for kickoff, _ in qualifying
-        if is_preferred_saturday_1500(kickoff)
-    ]
+    preferred = [kickoff for kickoff, _ in qualifying if is_preferred_1500(kickoff)]
     if preferred:
         return preferred[0]
 
@@ -278,7 +279,18 @@ class AutopickService:
         self._matches = matches
         self._predictions = predictions
 
-    async def run(self, *, now: datetime | None = None) -> AutopickResult:
+    async def run(
+        self,
+        *,
+        now: datetime | None = None,
+        match_date: date | None = None,
+    ) -> AutopickResult:
+        """Run autopick gates + selection.
+
+        ``match_date`` (admin API): only consider that UK calendar day — no
+        look-ahead. ``None`` (CLI / orchestration): look ahead to the next
+        available Saturday from ``now``.
+        """
         clock = now or datetime.now(UTC)
         round_ = await self._rounds.current_or_none()
         if round_ is None or round_.id is None:
@@ -311,9 +323,13 @@ class AutopickService:
                 subround_status=editing,
             )
 
-        saturday = next_saturday(uk_local(clock).date())
-        # Search the UK Saturday calendar day in UTC (may span two UTC days).
-        window_start = datetime.combine(saturday, time.min, tzinfo=UK_TZ).astimezone(UTC)
+        if match_date is None:
+            target_day = next_saturday(uk_local(clock).date())
+        else:
+            target_day = match_date
+
+        # UK calendar day window in UTC (may span two UTC days).
+        window_start = datetime.combine(target_day, time.min, tzinfo=UK_TZ).astimezone(UTC)
         window_end = window_start + timedelta(days=1)
         candidates = [
             match
@@ -321,7 +337,7 @@ class AutopickService:
             if _eligible(match)
         ]
         groups = group_by_kickoff(candidates)
-        kickoff = choose_kickoff_group(groups, saturday=saturday)
+        kickoff = choose_kickoff_group(groups, day=target_day)
         if kickoff is None:
             return AutopickResult.noop(AutopickReason.INSUFFICIENT_SAME_KICKOFF)
 

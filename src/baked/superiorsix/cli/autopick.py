@@ -1,7 +1,8 @@
 """CLI entry for automated match slate autopick (SS-229).
 
-Scheduler wiring is out of scope; this command runs the same service as
-``POST /admin/autopickmatches``.
+Scheduler wiring is out of scope. Uses the same AutopickService as
+``POST /admin/autopickmatches``, but with **next-Saturday look-ahead**
+(``match_date=None``). The admin API instead scopes to a requested day.
 """
 
 from __future__ import annotations
