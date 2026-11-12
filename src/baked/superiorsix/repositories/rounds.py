@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from baked.superiorsix.db.models import (
     MatchRecord,
-    PredictionRecord,
     RoundRecord,
     RoundWinnerRecord,
 )
@@ -19,6 +18,33 @@ from baked.superiorsix.domain.models import Round
 def _day_bounds(day: date) -> tuple[datetime, datetime]:
     start = datetime.combine(day, time.min, tzinfo=UTC)
     return start, start + timedelta(days=1)
+
+
+async def count_selected_match_days(
+    session: AsyncSession,
+    *,
+    start_date: date,
+    end_date: date,
+) -> int:
+    """Distinct UTC days with a selected Super Six match in ``[start_date, end_date]``."""
+    match_day = func.date(MatchRecord.match_date)
+    start, _ = _day_bounds(start_date)
+    _, end = _day_bounds(end_date)
+    count = await session.scalar(
+        select(func.count(func.distinct(match_day))).where(
+            MatchRecord.use_match.is_(True),
+            MatchRecord.match_date >= start,
+            MatchRecord.match_date < end,
+        )
+    )
+    return int(count or 0)
+
+
+def freeze_amount_won(*, buy_in_pence: int, match_days: int, n_players: int) -> int:
+    """Historic jackpot: ``buy_in × match-days × roster count`` (everyone paid-in)."""
+    if buy_in_pence < 0 or match_days < 0 or n_players < 0:
+        return 0
+    return buy_in_pence * match_days * n_players
 
 
 class RoundRepository(Protocol):
@@ -66,6 +92,7 @@ class SqlAlchemyRoundRepository:
             end_date=round_.end_date,
             buy_in_pence=round_.buy_in_pence,
             amount_won=round_.amount_won,
+            n_players=round_.n_players,
         )
         self._session.add(record)
         await self._session.commit()
@@ -82,6 +109,7 @@ class SqlAlchemyRoundRepository:
         record.end_date = round_.end_date
         record.buy_in_pence = round_.buy_in_pence
         record.amount_won = round_.amount_won
+        record.n_players = round_.n_players
         await self._session.commit()
         await self._session.refresh(record)
         return await self._to_domain(record)
@@ -95,32 +123,28 @@ class SqlAlchemyRoundRepository:
         record.start_date = round_.start_date
         record.end_date = round_.end_date
         record.buy_in_pence = round_.buy_in_pence
+        record.n_players = round_.n_players
         for auth_id in winner_ids:
             self._session.add(RoundWinnerRecord(round_id=round_.id, auth_id=auth_id))
-        # Freeze display pot at close (same formula Stats used when amount_won is unset).
-        record.amount_won = await self._compute_amount_won(record)
+        # Freeze display pot at close from the roster snapshot (not distinct predictors).
+        if record.amount_won is None:
+            record.amount_won = await self._compute_amount_won(record)
         await self._session.commit()
         await self._session.refresh(record)
         return await self._to_domain(record)
 
     async def _compute_amount_won(self, record: RoundRecord) -> int:
         assert record.end_date is not None
-        players = await self._session.scalar(
-            select(func.count(func.distinct(PredictionRecord.auth_id))).where(
-                PredictionRecord.round_id == record.id
-            )
+        match_days = await count_selected_match_days(
+            self._session,
+            start_date=record.start_date,
+            end_date=record.end_date,
         )
-        match_day = func.date(MatchRecord.match_date)
-        start, _ = _day_bounds(record.start_date)
-        _, end = _day_bounds(record.end_date)
-        matches = await self._session.scalar(
-            select(func.count(func.distinct(match_day))).where(
-                MatchRecord.use_match.is_(True),
-                MatchRecord.match_date >= start,
-                MatchRecord.match_date < end,
-            )
+        return freeze_amount_won(
+            buy_in_pence=record.buy_in_pence,
+            match_days=match_days,
+            n_players=int(record.n_players or 0),
         )
-        return record.buy_in_pence * int(matches or 0) * int(players or 0)
 
     async def _winner_ids(self, round_id: int) -> list[UUID]:
         result = await self._session.execute(
@@ -138,5 +162,6 @@ class SqlAlchemyRoundRepository:
             end_date=record.end_date,
             buy_in_pence=record.buy_in_pence,
             amount_won=record.amount_won,
+            n_players=record.n_players,
             winner_ids=winners,
         )

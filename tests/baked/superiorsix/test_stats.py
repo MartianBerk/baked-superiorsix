@@ -347,3 +347,85 @@ def test_historicrounds_requires_admin(client: TestClient) -> None:
     player_token, _ = make_access_token(roles=["player"])
     forbidden = client.get("/admin/historicrounds", headers=auth_header(player_token))
     assert forbidden.status_code == 403
+
+
+def test_winners_uses_active_roster_not_predictors(
+    client: TestClient,
+    user_profiles: FakeUserProfileClient,
+) -> None:
+    """Players who skip predictions still count toward #players and jackpot."""
+    session_factory = client.app.state.session_factory
+    kickoff = datetime(2026, 3, 14, 15, 0, tzinfo=UTC)
+    fixture = anyio.run(
+        partial(
+            _seed_fixture,
+            session_factory,
+            external_id="roster-winners",
+            home="Arsenal",
+            away="Chelsea",
+            kickoff=kickoff,
+        )
+    )
+    assert fixture.id is not None
+
+    admin = _admin_headers()
+    opened = client.post(
+        "/admin/addround",
+        headers=admin,
+        json={"start_date": "2026-03-01", "buy_in_pence": 200},
+    )
+    assert opened.status_code == 200, opened.text
+    selected = client.post(
+        "/admin/addmatch",
+        headers=admin,
+        json={"id": fixture.id, "game_number": 1},
+    )
+    assert selected.status_code == 200, selected.text
+
+    ada = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    bob = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+    cara = UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
+    inactive = UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
+    user_profiles.seed(ada, first_name="Ada", last_name="Lovelace")
+    user_profiles.seed(bob, first_name="Bob", last_name="Builder")
+    user_profiles.seed(cara, first_name="Cara", last_name="Skipped")
+    user_profiles.seed(
+        inactive, first_name="Old", last_name="Timer", active=False
+    )
+
+    for auth_id in (ada, bob):
+        added = client.post(
+            "/admin/addprediction",
+            headers=admin,
+            json={
+                "auth_id": str(auth_id),
+                "match_id": fixture.id,
+                "prediction": "home",
+            },
+        )
+        assert added.status_code == 200, added.text
+
+    anyio.run(
+        partial(
+            _finish_match,
+            session_factory,
+            match_id=fixture.id,
+            home_score=1,
+            away_score=0,
+        )
+    )
+    ended = client.post(
+        "/admin/endround",
+        headers=admin,
+        params={"endDate": "20-03-2026"},
+        json={"winner_ids": [str(ada)]},
+    )
+    assert ended.status_code == 200, ended.text
+
+    winners = client.get("/stats/winners")
+    assert winners.status_code == 200, winners.text
+    row = winners.json()["rounds"][0]
+    assert row["players"] == 3
+    assert row["matches"] == 1
+    assert row["jackpot"] == 200 * 1 * 3
+    assert row["winner"] == "Ada Lovelace"

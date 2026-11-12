@@ -54,6 +54,8 @@ class RoundRecord(Base):
     buy_in_pence: Mapped[int] = mapped_column(Integer)
     # Frozen pot (pence) at close / legacy import; Stats Winners prefers this when set.
     amount_won: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Active roster count frozen at close (same source as gameday meta n_players).
+    n_players: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RoundWinnerRecord(Base):
