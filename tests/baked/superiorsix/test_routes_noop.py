@@ -62,6 +62,7 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/listsubrounds", "admin"),
     ("GET", "/admin/currentsubround", "admin"),
     ("POST", "/admin/opensubround", "admin"),
+    ("POST", "/admin/undosubround", "admin"),
     ("GET", "/admin/listmatches", "admin"),
     ("GET", "/admin/getmatch", "admin"),
     ("POST", "/admin/addmatch", "admin"),

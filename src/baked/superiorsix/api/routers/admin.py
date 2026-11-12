@@ -460,6 +460,24 @@ async def open_subround(
     return SubroundResponse.from_status(status_)
 
 
+@router.post("/undosubround", response_model=SubroundResponse)
+async def undo_subround(
+    _: RequireAdmin,
+    subround_service: Annotated[SubroundService, Depends(get_subround_service)],
+) -> SubroundResponse:
+    """Undo an accidental empty latest subround (SS-220).
+
+    Deletes the highest-sequence subround when it has **no selected matches**,
+    restoring the previous slate as the editing target. 400 when unsafe:
+    ``Cannot undo: subround has matches selected.`` or ``Nothing to undo.``
+    """
+    try:
+        status_ = await subround_service.undo_latest_open()
+    except (RoundNotFoundError, SubroundError, SubroundNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return SubroundResponse.from_status(status_)
+
+
 @router.get("/listpredictions", response_model=AdminPredictionsListResponse)
 async def list_predictions(
     _: RequireAdmin,

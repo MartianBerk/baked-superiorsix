@@ -246,6 +246,98 @@ def test_force_open_subround_separates_slates(client: TestClient) -> None:
     assert len(player_view.json()["subrounds"]) == 3
 
 
+def test_undo_subround_restores_previous_when_empty(client: TestClient) -> None:
+    """Empty force-opened slate can be undone; previous becomes editing again."""
+    sat_id, _, _, sat_day, _, _ = anyio.run(
+        _seed_fixtures, client.app.state.session_factory
+    )
+    headers = _admin(client)
+
+    sat = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": _fmt(sat_day)},
+        json=[{"id": sat_id, "game_number": 1}],
+    )
+    assert sat.status_code == 200
+    first_id = sat.json()["matches"][0]["subround_id"]
+
+    opened = client.post("/admin/opensubround", headers=headers)
+    assert opened.status_code == 200
+    second_id = opened.json()["id"]
+    assert second_id != first_id
+    assert opened.json()["match_count"] == 0
+
+    listed = client.get("/admin/listsubrounds", headers=headers)
+    assert [row["id"] for row in listed.json()["subrounds"]] == [first_id, second_id]
+    assert listed.json()["subrounds"][0]["is_open_for_editing"] is False
+    assert listed.json()["subrounds"][1]["is_open_for_editing"] is True
+
+    undone = client.post("/admin/undosubround", headers=headers)
+    assert undone.status_code == 200, undone.text
+    body = undone.json()
+    assert body["id"] == first_id
+    assert body["is_open_for_editing"] is True
+    assert body["match_count"] == 1
+
+    listed = client.get("/admin/listsubrounds", headers=headers)
+    rows = listed.json()["subrounds"]
+    assert [row["id"] for row in rows] == [first_id]
+    assert rows[0]["is_open_for_editing"] is True
+
+    current = client.get("/admin/currentsubround", headers=headers)
+    assert current.json()["current_subround"]["id"] == first_id
+
+
+def test_undo_subround_refuses_when_matches_selected(client: TestClient) -> None:
+    """Undo is refused once the new subround has any selected matches."""
+    sat_id, mon_id, _, sat_day, mon_day, _ = anyio.run(
+        _seed_fixtures, client.app.state.session_factory
+    )
+    headers = _admin(client)
+
+    sat = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": _fmt(sat_day)},
+        json=[{"id": sat_id, "game_number": 1}],
+    )
+    assert sat.status_code == 200
+    first_id = sat.json()["matches"][0]["subround_id"]
+
+    opened = client.post("/admin/opensubround", headers=headers)
+    assert opened.status_code == 200
+    second_id = opened.json()["id"]
+
+    mon = client.post(
+        "/admin/addmatches",
+        headers=headers,
+        params={"matchDate": _fmt(mon_day)},
+        json=[{"id": mon_id, "game_number": 1}],
+    )
+    assert mon.status_code == 200
+    assert mon.json()["matches"][0]["subround_id"] == second_id
+
+    refused = client.post("/admin/undosubround", headers=headers)
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "Cannot undo: subround has matches selected."
+
+    listed = client.get("/admin/listsubrounds", headers=headers)
+    assert [row["id"] for row in listed.json()["subrounds"]] == [first_id, second_id]
+
+
+def test_undo_subround_refuses_with_single_subround(client: TestClient) -> None:
+    """Nothing to undo when only one subround exists (even if empty)."""
+    headers = _admin(client)
+    opened = client.post("/admin/opensubround", headers=headers)
+    assert opened.status_code == 200
+    assert opened.json()["match_count"] == 0
+
+    refused = client.post("/admin/undosubround", headers=headers)
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == "Nothing to undo."
+
+
 def test_currentsubround_create_when_previous_over(client: TestClient) -> None:
     past_day = date.today() - timedelta(days=3)
     async def seed_past():
