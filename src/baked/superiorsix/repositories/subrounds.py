@@ -29,6 +29,8 @@ class SubroundRepository(Protocol):
 
     async def save(self, subround: Subround) -> Subround: ...
 
+    async def delete(self, subround_id: int) -> None: ...
+
 
 class SqlAlchemySubroundRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -87,6 +89,13 @@ class SqlAlchemySubroundRepository:
         await self._session.commit()
         await self._session.refresh(record)
         return _to_domain(record)
+
+    async def delete(self, subround_id: int) -> None:
+        record = await self._session.get(SubroundRecord, subround_id)
+        if record is None:
+            return
+        await self._session.delete(record)
+        await self._session.commit()
 
 
 def _to_domain(record: SubroundRecord) -> Subround:

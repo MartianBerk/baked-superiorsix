@@ -198,6 +198,26 @@ class SubroundService:
         assert created.id is not None
         return _status_for(created, [], now=clock, is_open_for_editing=True)
 
+    async def delete_empty(
+        self,
+        subround_id: int,
+        *,
+        now: datetime | None = None,
+    ) -> SubroundStatus | None:
+        """Delete a subround that has no selected matches (SS-220).
+
+        Refuses when the subround already has a slate. Returns the open-for-editing
+        status for the parent round after delete (``None`` when none remain open).
+        """
+        clock = now or datetime.now(UTC)
+        subround = await self.get(subround_id)
+        assert subround.id is not None
+        selected = await self._matches.list_selected_for_subround(subround.id)
+        if selected:
+            raise SubroundError("Cannot delete: subround has matches selected.")
+        await self._subrounds.delete(subround.id)
+        return await self._open_editing_for_round(subround.round_id, clock)
+
     async def require_open_for_selection(
         self,
         *,
