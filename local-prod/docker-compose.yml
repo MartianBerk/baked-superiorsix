@@ -24,7 +24,9 @@ services:
       AUTH_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       AUTH_JWT_KEY_ID: ${JWT_KEY_ID:-}
       AUTH_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
-      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      # Match baked-auth default (~31 days / 744h). Compose injects this env, so a
+      # short :- default here overrides the Python Settings default even after #18.
+      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-44640}
       AUTH_DEFAULT_AUDIENCE: ${AUTH_DEFAULT_AUDIENCE:-}
       AUTH_CORS_ORIGINS: ${CORS_ORIGINS:-'["https://superiorsix.co.uk","http://127.0.0.1:8040"]'}
       AUTH_DATABASE_URL: sqlite+aiosqlite:////data/baked_auth.db
