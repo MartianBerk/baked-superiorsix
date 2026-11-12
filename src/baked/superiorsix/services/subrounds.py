@@ -198,31 +198,25 @@ class SubroundService:
         assert created.id is not None
         return _status_for(created, [], now=clock, is_open_for_editing=True)
 
-    async def undo_latest_open(
+    async def delete_empty(
         self,
+        subround_id: int,
         *,
         now: datetime | None = None,
-    ) -> SubroundStatus:
-        """Delete an empty accidental latest subround and restore the previous.
+    ) -> SubroundStatus | None:
+        """Delete a subround that has no selected matches (SS-220).
 
-        Safe only when the latest subround has no selected matches. Refuses when
-        there is no previous subround or the latest already has a slate.
+        Refuses when the subround already has a slate. Returns the open-for-editing
+        status for the parent round after delete (``None`` when none remain open).
         """
-        round_ = await self._require_current_round()
-        assert round_.id is not None
         clock = now or datetime.now(UTC)
-        subrounds = await self._subrounds.list_for_round(round_.id)
-        if len(subrounds) < 2:
-            raise SubroundError("Nothing to undo.")
-        latest = subrounds[-1]
-        assert latest.id is not None
-        selected = await self._matches.list_selected_for_subround(latest.id)
+        subround = await self.get(subround_id)
+        assert subround.id is not None
+        selected = await self._matches.list_selected_for_subround(subround.id)
         if selected:
-            raise SubroundError("Cannot undo: subround has matches selected.")
-        await self._subrounds.delete(latest.id)
-        previous = subrounds[-2]
-        assert previous.id is not None
-        return await self.status_for_id(previous.id, now=clock)
+            raise SubroundError("Cannot delete: subround has matches selected.")
+        await self._subrounds.delete(subround.id)
+        return await self._open_editing_for_round(subround.round_id, clock)
 
     async def require_open_for_selection(
         self,

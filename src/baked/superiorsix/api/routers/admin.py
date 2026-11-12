@@ -460,22 +460,28 @@ async def open_subround(
     return SubroundResponse.from_status(status_)
 
 
-@router.post("/undosubround", response_model=SubroundResponse)
-async def undo_subround(
+@router.delete("/subrounds/{subround_id}", response_model=CurrentSubroundResponse)
+async def delete_subround(
     _: RequireAdmin,
+    subround_id: int,
     subround_service: Annotated[SubroundService, Depends(get_subround_service)],
-) -> SubroundResponse:
-    """Undo an accidental empty latest subround (SS-220).
+) -> CurrentSubroundResponse:
+    """Delete an empty subround (SS-220).
 
-    Deletes the highest-sequence subround when it has **no selected matches**,
-    restoring the previous slate as the editing target. 400 when unsafe:
-    ``Cannot undo: subround has matches selected.`` or ``Nothing to undo.``
+    Refuses with 400 ``Cannot delete: subround has matches selected.`` when the
+    slate is not empty. Returns the new open-for-editing subround (or ``null``).
     """
     try:
-        status_ = await subround_service.undo_latest_open()
-    except (RoundNotFoundError, SubroundError, SubroundNotFoundError) as exc:
+        status_ = await subround_service.delete_empty(subround_id)
+    except SubroundNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except SubroundError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return SubroundResponse.from_status(status_)
+    return CurrentSubroundResponse(
+        current_subround=(
+            None if status_ is None else SubroundResponse.from_status(status_)
+        )
+    )
 
 
 @router.get("/listpredictions", response_model=AdminPredictionsListResponse)
