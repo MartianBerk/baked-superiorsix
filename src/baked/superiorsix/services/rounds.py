@@ -3,14 +3,32 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from baked.superiorsix.domain.exceptions import RoundError, RoundNotFoundError
+from baked.superiorsix.clients.auth_admin import AuthAdminGateway
+from baked.superiorsix.clients.user_profiles import UserProfileGateway
+from baked.superiorsix.core.config import Settings
+from baked.superiorsix.domain.exceptions import (
+    AuthAdminError,
+    RosterError,
+    RoundError,
+    RoundNotFoundError,
+)
 from baked.superiorsix.domain.models import Round
 from baked.superiorsix.repositories.rounds import RoundRepository
 
 
 class RoundService:
-    def __init__(self, rounds: RoundRepository) -> None:
+    def __init__(
+        self,
+        rounds: RoundRepository,
+        *,
+        profiles: UserProfileGateway | None = None,
+        auth_admin: AuthAdminGateway | None = None,
+        settings: Settings | None = None,
+    ) -> None:
         self._rounds = rounds
+        self._profiles = profiles
+        self._auth_admin = auth_admin
+        self._settings = settings
 
     async def get(self, round_id: int) -> Round:
         round_ = await self._rounds.get(round_id)
@@ -51,4 +69,24 @@ class RoundService:
             unique.append(auth_id)
         round_ = await self.current()
         round_.end_date = end_date
+        round_.n_players = await self._active_roster_count()
         return await self._rounds.end_with_winners(round_, unique)
+
+    async def _active_roster_count(self) -> int:
+        """Same source as gameday meta ``n_players`` (active baked-user roster)."""
+        if self._profiles is None or self._auth_admin is None or self._settings is None:
+            return 0
+        email = self._settings.auth_admin_email
+        password = self._settings.auth_admin_password
+        if not email or password is None:
+            return 0
+        try:
+            token = await self._auth_admin.login_user(
+                email=email,
+                password=password.get_secret_value(),
+                audience=self._settings.jwt_audience,
+            )
+            roster = await self._profiles.list_profiles(token, active=True)
+        except (AuthAdminError, RosterError):
+            return 0
+        return len(roster)

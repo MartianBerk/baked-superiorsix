@@ -21,6 +21,7 @@ from baked.superiorsix.db.models import (
 )
 from baked.superiorsix.domain.exceptions import AuthAdminError, RosterError
 from baked.superiorsix.domain.models import MatchStatus, PredictionChoice
+from baked.superiorsix.repositories.rounds import count_selected_match_days, freeze_amount_won
 from baked.superiorsix.services.matches import day_bounds
 
 AggregateScope = Literal["current", "previous"]
@@ -162,7 +163,11 @@ class StatsService:
         return aggregates, target.id
 
     async def historic_rounds(self, *, bearer_token: str | None = None) -> list[HistoricRound]:
-        """Full closed-round winners archive (legacy HISTORIC_ROUNDS)."""
+        """Full closed-round winners archive (legacy HISTORIC_ROUNDS).
+
+        ``players`` is the roster snapshot stored on the round (``n_players``),
+        not distinct predictors. ``jackpot`` prefers frozen ``amount_won``.
+        """
         roster = await self._load_roster(bearer_token=bearer_token, active=None)
         names = {profile.auth_id: display_name(profile) for profile in roster}
 
@@ -186,27 +191,14 @@ class StatsService:
         for round_id, auth_id in winners_result.all():
             winners_by_round.setdefault(int(round_id), []).append(auth_id)
 
-        players_result = await self._session.execute(
-            select(PredictionRecord.round_id, func.count(func.distinct(PredictionRecord.auth_id)))
-            .where(PredictionRecord.round_id.in_(round_ids))
-            .group_by(PredictionRecord.round_id)
-        )
-        players_by_round = {int(round_id): int(count) for round_id, count in players_result.all()}
-
-        match_day = func.date(MatchRecord.match_date)
         match_days_by_round: dict[int, int] = {}
         for record in closed:
             assert record.end_date is not None
-            start, _ = day_bounds(record.start_date)
-            _, end = day_bounds(record.end_date)
-            day_count = await self._session.scalar(
-                select(func.count(func.distinct(match_day))).where(
-                    MatchRecord.use_match.is_(True),
-                    MatchRecord.match_date >= start,
-                    MatchRecord.match_date < end,
-                )
+            match_days_by_round[record.id] = await count_selected_match_days(
+                self._session,
+                start_date=record.start_date,
+                end_date=record.end_date,
             )
-            match_days_by_round[record.id] = int(day_count or 0)
 
         historic: list[HistoricRound] = []
         for record in closed:
@@ -219,12 +211,16 @@ class StatsService:
                     key=lambda aid: (names.get(aid) or str(aid)).lower(),
                 )
             ]
-            players = players_by_round.get(record.id, 0)
+            players = int(record.n_players or 0)
             matches = match_days_by_round.get(record.id, 0)
             if record.amount_won is not None:
                 jackpot = record.amount_won
             else:
-                jackpot = record.buy_in_pence * matches * players
+                jackpot = freeze_amount_won(
+                    buy_in_pence=record.buy_in_pence,
+                    match_days=matches,
+                    n_players=players,
+                )
             historic.append(
                 HistoricRound(
                     round_id=record.id,

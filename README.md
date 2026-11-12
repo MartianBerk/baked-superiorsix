@@ -105,6 +105,26 @@ invite already exists.
 | `poetry run baked-superiorsix-legacy-import validate\|load --data-dir …` | Legacy CSV import (`rounds.amount_won` optional) |
 | `poetry run baked-superiorsix-purge matches --league CODE --before-date YYYY-MM-DD` | Delete unreferenced old matches for one league (`--dry-run`; warns if under 2y history left) |
 | `poetry run baked-superiorsix-purge predictions --before-round-id N` | Delete old closed-round predictions; refuses current/current−1; keep winners/pots |
+| `poetry run baked-superiorsix-winners-backfill ensure` | **TEMPORARY SS-212:** `ALTER TABLE rounds ADD COLUMN n_players` in-place (no recreate) |
+| `poetry run baked-superiorsix-winners-backfill load --csv FILE` | **TEMPORARY:** backfill closed-round `n_players` / `amount_won` from CSV |
+
+#### Winners roster backfill CSV (temporary; delete CLI later)
+
+`GET /stats/winners` uses frozen `rounds.n_players` (active roster at close, same as gameday `n_players`) — not distinct predictors. Future `endround` snapshots this automatically. Past closed rounds: run `ensure` then `load` against the live DB (no recreate).
+
+```csv
+round_id,n_players,amount_won
+21,16,19200
+22,16,
+```
+
+| Column | Required | Notes |
+|--------|----------|-------|
+| `round_id` | yes | aliases: `id`, `round` |
+| `n_players` | one of these | aliases: `players`; active roster count for that round |
+| `amount_won` | one of these | integer pence; aliases: `jackpot`, `prize_pot_pence`. Blank = leave stored pot. `--recompute-amount-won` sets `buy_in × match-days × n_players` when blank. |
+
+To revert later: drop `baked-superiorsix-winners-backfill`, `cli/winners_backfill.py`, and `ensure_round_n_players` in `db/session.py`. Keep the `n_players` column on the model.
 
 Providers:
 

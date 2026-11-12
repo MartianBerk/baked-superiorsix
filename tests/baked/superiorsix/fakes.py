@@ -26,10 +26,11 @@ class FakeUserProfileClient:
         last_name: str,
         **extra: Any,
     ) -> RosterProfile:
+        active = bool(extra.get("active", True))
         profile = {
             "first_name": first_name,
             "last_name": last_name,
-            "active": True,
+            "active": active,
             **extra,
         }
         created = RosterProfile(
@@ -40,7 +41,7 @@ class FakeUserProfileClient:
             nickname=extra.get("nickname"),
             email=extra.get("email"),
             avatar_url=extra.get("avatar_url"),
-            active=True,
+            active=active,
             profile=profile,
         )
         self._by_auth[auth_id] = created

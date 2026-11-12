@@ -27,6 +27,7 @@ baked-superiorsix-auto-score = "baked.superiorsix.process.extractors.cli:auto_sc
 baked-superiorsix-db = "baked.superiorsix.cli.db_view:main"
 baked-superiorsix-legacy-import = "baked.superiorsix.cli.legacy_import:main"
 baked-superiorsix-purge = "baked.superiorsix.cli.purge:main"
+baked-superiorsix-winners-backfill = "baked.superiorsix.cli.winners_backfill:main"
 
 [dependency-groups]
 dev = [
