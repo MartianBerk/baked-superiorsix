@@ -78,7 +78,7 @@ docker compose exec baked-auth baked-auth-bootstrap
 ```
 
 Credentials come from `AUTH_BOOTSTRAP_*` in `.env` (default `ops` /
-`local-dev-change-me`). **Never** pass the password on argv.
+`LocalDevChangeMe1`). **Never** pass the password on argv.
 
 The CLI:
 
@@ -93,7 +93,7 @@ with `audience=superiorsix` as well as `audience=auth`.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8010/v1/auth/token \
-  -d 'email=ops@example.com&password=local-dev-change-me&audience=superiorsix'
+  -d 'email=ops@example.com&password=LocalDevChangeMe1&audience=superiorsix'
 ```
 
 ## Invite flow (Superior Six)
@@ -141,7 +141,7 @@ The script:
 1. Waits for auth + superiorsix health on host ports `8010` / `8030`.
 2. Runs `docker compose exec baked-auth baked-auth-bootstrap`.
 3. Invites / claims / accepts **three players** (`alice@`, `bob@`, `cara@example.com`)
-   with role `player` (password `local-dev-player`). All three stay players only;
+   with role `player` (password `LocalDevPlayer1`). All three stay players only;
    match-day / roster admin uses bootstrap ops (`admin`). Skips emails already
    on the roster.
 4. Runs the in-container extractors (same CLIs as the root README):
