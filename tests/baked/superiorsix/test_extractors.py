@@ -61,37 +61,37 @@ def test_resolve_match_extractor_date_range_explicit_to() -> None:
         date_from=start,
         date_to=end,
         days_ahead=None,
-        latest_match_date=date(2026, 11, 1),
+        earliest_match_date=date(2026, 11, 1),
         today_utc=date(2026, 11, 11),
     )
     assert (resolved_from, resolved_to, fallback) == (start, end, False)
 
 
-def test_resolve_match_extractor_date_range_from_latest_and_days_ahead() -> None:
-    latest = date(2026, 11, 10)
+def test_resolve_match_extractor_date_range_from_earliest_and_days_ahead() -> None:
+    earliest = date(2026, 11, 10)
     resolved_from, resolved_to, fallback = resolve_match_extractor_date_range(
         date_from=None,
         date_to=None,
         days_ahead=7,
-        latest_match_date=latest,
+        earliest_match_date=earliest,
         today_utc=date(2026, 11, 11),
     )
-    assert resolved_from == latest
-    assert resolved_to == latest + timedelta(days=7)
+    assert resolved_from == earliest
+    assert resolved_to == earliest + timedelta(days=7)
     assert fallback is False
 
 
-def test_resolve_match_extractor_date_range_only_to_uses_latest_from() -> None:
-    latest = date(2026, 11, 10)
+def test_resolve_match_extractor_date_range_only_to_uses_earliest_from() -> None:
+    earliest = date(2026, 11, 10)
     end = date(2026, 11, 20)
     resolved_from, resolved_to, fallback = resolve_match_extractor_date_range(
         date_from=None,
         date_to=end,
         days_ahead=None,
-        latest_match_date=latest,
+        earliest_match_date=earliest,
         today_utc=date(2026, 11, 11),
     )
-    assert (resolved_from, resolved_to, fallback) == (latest, end, False)
+    assert (resolved_from, resolved_to, fallback) == (earliest, end, False)
 
 
 def test_resolve_match_extractor_date_range_no_matches_uses_today() -> None:
@@ -100,7 +100,7 @@ def test_resolve_match_extractor_date_range_no_matches_uses_today() -> None:
         date_from=None,
         date_to=None,
         days_ahead=None,
-        latest_match_date=None,
+        earliest_match_date=None,
         today_utc=today,
     )
     assert resolved_from == today
@@ -114,7 +114,7 @@ def test_resolve_match_extractor_date_range_from_only_default_span() -> None:
         date_from=start,
         date_to=None,
         days_ahead=None,
-        latest_match_date=None,
+        earliest_match_date=None,
         today_utc=start,
     )
     assert resolved_from == start
@@ -128,7 +128,7 @@ def test_resolve_match_extractor_date_range_rejects_to_before_from() -> None:
             date_from=date(2026, 11, 15),
             date_to=date(2026, 11, 10),
             days_ahead=None,
-            latest_match_date=None,
+            earliest_match_date=None,
             today_utc=date(2026, 11, 11),
         )
 
@@ -249,7 +249,7 @@ async def test_match_extractor_uses_date_range_and_upserts(
 
 
 @pytest.mark.asyncio
-async def test_max_match_date_for_league_code(client) -> None:
+async def test_min_match_date_for_league_code(client) -> None:
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
         ingest, _ = _services(session)
@@ -291,13 +291,13 @@ async def test_max_match_date_for_league_code(client) -> None:
 
     async with session_factory() as session:
         repo = SqlAlchemyMatchRepository(session)
-        assert await repo.max_match_date_for_league_code("PL") == date(2025, 11, 3)
-        assert await repo.max_match_date_for_league_code("EL1") is None
+        assert await repo.min_match_date_for_league_code("PL") == date(2025, 10, 1)
+        assert await repo.min_match_date_for_league_code("EL1") is None
 
 
 @pytest.mark.asyncio
-async def test_max_match_date_for_league_code_ignores_finished(client) -> None:
-    """Relative --from uses the latest incomplete fixture, not a newer finished one."""
+async def test_min_match_date_for_league_code_ignores_finished(client) -> None:
+    """Relative --from uses the earliest incomplete fixture, not a newer finished one."""
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
         ingest, _ = _services(session)
@@ -335,11 +335,11 @@ async def test_max_match_date_for_league_code_ignores_finished(client) -> None:
 
     async with session_factory() as session:
         repo = SqlAlchemyMatchRepository(session)
-        assert await repo.max_match_date_for_league_code("PL") == date(2025, 11, 1)
+        assert await repo.min_match_date_for_league_code("PL") == date(2025, 11, 1)
 
 
 @pytest.mark.asyncio
-async def test_max_match_date_for_league_code_ignores_postponed(client) -> None:
+async def test_min_match_date_for_league_code_ignores_postponed(client) -> None:
     """POSTPONED is treated like FINISHED for relative --from anchoring."""
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
@@ -375,11 +375,51 @@ async def test_max_match_date_for_league_code_ignores_postponed(client) -> None:
 
     async with session_factory() as session:
         repo = SqlAlchemyMatchRepository(session)
-        assert await repo.max_match_date_for_league_code("PL") == date(2025, 10, 20)
+        assert await repo.min_match_date_for_league_code("PL") == date(2025, 10, 20)
 
 
 @pytest.mark.asyncio
-async def test_max_match_date_for_league_code_all_finished_returns_none(client) -> None:
+async def test_min_match_date_for_league_code_prefers_earliest_incomplete(client) -> None:
+    """MIN anchor must not follow MAX: oldest incomplete kickoff wins when several exist."""
+    session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
+    async with session_factory() as session:
+        ingest, _ = _services(session)
+        pl = await ingest.upsert_league(
+            League(
+                name="Premier League",
+                code="PL",
+                start_date=date(2025, 8, 1),
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-oldest-incomplete",
+                league_id=pl.id,
+                match_date=datetime(2025, 10, 1, 15, 0, tzinfo=UTC),
+                status=MatchStatus.SCHEDULED,
+                home_team="A",
+                away_team="B",
+            )
+        )
+        await ingest.upsert_match(
+            Match(
+                external_id="pl-newer-incomplete",
+                league_id=pl.id,
+                match_date=datetime(2025, 11, 3, 15, 0, tzinfo=UTC),
+                status=MatchStatus.IN_PLAY,
+                home_team="C",
+                away_team="D",
+            )
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        repo = SqlAlchemyMatchRepository(session)
+        assert await repo.min_match_date_for_league_code("PL") == date(2025, 10, 1)
+
+
+@pytest.mark.asyncio
+async def test_min_match_date_for_league_code_all_finished_returns_none(client) -> None:
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
         ingest, _ = _services(session)
@@ -407,11 +447,11 @@ async def test_max_match_date_for_league_code_all_finished_returns_none(client) 
 
     async with session_factory() as session:
         repo = SqlAlchemyMatchRepository(session)
-        assert await repo.max_match_date_for_league_code("PL") is None
+        assert await repo.min_match_date_for_league_code("PL") is None
 
 
 @pytest.mark.asyncio
-async def test_max_match_date_for_league_code_only_postponed_returns_none(client) -> None:
+async def test_min_match_date_for_league_code_only_postponed_returns_none(client) -> None:
     session_factory: async_sessionmaker[AsyncSession] = client.app.state.session_factory
     async with session_factory() as session:
         ingest, _ = _services(session)
@@ -436,17 +476,21 @@ async def test_max_match_date_for_league_code_only_postponed_returns_none(client
 
     async with session_factory() as session:
         repo = SqlAlchemyMatchRepository(session)
-        assert await repo.max_match_date_for_league_code("PL") is None
+        assert await repo.min_match_date_for_league_code("PL") is None
 
 
-def test_resolve_match_extractor_date_range_uses_incomplete_latest() -> None:
-    """When latest DB row is finished, resolved from follows max incomplete match_date."""
-    incomplete_latest = date(2025, 11, 1)
+def test_resolve_match_extractor_date_range_uses_earliest_incomplete() -> None:
+    """Resolved --from follows the earliest incomplete match_date anchor from the DB."""
+    incomplete_earliest = date(2025, 11, 1)
     resolved_from, resolved_to, fallback = resolve_match_extractor_date_range(
         date_from=None,
         date_to=date(2025, 11, 20),
         days_ahead=None,
-        latest_match_date=incomplete_latest,
+        earliest_match_date=incomplete_earliest,
         today_utc=date(2025, 11, 15),
     )
-    assert (resolved_from, resolved_to, fallback) == (incomplete_latest, date(2025, 11, 20), False)
+    assert (resolved_from, resolved_to, fallback) == (
+        incomplete_earliest,
+        date(2025, 11, 20),
+        False,
+    )

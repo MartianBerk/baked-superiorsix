@@ -54,7 +54,7 @@ class MatchRepository(Protocol):
 
     async def list_by_league(self, league_id: int) -> list[Match]: ...
 
-    async def max_match_date_for_league_code(self, league_code: str) -> date | None: ...
+    async def min_match_date_for_league_code(self, league_code: str) -> date | None: ...
 
     async def list_finished_for_team_before(
         self,
@@ -170,10 +170,10 @@ class SqlAlchemyMatchRepository:
         )
         return _rows_to_domain(result.all())
 
-    async def max_match_date_for_league_code(self, league_code: str) -> date | None:
-        """Latest kickoff among actionable fixtures (not FINISHED or POSTPONED) for relative --from."""
+    async def min_match_date_for_league_code(self, league_code: str) -> date | None:
+        """Earliest kickoff among actionable fixtures (not FINISHED or POSTPONED) for relative --from."""
         result = await self._session.scalar(
-            select(func.max(MatchRecord.match_date))
+            select(func.min(MatchRecord.match_date))
             .select_from(MatchRecord)
             .join(LeagueRecord, MatchRecord.league_id == LeagueRecord.id)
             .where(

@@ -68,20 +68,21 @@ def resolve_match_extractor_date_range(
     date_from: date | None,
     date_to: date | None,
     days_ahead: int | None,
-    latest_match_date: date | None,
+    earliest_match_date: date | None,
     today_utc: date,
 ) -> tuple[date, date, bool]:
     """Resolve inclusive UTC date bounds for the match extractor.
 
     Returns ``(date_from, date_to, used_today_fallback)`` where the fallback flag
     is set when ``date_from`` was omitted and no actionable (non-finished, non-postponed)
-    matches exist for the league.
+    matches exist for the league. When ``date_from`` is omitted, the anchor is the
+    earliest actionable ``match_date`` in the DB for the league (not the latest).
     """
     used_today_fallback = False
     resolved_from = date_from
     if resolved_from is None:
-        if latest_match_date is not None:
-            resolved_from = latest_match_date
+        if earliest_match_date is not None:
+            resolved_from = earliest_match_date
         else:
             resolved_from = today_utc
             used_today_fallback = True
@@ -141,14 +142,14 @@ async def _run_match(
             resolved_from = resolved_to = today
             used_today_fallback = False
         else:
-            latest = await match_repo.max_match_date_for_league_code(league_code)
+            earliest = await match_repo.min_match_date_for_league_code(league_code)
             today = datetime.now(UTC).date()
             try:
                 resolved_from, resolved_to, used_today_fallback = resolve_match_extractor_date_range(
                     date_from=date_from,
                     date_to=date_to,
                     days_ahead=days_ahead,
-                    latest_match_date=latest,
+                    earliest_match_date=earliest,
                     today_utc=today,
                 )
             except ValueError as exc:
@@ -317,7 +318,7 @@ def match_main(argv: list[str] | None = None) -> None:
         metavar="YYYY-MM-DD",
         help=(
             "Inclusive start date (UTC). When omitted (and not --live), defaults to "
-            "the latest match_date among actionable fixtures (not finished or postponed) "
+            "the earliest match_date among actionable fixtures (not finished or postponed) "
             "for this league in the DB, or today UTC with a warning if none."
         ),
     )
