@@ -19,6 +19,8 @@
 !/.dockerignore
 !/local-dev/
 !/local-dev/**
+!/local-prod/
+!/local-prod/**
 !/migration-data/
 !/migration-data/**
 

@@ -1,14 +1,14 @@
-# Superior Six — transitional production Docker (`local-prod`)
+# Superior Six — production Docker (`local-prod`)
 
 One `docker compose up` for **baked-auth**, **baked-user**, **baked-superiorsix**, and
 **baked-superiorsix-app** on Martin's server. APIs stay on the compose network;
 only the front-end nginx container publishes **`:8040`** (configurable via
 `FE_HOST_PORT`).
 
-The static web build uses Expo **`experiments.baseUrl` `/super`** and same-origin
-API bases (`/auth`, `/user`, `/superiorsix`) baked into the image. Pair this
-stack with **host nginx** so the public site serves the app under `/super/` while
-API paths sit at the domain root.
+The static web build uses **root hosting** (no Expo `experiments.baseUrl`) and
+same-origin API bases (`/auth`, `/user`, `/superiorsix`) baked into the image.
+Pair this stack with **host nginx** so the public site serves the app at `/`
+while API paths stay at the domain root.
 
 For day-to-day Mac/Linux API dev with published backend ports, use
 [`local-dev/`](../local-dev/) instead.
@@ -28,8 +28,9 @@ parent/
 Build contexts: `../../baked-auth`, `../../baked-user`, `..`, and
 `../../baked-superiorsix-app`.
 
-Checkout the deploy branch on **both** `baked-superiorsix` and
-`baked-superiorsix-app` (e.g. `deploy/local-prod-subpath`).
+Use **`master`** on both `baked-superiorsix` and `baked-superiorsix-app` after
+these packaging PRs merge. Fallback (unchanged): checkout
+`deploy/local-prod-subpath` on both repos for the transitional `/super/` hybrid.
 
 ## Deploy on the server
 
@@ -66,7 +67,7 @@ Front-end proxy + static host:
 
 ```bash
 curl -s http://127.0.0.1:8040/health
-curl -sI http://127.0.0.1:8040/super/ | head -n 1
+curl -sI http://127.0.0.1:8040/ | head -n 1
 ```
 
 API smoke through the **inner** nginx (same paths host nginx will use):
@@ -87,33 +88,24 @@ curl -s http://127.0.0.1:8040/superiorsix/health
 | `CORS_ORIGINS` | Quoted JSON — default includes `https://superiorsix.co.uk` |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional ingest |
 | `FE_HOST_PORT` | Host port for app container (default `8040`) |
-| `EXPO_PUBLIC_*` / `EXPO_BASE_URL` | Optional image build overrides (see `.env.example`) |
+| `EXPO_PUBLIC_*` / `EXPO_BASE_URL` | Optional image build overrides (see `.env.example`; leave `EXPO_BASE_URL` unset for root) |
 
 `AUTH_ENVIRONMENT`, `USER_ENVIRONMENT`, and `SUPERIORSIX_ENVIRONMENT` default to
 `production`.
 
 SQLite data: named volumes `baked-*-data` at `/data` in each API container.
 
-## Host nginx (transitional hybrid)
+## Host nginx
 
 Terminate TLS on the host and proxy to `127.0.0.1:8040`. The **inner** container
 nginx already reverse-proxies `/auth/`, `/user/`, and `/superiorsix/` to the
 backends on the compose network.
 
-**Strip `/super/`** when forwarding the SPA so the inner server sees paths at `/`
-(matching the exported asset layout after prefix strip):
+Use `location /` for the SPA (more specific `/auth` `/user` `/superiorsix`
+locations win first):
 
 ```nginx
 # Example server block fragment — adjust ssl_* / server_name for superiorsix.co.uk
-
-location /super/ {
-    proxy_pass http://127.0.0.1:8040/;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
 
 location /auth/ {
     proxy_pass http://127.0.0.1:8040/auth/;
@@ -144,20 +136,22 @@ location /superiorsix/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Authorization $http_authorization;
 }
+
+location / {
+    proxy_pass http://127.0.0.1:8040/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
 ```
 
-Users open `https://superiorsix.co.uk/super/` (trailing slash recommended). Static
-bundles reference `/super/…` asset URLs; the host forwards those to the container
-after stripping the prefix.
+Users open `https://superiorsix.co.uk/` (or the host you configure). Static
+bundles use root asset URLs; the host forwards `/` to the container.
 
-### Future cutover (root-hosted app)
-
-When the marketing site no longer shares the domain:
-
-1. Rebuild **baked-superiorsix-app** with `EXPO_BASE_URL` empty and host-pinned
-   `EXPO_PUBLIC_*` URLs (or dedicated API hostnames).
-2. Point host nginx `location /` at the app container (no `/super` prefix).
-3. Expose APIs on their own hostnames or paths as needed.
+**Fallback:** the `deploy/local-prod-subpath` branches still document the
+transitional `/super/` strip-prefix hybrid if you need to stay on that layout.
 
 ## Tear down
 
@@ -175,10 +169,10 @@ set `LOCAL_PROD_DIR` to this directory, create `logs/`, and install the file.
 | Concern | What runs | Cadence (Europe/London) |
 |--------|-----------|-------------------------|
 | **League catalog** | `baked-superiorsix-league-extractor` | Weekly Mon 08:00 — upserts league name/code/season `start_date` only (no `current_matchday` in DB). |
-| **Fixtures & scores** | `baked-superiorsix-match-extractor -l {PL,ELC,EL1,EL2} --days-ahead 7` | Mon–Fri 03:00 (5m stagger per league); Sat 21:00; Sun 18:00 and 22:00. Omitting `--from` anchors at the earliest kickoff among incomplete fixtures for that league (not the latest) — rebuild the API image before deploy. |
-| **Live scoring** | `baked-superiorsix-auto-score -s 3300` | Sat only: start 15:00, 16:00, 17:00, 18:00 London; each run loops ~55m (2m between passes); last ends ~18:55. |
+| **Fixtures & scores** | `baked-superiorsix-match-extractor -l {PL,ELC,EL1,EL2}` | Mon–Fri 03:00: `--days-ahead 7` (5m stagger). **Sun 06:00:** all four leagues at once with `--days-ahead 7` (no other Sunday jobs). **Sat 17:15:** all four at once with `--days-ahead 1` (post–auto-score finals). Omitting `--from` anchors at earliest incomplete kickoff — rebuild the API image before deploy. |
+| **Live scoring** | `baked-superiorsix-auto-score` | Sat only: 15:00 with `-s 3300` (~55m); 16:00 with `-s 3600` (full hour, ends ~17:00 before Sat 17:15 extracts). |
 
 ## Related docs
 
-- App image / subpath build: `baked-superiorsix-app` README — *Production subpath (/super)*.
+- App image / root hosting: `baked-superiorsix-app` README — *Production root hosting*.
 - Local dev stack with published API ports: [`../local-dev/README.md`](../local-dev/README.md).
