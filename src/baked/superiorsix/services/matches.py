@@ -2,7 +2,11 @@ import logging
 from collections.abc import Collection
 from datetime import UTC, date, datetime, time, timedelta
 
-from baked.superiorsix.domain.exceptions import MatchNotFoundError, MatchSelectionError
+from baked.superiorsix.domain.exceptions import (
+    MatchNotFoundError,
+    MatchOverrideError,
+    MatchSelectionError,
+)
 from baked.superiorsix.domain.match_status import coalesce_forward_status, is_status_regression
 from baked.superiorsix.domain.models import (
     LeagueTableEntry,
@@ -159,6 +163,42 @@ class MatchService:
         elif status == MatchStatus.FINISHED and match.match_minute is None:
             match.match_minute = 90
         return await self._matches.save(match)
+
+    async def admin_override_result(
+        self,
+        match_id: int,
+        *,
+        home_score: int,
+        away_score: int,
+        now: datetime | None = None,
+    ) -> Match:
+        """Admin-only: set final scores and force ``FINISHED`` (SS-254).
+
+        Allowed only when ``now`` is at least two hours after kickoff
+        (absolute time; blocks same-day fixtures that have not started /
+        are still within the first two hours). Status is forward-only:
+        already-``FINISHED`` matches keep ``FINISHED`` while scores update.
+        """
+        if home_score < 0 or away_score < 0:
+            raise MatchOverrideError("Scores must be non-negative.")
+        match = await self.get(match_id)
+        clock = now or datetime.now(UTC)
+        kickoff = match.match_date
+        if kickoff.tzinfo is None:
+            kickoff = kickoff.replace(tzinfo=UTC)
+        else:
+            kickoff = kickoff.astimezone(UTC)
+        earliest = kickoff + timedelta(hours=2)
+        if clock.astimezone(UTC) < earliest:
+            raise MatchOverrideError(
+                "Score override is only allowed from 2 hours after kickoff."
+            )
+        return await self.apply_score_update(
+            match_id=match_id,
+            status=MatchStatus.FINISHED,
+            home_score=home_score,
+            away_score=away_score,
+        )
 
     async def list_in_range(self, *, start: datetime, end: datetime) -> list[Match]:
         """Fixtures with kickoff in ``[start, end)`` (UTC day bounds from the router)."""

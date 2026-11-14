@@ -131,6 +131,13 @@ class SelectMatchRequest(BaseModel):
     game_number: int = Field(ge=1, le=6)
 
 
+class AdminSetMatchResultRequest(BaseModel):
+    """Admin override: set final home/away scores (forces FINISHED)."""
+
+    home_score: int = Field(ge=0, description="Final home goals")
+    away_score: int = Field(ge=0, description="Final away goals")
+
+
 class BulkSelectMatchItem(BaseModel):
     id: int = Field(description="Match id to select for Super Six")
     game_number: int = Field(ge=1, le=6)
