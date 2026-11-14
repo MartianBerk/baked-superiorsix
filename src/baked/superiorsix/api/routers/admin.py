@@ -36,6 +36,7 @@ from baked.superiorsix.api.schemas import (
     AdminPlayerPredictionsResponse,
     AdminPredictionBoardResponse,
     AdminPredictionsListResponse,
+    AdminSetMatchResultRequest,
     AutopickMatchesRequest,
     AutopickMatchesResponse,
     BulkSelectMatchItem,
@@ -80,6 +81,7 @@ from baked.superiorsix.domain.exceptions import (
     EurosTournamentError,
     EurosTournamentNotFoundError,
     MatchNotFoundError,
+    MatchOverrideError,
     MatchSelectionError,
     PredictionError,
     RosterError,
@@ -962,6 +964,33 @@ async def get_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     display = await load_display(team_xref)
     return MatchResponse.from_domain(match, difficulty=difficulty, display_team=display)
+
+
+@router.post("/matches/{match_id}/result", response_model=MatchResponse)
+async def set_match_result(
+    _: RequireAdmin,
+    match_id: int,
+    payload: AdminSetMatchResultRequest,
+    match_service: Annotated[MatchService, Depends(get_match_service)],
+    team_xref: Annotated[TeamXrefService, Depends(get_team_xref_service)],
+) -> MatchResponse:
+    """Admin override: set final scores and force FINISHED (SS-254).
+
+    Allowed only when now is at least two hours after kickoff. Earlier
+    same-day kickoffs (and any pre-window time) are rejected with 400.
+    """
+    try:
+        match = await match_service.admin_override_result(
+            match_id,
+            home_score=payload.home_score,
+            away_score=payload.away_score,
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except MatchOverrideError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    display = await load_display(team_xref)
+    return MatchResponse.from_domain(match, display_team=display)
 
 
 @router.post("/addmatch", response_model=MatchResponse)

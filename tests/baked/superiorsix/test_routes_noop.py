@@ -67,6 +67,7 @@ PROTECTED_IMPLEMENTED = [
     ("GET", "/admin/getmatch", "admin"),
     ("POST", "/admin/addmatch", "admin"),
     ("POST", "/admin/addmatches", "admin"),
+    ("POST", "/admin/matches/{match_id}/result", "admin"),
     ("GET", "/admin/dropmatch", "admin"),
     ("GET", "/admin/listpredictions", "admin"),
     ("GET", "/admin/listpredictionsnew", "admin"),
@@ -111,6 +112,12 @@ def _request(client: TestClient, method: str, path: str, headers: dict[str, str]
     if method == "DELETE":
         delete_path = path.replace("{subround_id}", "1")
         return client.delete(delete_path, headers=headers)
+    if path == "/admin/matches/{match_id}/result":
+        return client.post(
+            "/admin/matches/1/result",
+            json={"home_score": 0, "away_score": 0},
+            headers=headers,
+        )
     if path == "/admin/addprediction":
         return client.post(
             path,

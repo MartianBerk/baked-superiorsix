@@ -14,6 +14,10 @@ class MatchSelectionError(SuperiorSixError):
     """Raised when selecting a Super Six match slot fails."""
 
 
+class MatchOverrideError(SuperiorSixError):
+    """Raised when an admin match score override is not allowed."""
+
+
 class RoundNotFoundError(SuperiorSixError):
     """Raised when no open round is available."""
 
