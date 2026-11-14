@@ -134,7 +134,8 @@ services:
         EXPO_PUBLIC_AUTH_URL: ${EXPO_PUBLIC_AUTH_URL:-/auth}
         EXPO_PUBLIC_USER_URL: ${EXPO_PUBLIC_USER_URL:-/user}
         EXPO_PUBLIC_SUPERSIX_URL: ${EXPO_PUBLIC_SUPERSIX_URL:-/superiorsix}
-        EXPO_BASE_URL: ${EXPO_BASE_URL:-/super}
+        # Empty/unset = root hosting (no experiments.baseUrl). Prefer omit over "/".
+        EXPO_BASE_URL: ${EXPO_BASE_URL:-}
     image: baked-superiorsix-app:local-prod
     container_name: baked-superiorsix-app
     depends_on:
