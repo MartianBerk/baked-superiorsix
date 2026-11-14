@@ -46,11 +46,11 @@ LOCAL_PROD_DIR=/home/REPLACE_ME/parent/baked-superiorsix/local-prod
 10 3 * * 1-5 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
 15 3 * * 1-5 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
-# Sat 17:15 — post–auto-score pass (non-live); upserts finals after 15–16 live runs.
+# Sat 17:15 — post–auto-score pass (non-live); all four leagues at once.
 15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
-20 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
-25 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
-30 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
 # Sun 18:00 — optional light pass (Sunday fixtures / late stragglers).
 0 18 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
@@ -65,7 +65,7 @@ LOCAL_PROD_DIR=/home/REPLACE_ME/parent/baked-superiorsix/local-prod
 15 22 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
 # --- Auto-score: Saturday staggered long runs (internal ~2m recheck loop) -----
-# Super Six fixtures mostly ~15:00 London. Hourly jobs from 15:00, each loops
-# 55 minutes (`-s 3300`): passes at 15:00, 16:00; last ends ~16:55 (before Sat 17:15 extracts).
+# Super Six fixtures mostly ~15:00 London. 15:00 runs 55m (`-s 3300`);
+# 16:00 runs a full hour (`-s 3600`) and ends ~17:00 (before Sat 17:15 extracts).
 0 15 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
-0 16 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-auto-score -s 3300 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
+0 16 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-auto-score -s 3600 >>"$LOCAL_PROD_DIR/logs/auto-score.log" 2>&1
