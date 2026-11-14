@@ -175,7 +175,7 @@ set `LOCAL_PROD_DIR` to this directory, create `logs/`, and install the file.
 | Concern | What runs | Cadence (Europe/London) |
 |--------|-----------|-------------------------|
 | **League catalog** | `baked-superiorsix-league-extractor` | Weekly Mon 08:00 — upserts league name/code/season `start_date` only (no `current_matchday` in DB). |
-| **Fixtures & scores** | `baked-superiorsix-match-extractor -l {PL,ELC,EL1,EL2} --days-ahead 7` | Mon–Fri 03:00 (5m stagger per league); Sat 17:15 all four leagues at once (post–auto-score finals); Sun 18:00 and 22:00. Omitting `--from` anchors at the earliest kickoff among incomplete fixtures for that league (not the latest) — rebuild the API image before deploy. |
+| **Fixtures & scores** | `baked-superiorsix-match-extractor -l {PL,ELC,EL1,EL2}` | Mon–Fri 03:00 and Sun 18:00/22:00: `--days-ahead 7` (5m stagger; forward fixture window; omitting `--from` anchors at earliest incomplete kickoff). **Sat 17:15:** all four leagues at once with `--from`/`--to` both today (London calendar day) — same-day finals sync for FINISHED scores, not the forward window. Rebuild the API image before deploy. |
 | **Live scoring** | `baked-superiorsix-auto-score` | Sat only: 15:00 with `-s 3300` (~55m); 16:00 with `-s 3600` (full hour, ends ~17:00 before Sat 17:15 extracts). |
 
 ## Related docs
