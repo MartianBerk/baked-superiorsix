@@ -17,7 +17,7 @@
 #
 # Match extractor (PR #54 / SS-211):
 #   Forward-window lines use `--days-ahead 7` with no `--from` (7-day inclusive).
-#   Sat 17:15 and Sun 06:00 use `--days-ahead 1` with no `--from` (short sync).
+#   Sat 17:15 uses `--days-ahead 1`; Sun 06:00 uses `--days-ahead 7` (both no `--from`).
 #   When `--from` is omitted, the CLI anchors at the earliest kickoff among
 #   incomplete fixtures (SCHEDULED / IN PLAY / HALF TIME) for that league;
 #   FINISHED and POSTPONED are ignored. Empty DB → today (UTC) + warning.
@@ -54,12 +54,12 @@ LOCAL_PROD_DIR=/home/REPLACE_ME/parent/baked-superiorsix/local-prod
 15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
 15 17 * * 6 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
-# Sun 06:00 — early Sunday sync (non-live); all four leagues at once.
-# Same pattern as Sat 17:15: --days-ahead 1 only (no --from/--to).
-0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l PL --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
-0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l ELC --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
-0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
-0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 1 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
+# Sun 06:00 — early Sunday forward window (non-live); all four leagues at once.
+# --days-ahead 7 (no --from/--to); no other Sunday jobs.
+0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l PL --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-pl.log" 2>&1
+0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l ELC --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-elc.log" 2>&1
+0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL1 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el1.log" 2>&1
+0 6 * * 0 docker compose --project-directory "$LOCAL_PROD_DIR" exec -T baked-superiorsix baked-superiorsix-match-extractor -l EL2 --days-ahead 7 >>"$LOCAL_PROD_DIR/logs/match-extractor-el2.log" 2>&1
 
 # --- Auto-score: Saturday staggered long runs (internal ~2m recheck loop) -----
 # Super Six fixtures mostly ~15:00 London. 15:00 runs 55m (`-s 3300`);
