@@ -100,8 +100,8 @@ def build_league_table(
     )
 
     def _key(name: str) -> str:
-        # Xref first, then strip trailing FC/AFC so legacy short names and
-        # football-data long names share one table row.
+        # Xref first, then normalize (FC/AFC strip + Flashscore hard aliases)
+        # so legacy short names and football-data long names share one row.
         return stats_key_for(name, team_canonical)
 
     for match in matches:
