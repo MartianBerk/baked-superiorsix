@@ -19,6 +19,7 @@ from baked.superiorsix.domain.models import (
 from baked.superiorsix.repositories.matches import MatchRepository
 from baked.superiorsix.services.difficulty import calculate_match_difficulty
 from baked.superiorsix.services.leagues import LeagueService
+from baked.superiorsix.services.team_names import normalize_team_name, team_name_variants
 from baked.superiorsix.services.team_xref import TeamXrefService
 
 logger = logging.getLogger(__name__)
@@ -37,12 +38,18 @@ class MatchService:
 
     async def _canonical(self, team: str) -> str:
         if self._team_xref is None:
-            return team
+            return normalize_team_name(team)
         return await self._team_xref.canonical(team)
+
+    async def _stats_key(self, team: str) -> str:
+        """League-table identity (xref + FC/AFC normalize)."""
+        if self._team_xref is None:
+            return normalize_team_name(team)
+        return await self._team_xref.stats_key(team)
 
     async def _aliases(self, team: str) -> list[str]:
         if self._team_xref is None:
-            return [team]
+            return sorted(team_name_variants(team))
         return await self._team_xref.aliases(team)
 
     async def get(self, match_id: int) -> Match:
@@ -370,10 +377,9 @@ class MatchService:
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
-        home_canonical = await self._canonical(match.home_team)
-        away_canonical = await self._canonical(match.away_team)
-        home_position = positions.get(home_canonical)
-        away_position = positions.get(away_canonical)
+        # Table rows use stats_key (xref + strip FC/AFC); display keys stay xref.
+        home_position = positions.get(await self._stats_key(match.home_team))
+        away_position = positions.get(await self._stats_key(match.away_team))
         difficulty = await self.difficulty_for_match(match)
 
         return MatchDetail(
@@ -478,8 +484,8 @@ class MatchService:
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
-        home_key = await self._canonical(match.home_team)
-        away_key = await self._canonical(match.away_team)
+        home_key = await self._stats_key(match.home_team)
+        away_key = await self._stats_key(match.away_team)
         difficulty = calculate_match_difficulty(
             home_performance=home_form,
             away_performance=away_form,

@@ -8,6 +8,7 @@ from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
 from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload, MatchPayload
 from baked.superiorsix.process.extractors.connectors.http import HttpxJsonClient
 from baked.superiorsix.process.extractors.connectors.status import map_football_data_status
+from baked.superiorsix.services.team_names import normalize_team_name
 
 # England area id on football-data.org.
 ENGLAND_AREA_ID = 2072
@@ -62,6 +63,9 @@ def parse_football_data_match(raw: dict[str, Any]) -> MatchPayload | None:
     away = (raw.get("awayTeam") or {}).get("name")
     if not home or not away:
         return None
+    # Strip trailing FC/AFC so standings join legacy Flashscore short names.
+    home = normalize_team_name(str(home))
+    away = normalize_team_name(str(away))
     score_block = raw.get("score") or {}
     score = score_block.get("fullTime") or {}
     home_score = score.get("home")
