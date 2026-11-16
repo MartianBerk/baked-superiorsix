@@ -369,7 +369,7 @@ class MatchService:
         table = await self._leagues.league_table(league.code)
 
         # Provider spellings stay on home_team/away_team; *_xref is the FE
-        # display / stats key (xref map, then strip trailing FC/AFC).
+        # display / stats key (xref map, then normalize_team_name).
         home_key = await self._stats_key(match.home_team)
         away_key = await self._stats_key(match.away_team)
 

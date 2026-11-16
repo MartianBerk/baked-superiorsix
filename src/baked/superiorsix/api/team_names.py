@@ -2,7 +2,7 @@
 
 Match responses should expose ``display()`` / ``load_display()`` names so the
 FE never applies ``meta.teams`` mappings itself. Display matches ``stats_key``
-(xref, then strip trailing FC/AFC). Stored match rows keep original API names.
+(xref, then ``normalize_team_name``). Stored match rows keep original API names.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def identity_display(name: str) -> str:
 
 
 def display_from_map(mapping: Mapping[str, str]) -> DisplayTeam:
-    """Xref map then FC/AFC strip — same identity as league-table ``stats_key``."""
+    """Xref map then normalize — same identity as league-table ``stats_key``."""
 
     def display(name: str) -> str:
         return stats_key_for(name, mapping)

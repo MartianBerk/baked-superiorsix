@@ -30,6 +30,22 @@ def test_normalize_team_name_strips_trailing_club_suffix() -> None:
     assert normalize_team_name("Nottingham Forest FC") == "Nottingham Forest"
 
 
+def test_normalize_team_name_hard_aliases_flashscore_shorts() -> None:
+    """SS-262: Coventry / Newcastle / Spurs-style shorts merge to FD long form."""
+    assert normalize_team_name("Coventry") == "Coventry City"
+    assert normalize_team_name("Coventry City") == "Coventry City"
+    assert normalize_team_name("Coventry City FC") == "Coventry City"
+    assert normalize_team_name("Newcastle") == "Newcastle United"
+    assert normalize_team_name("Tottenham") == "Tottenham Hotspur"
+    assert normalize_team_name("Spurs") == "Tottenham Hotspur"
+    assert normalize_team_name("Man Utd") == "Manchester United"
+    assert normalize_team_name("Bournemouth") == "AFC Bournemouth"
+    assert normalize_team_name("Brighton") == "Brighton & Hove Albion"
+    # Manchester City must not collapse to Manchester.
+    assert normalize_team_name("Manchester City") == "Manchester City"
+    assert normalize_team_name("Man City") == "Manchester City"
+
+
 def test_team_name_variants_cover_fc_spellings() -> None:
     variants = team_name_variants("Arsenal")
     assert "Arsenal" in variants
@@ -37,9 +53,19 @@ def test_team_name_variants_cover_fc_spellings() -> None:
     assert "Arsenal AFC" in variants
 
 
+def test_team_name_variants_include_hard_alias_group() -> None:
+    variants = team_name_variants("Coventry City FC")
+    assert "Coventry" in variants
+    assert "Coventry City" in variants
+    assert "Coventry City FC" in variants
+    assert "Coventry FC" in variants
+
+
 def test_stats_key_for_merges_without_xref() -> None:
     assert stats_key_for("Arsenal FC", None) == "Arsenal"
     assert stats_key_for("Arsenal", None) == "Arsenal"
+    assert stats_key_for("Coventry", None) == "Coventry City"
+    assert stats_key_for("Coventry City FC", None) == "Coventry City"
     assert stats_key_for("Arsenal FC", {"Arsenal FC": "Arsenal"}) == "Arsenal"
     assert stats_key_for("Arsenal FC", {"Arsenal": "The Gunners"}) == "The Gunners"
 
@@ -137,6 +163,54 @@ def test_build_league_table_elc_lookup_keys_align() -> None:
     assert stats_key_for("Watford", None) in positions
     assert stats_key_for("Leeds United", None) in positions
     assert positions[stats_key_for("Sheffield Wednesday FC", None)] == "1"
+
+
+def test_build_league_table_merges_coventry_city_hard_alias() -> None:
+    """SS-262: Flashscore ``Coventry`` + FD ``Coventry City FC`` share one PL row."""
+    day = date(2025, 9, 1)
+    season = season_label(date(2025, 8, 1))
+    matches = [
+        Match(
+            external_id="fs-cov",
+            league_id=1,
+            match_date=_kickoff(day),
+            status=MatchStatus.FINISHED,
+            home_team="Coventry",
+            away_team="Arsenal",
+            home_score=1,
+            away_score=0,
+        ),
+        Match(
+            external_id="fd-cov",
+            league_id=1,
+            match_date=_kickoff(day + timedelta(days=7)),
+            status=MatchStatus.FINISHED,
+            home_team="Crystal Palace FC",
+            away_team="Coventry City FC",
+            home_score=2,
+            away_score=1,
+        ),
+        Match(
+            external_id="fd-cov-2",
+            league_id=1,
+            match_date=_kickoff(day + timedelta(days=14)),
+            status=MatchStatus.FINISHED,
+            home_team="Coventry City FC",
+            away_team="Chelsea FC",
+            home_score=0,
+            away_score=0,
+        ),
+    ]
+    table = build_league_table("PL", season, matches, team_canonical=None)
+    by_team = {entry.team: entry for entry in table}
+
+    assert "Coventry" not in by_team
+    assert "Coventry City FC" not in by_team
+    assert by_team["Coventry City"].matches_played == 3
+    assert by_team["Coventry City"].points == 4
+    assert stats_key_for("Coventry City FC", None) in by_team
+    assert max(int(entry.position.lstrip("T")) for entry in table) <= len(by_team)
+    assert len(by_team) == 4  # Coventry City, Arsenal, Crystal Palace, Chelsea
 
 
 def test_display_matches_stats_key() -> None:
