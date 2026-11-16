@@ -21,7 +21,7 @@ class TeamXrefService:
         return {row.team_name: row.xref for row in await self._team_xref.list()}
 
     async def canonical(self, name: str) -> str:
-        """Display / stats identity: xref map, then strip trailing ``FC`` / ``AFC``."""
+        """Display / stats identity: xref map, then ``normalize_team_name``."""
         return await self.stats_key(name)
 
     async def display(self, name: str) -> str:
@@ -31,9 +31,10 @@ class TeamXrefService:
     async def stats_key(self, name: str, team_canonical: Mapping[str, str] | None = None) -> str:
         """League-table / position / display identity for ``name``.
 
-        Applies ``team_xref`` when present, then strips trailing ``FC`` / ``AFC``
-        so Flashscore-style short names and football-data long names share a key.
-        Stored match rows keep the original API spelling; this is read-path only.
+        Applies ``team_xref`` when present, then ``normalize_team_name`` (trailing
+        ``FC`` / ``AFC`` strip plus Flashscore hard aliases such as ``Coventry`` →
+        ``Coventry City``) so provider spellings share one key. Stored match rows
+        keep the original API spelling; this is read-path only.
         """
         mapping = team_canonical if team_canonical is not None else await self.as_map()
         return stats_key_for(name, mapping)
