@@ -108,9 +108,9 @@ def test_parse_football_data_league_and_match() -> None:
     assert match.external_id == "fd-123"
     assert match.status == MatchStatus.SCHEDULED
     assert match.match_date == datetime(2025, 10, 18, 14, 0, tzinfo=UTC)
-    # Trailing FC stripped so standings join legacy short names.
-    assert match.home_team == "Arsenal"
-    assert match.away_team == "Chelsea"
+    # Store original API spellings; FC/AFC merge is stats-key only (SS-260).
+    assert match.home_team == "Arsenal FC"
+    assert match.away_team == "Chelsea FC"
 
 
 def test_parse_goal_api_fixture() -> None:
@@ -131,7 +131,7 @@ def test_parse_goal_api_fixture() -> None:
     assert match is not None
     assert match.external_id == "ga-999"
     assert match.status == MatchStatus.FINISHED
-    assert match.home_team == "Barnsley"
+    assert match.home_team == "Barnsley FC"
     assert match.away_team == "Bolton"
     assert match.home_score == 2
     assert match.away_score == 1

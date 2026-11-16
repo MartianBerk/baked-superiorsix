@@ -8,7 +8,6 @@ from baked.superiorsix.process.extractors.connectors.base import JsonHttpClient
 from baked.superiorsix.process.extractors.connectors.dto import LeaguePayload, MatchPayload
 from baked.superiorsix.process.extractors.connectors.http import HttpxJsonClient
 from baked.superiorsix.process.extractors.connectors.status import map_goal_api_status
-from baked.superiorsix.services.team_names import normalize_team_name
 
 GOAL_API_BASE_URL = "https://api.goal-api.com/v1"
 DEFAULT_PAGE_LIMIT = 100
@@ -74,8 +73,6 @@ def parse_goal_api_fixture(raw: dict[str, Any]) -> MatchPayload | None:
     away = _team_name(raw, side="away")
     if not home or not away:
         return None
-    home = normalize_team_name(home)
-    away = normalize_team_name(away)
     return MatchPayload(
         external_id=f"ga-{fixture_id}",
         match_date=match_date,
