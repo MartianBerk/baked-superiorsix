@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date
 
 from baked.superiorsix.domain.exceptions import LeagueNotFoundError
 from baked.superiorsix.domain.models import League, LeagueTableEntry, Match, MatchStatus
 from baked.superiorsix.repositories.leagues import LeagueRepository
 from baked.superiorsix.repositories.matches import MatchRepository
-from baked.superiorsix.services.team_xref import TeamXrefService
+from baked.superiorsix.services.team_xref import TeamXrefService, stats_key_for
 
 
 def season_label(start_date: date) -> str:
@@ -100,12 +100,17 @@ def build_league_table(
     )
 
     def _key(name: str) -> str:
-        if not team_canonical:
-            return name
-        return team_canonical.get(name, name)
+        # Xref first, then strip trailing FC/AFC so legacy short names and
+        # football-data long names share one table row.
+        return stats_key_for(name, team_canonical)
 
     for match in matches:
-        if season_for_match_date(match.match_date.date()) != season:
+        kickoff = match.match_date
+        if kickoff.tzinfo is not None:
+            match_day = kickoff.astimezone(UTC).date()
+        else:
+            match_day = kickoff.date()
+        if season_for_match_date(match_day) != season:
             continue
         if match.status != MatchStatus.FINISHED:
             continue
