@@ -1,7 +1,8 @@
-"""Helpers to put xref display names on API match payloads.
+"""Helpers to put display / stats-key names on API match payloads.
 
 Match responses should expose ``display()`` / ``load_display()`` names so the
-FE never applies ``meta.teams`` mappings itself.
+FE never applies ``meta.teams`` mappings itself. Display matches ``stats_key``
+(xref, then strip trailing FC/AFC). Stored match rows keep original API names.
 """
 
 from __future__ import annotations
@@ -10,7 +11,8 @@ from collections.abc import Callable, Mapping
 from typing import TypeVar
 
 from baked.superiorsix.domain.models import Match
-from baked.superiorsix.services.team_xref import TeamXrefService
+from baked.superiorsix.services.team_names import normalize_team_name
+from baked.superiorsix.services.team_xref import TeamXrefService, stats_key_for
 
 T = TypeVar("T")
 
@@ -18,12 +20,15 @@ DisplayTeam = Callable[[str], str]
 
 
 def identity_display(name: str) -> str:
-    return name
+    """Normalize only (no xref) — used when team_xref is unavailable."""
+    return normalize_team_name(name)
 
 
 def display_from_map(mapping: Mapping[str, str]) -> DisplayTeam:
+    """Xref map then FC/AFC strip — same identity as league-table ``stats_key``."""
+
     def display(name: str) -> str:
-        return mapping.get(name, name)
+        return stats_key_for(name, mapping)
 
     return display
 
