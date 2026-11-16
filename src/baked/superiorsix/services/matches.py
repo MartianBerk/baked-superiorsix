@@ -368,37 +368,37 @@ class MatchService:
         league = await self._leagues.get(match.league_id)
         table = await self._leagues.league_table(league.code)
 
-        # Provider spellings stay on the row; xref is the FE display label.
-        home_xref = await self.display_team(match.home_team)
-        away_xref = await self.display_team(match.away_team)
+        # Provider spellings stay on home_team/away_team; *_xref is the FE
+        # display / stats key (xref map, then strip trailing FC/AFC).
+        home_key = await self._stats_key(match.home_team)
+        away_key = await self._stats_key(match.away_team)
 
         positions = {entry.team: entry.position for entry in table}
         before = day_bounds(match.match_date.astimezone(UTC).date())[0]
         home_h2h, away_h2h = await self.head_to_head(match.home_team, match.away_team, before)
         home_form = await self.team_performance(match.home_team, before)
         away_form = await self.team_performance(match.away_team, before)
-        # Table rows use stats_key (xref + strip FC/AFC); display keys stay xref.
-        home_position = positions.get(await self._stats_key(match.home_team))
-        away_position = positions.get(await self._stats_key(match.away_team))
+        home_position = positions.get(home_key)
+        away_position = positions.get(away_key)
         difficulty = await self.difficulty_for_match(match)
 
         return MatchDetail(
             id=match.id,
             home_team=match.home_team,
             away_team=match.away_team,
-            home_team_xref=home_xref,
-            away_team_xref=away_xref,
+            home_team_xref=home_key,
+            away_team_xref=away_key,
             league_position={
-                home_xref: home_position,
-                away_xref: away_position,
+                home_key: home_position,
+                away_key: away_position,
             },
             team_performance={
-                home_xref: home_form,
-                away_xref: away_form,
+                home_key: home_form,
+                away_key: away_form,
             },
             head_to_head={
-                home_xref: home_h2h,
-                away_xref: away_h2h,
+                home_key: home_h2h,
+                away_key: away_h2h,
             },
             difficulty=difficulty,
         )

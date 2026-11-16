@@ -2,8 +2,18 @@
 
 from datetime import UTC, date, datetime, timedelta
 
-from baked.superiorsix.domain.models import Match, MatchStatus
-from baked.superiorsix.services.leagues import build_league_table, season_label
+import anyio
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from tests.baked.superiorsix.tokens import auth_header, make_access_token
+
+from baked.superiorsix.api.team_names import display_from_map, identity_display
+from baked.superiorsix.domain.models import League, Match, MatchStatus
+from baked.superiorsix.repositories.leagues import SqlAlchemyLeagueRepository
+from baked.superiorsix.repositories.matches import SqlAlchemyMatchRepository
+from baked.superiorsix.services.ingest import MatchIngestService
+from baked.superiorsix.services.leagues import LeagueService, build_league_table, season_label
+from baked.superiorsix.services.matches import MatchService
 from baked.superiorsix.services.team_names import normalize_team_name, team_name_variants
 from baked.superiorsix.services.team_xref import stats_key_for
 
@@ -127,3 +137,86 @@ def test_build_league_table_elc_lookup_keys_align() -> None:
     assert stats_key_for("Watford", None) in positions
     assert stats_key_for("Leeds United", None) in positions
     assert positions[stats_key_for("Sheffield Wednesday FC", None)] == "1"
+
+
+def test_display_matches_stats_key() -> None:
+    """App labels use the same key as standings (xref then FC/AFC strip)."""
+    assert identity_display("Arsenal FC") == "Arsenal"
+    assert identity_display("Sunderland AFC") == "Sunderland"
+    show = display_from_map({"Arsenal FC": "Arsenal FC", "Man Utd": "Manchester United"})
+    assert show("Arsenal FC") == "Arsenal"
+    assert show("Man Utd") == "Manchester United"
+    assert show("Chelsea FC") == "Chelsea"
+
+
+def test_livematches_shows_normalized_names_without_xref(client: TestClient) -> None:
+    """List payloads remap home/away via stats_key even with an empty team_xref."""
+
+    async def seed(session_factory: async_sessionmaker[AsyncSession]) -> tuple[int, date]:
+        async with session_factory() as session:
+            leagues = LeagueService(
+                SqlAlchemyLeagueRepository(session),
+                SqlAlchemyMatchRepository(session),
+            )
+            matches = MatchService(SqlAlchemyMatchRepository(session), leagues)
+            ingest = MatchIngestService(matches, leagues)
+            day = date.today() + timedelta(days=14)
+            season_start_year = day.year if day.month >= 8 else day.year - 1
+            league = await ingest.upsert_league(
+                League(
+                    name="Premier League",
+                    code="PL",
+                    start_date=date(season_start_year, 8, 1),
+                )
+            )
+            assert league.id is not None
+            fixture = await ingest.upsert_match(
+                Match(
+                    external_id="pl-fc-display",
+                    league_id=league.id,
+                    match_date=_kickoff(day),
+                    status=MatchStatus.SCHEDULED,
+                    home_team="Arsenal FC",
+                    away_team="Chelsea FC",
+                )
+            )
+            assert fixture.id is not None
+            return fixture.id, day
+
+    fixture_id, day = anyio.run(seed, client.app.state.session_factory)
+    token, _ = make_access_token(roles=["admin"])
+    headers = auth_header(token)
+    opened = client.post(
+        "/admin/addround",
+        headers=headers,
+        json={"start_date": date.today().isoformat(), "buy_in_pence": 100},
+    )
+    assert opened.status_code == 200, opened.text
+    selected = client.post(
+        "/admin/addmatch",
+        headers=headers,
+        json={"id": fixture_id, "game_number": 1},
+    )
+    assert selected.status_code == 200, selected.text
+    # Admin list also remaps via load_display.
+    assert selected.json()["home_team"] == "Arsenal"
+    assert selected.json()["away_team"] == "Chelsea"
+
+    live = client.get(
+        "/game/livematches",
+        params={"matchDate": day.strftime("%d-%m-%Y")},
+    )
+    assert live.status_code == 200, live.text
+    row = live.json()["matches"][0]
+    assert row["home_team"] == "Arsenal"
+    assert row["away_team"] == "Chelsea"
+
+    detail = client.get("/game/matchdetail", params={"id": fixture_id})
+    assert detail.status_code == 200, detail.text
+    body = detail.json()["match_detail"]
+    # Provider strings stay on home_team; FE labels / map keys use *_xref.
+    assert body["home_team"] == "Arsenal FC"
+    assert body["away_team"] == "Chelsea FC"
+    assert body["home_team_xref"] == "Arsenal"
+    assert body["away_team_xref"] == "Chelsea"
+    assert set(body["league_position"]) == {"Arsenal", "Chelsea"}

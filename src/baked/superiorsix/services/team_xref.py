@@ -21,48 +21,34 @@ class TeamXrefService:
         return {row.team_name: row.xref for row in await self._team_xref.list()}
 
     async def canonical(self, name: str) -> str:
-        """Return the display xref for ``name``, or a normalized form when unmapped."""
-        row = await self._team_xref.get(name)
-        if row is not None:
-            return row.xref
-        # Also accept lookups that only differ by a trailing FC / AFC.
-        normalized = normalize_team_name(name)
-        if normalized != name:
-            row = await self._team_xref.get(normalized)
-            if row is not None:
-                return row.xref
-            for suffix in (" FC", " AFC"):
-                row = await self._team_xref.get(f"{normalized}{suffix}")
-                if row is not None:
-                    return row.xref
-        return normalized
+        """Display / stats identity: xref map, then strip trailing ``FC`` / ``AFC``."""
+        return await self.stats_key(name)
 
     async def display(self, name: str) -> str:
-        """FE label for a provider team name (same as ``canonical``)."""
-        return await self.canonical(name)
+        """FE label for a provider team name (same as ``stats_key``)."""
+        return await self.stats_key(name)
 
     async def stats_key(self, name: str, team_canonical: Mapping[str, str] | None = None) -> str:
-        """League-table / position identity for ``name``.
+        """League-table / position / display identity for ``name``.
 
         Applies ``team_xref`` when present, then strips trailing ``FC`` / ``AFC``
-        so Flashscore-style short names and football-data long names share a row.
+        so Flashscore-style short names and football-data long names share a key.
+        Stored match rows keep the original API spelling; this is read-path only.
         """
         mapping = team_canonical if team_canonical is not None else await self.as_map()
         return stats_key_for(name, mapping)
 
     async def aliases(self, name: str) -> list[str]:
         """All provider names that share ``name``'s stats identity (includes ``name``)."""
-        key = await self.canonical(name)
+        key = await self.stats_key(name)
         names = set(team_name_variants(name)) | set(team_name_variants(key))
-        for row in await self._team_xref.list_by_xref(key):
-            names.update(team_name_variants(row.team_name))
-            names.add(row.xref)
-        # Xref values may themselves be long-form; pull rows keyed by normalized display.
-        stats = normalize_team_name(key)
-        if stats != key:
-            for row in await self._team_xref.list_by_xref(stats):
+        # Xref column may still hold long-form labels; probe both key and variants.
+        xref_keys = {key, *team_name_variants(key)}
+        for xref in xref_keys:
+            for row in await self._team_xref.list_by_xref(xref):
                 names.update(team_name_variants(row.team_name))
                 names.add(row.xref)
+                names.add(normalize_team_name(row.xref))
         return sorted(names)
 
     async def upsert(self, mapping: TeamXref) -> TeamXref:

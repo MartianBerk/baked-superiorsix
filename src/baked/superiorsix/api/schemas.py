@@ -91,7 +91,7 @@ class AvailableMatchesResponse(BaseModel):
 
 
 class MatchDetailPayload(BaseModel):
-    """Match expand payload. FE shows ``*_xref``; provider names stay for joins."""
+    """Match expand payload. FE shows ``*_xref`` (stats/display key); provider names stay raw."""
 
     id: int
     home_team: str
