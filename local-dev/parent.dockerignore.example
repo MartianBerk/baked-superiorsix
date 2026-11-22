@@ -1,0 +1,25 @@
+# Optional: copy to the parent of the sibling checkouts as `.dockerignore`
+# (same directory that contains baked-superiorsix/, baked-auth/, …) to shrink
+# the `context: ../..` upload. Not required for correctness.
+#
+#   cp parent.dockerignore.example ../../.dockerignore
+
+**/.git
+**/__pycache__
+**/*.pyc
+**/.venv
+**/node_modules
+**/.expo
+**/dist
+**/build
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/coverage
+**/.coverage
+
+# Other checkouts often living next to the baked-* stack (exclude if present)
+baked-devops
+baked-superiorsix-app
+supersix
+supersixapp
