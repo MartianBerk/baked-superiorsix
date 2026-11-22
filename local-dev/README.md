@@ -16,13 +16,31 @@ parent/
   baked-superiorsix/     ← you are here (local-dev/)
   baked-auth/
   baked-user/
+  baked-auth-client/     ← required for image builds (path install)
   baked-superiorsix-app/ ← Expo / optional nginx on :8040
 ```
 
-Build contexts: `../../baked-auth`, `../../baked-user`, and `..` (this repo).
+Build context for every service is **`../..`** (the `parent/` directory above).
+Dockerfiles live under **`local-dev/dockerfiles/`** and `COPY` from
+`baked-auth/`, `baked-user/`, `baked-superiorsix/`, and `baked-auth-client/`
+relative to that parent. This avoids Compose `additional_contexts` (which
+older Compose rejects with `Additional property additional_contexts is not
+allowed`).
 
-Root `docker-compose.yml` still builds **only** the superiorsix image for
-standalone rebuilds; use this `local-dev/` stack for the full backend.
+Those local Dockerfiles install the sibling client as a Poetry **path**
+package, so:
+
+- no `BAKED_AUTH_CLIENT_GIT_TOKEN`
+- no GitHub clone of `baked-auth-client` during `docker compose build`
+- stale git branch pins in a sibling `pyproject.toml` (e.g. deleted
+  `cursor/app-scoped-roles-aud-f776` on baked-auth) do **not** matter here
+
+Prod / CI / published `pyproject.toml` git pins and service-root Dockerfiles
+are unchanged — they still use HTTPS git + PAT.
+
+Root `docker-compose.yml` still builds **only** the superiorsix image via the
+**service-root** Dockerfile (git + PAT). Use this `local-dev/` stack for the
+full backend without a token.
 
 ## Ports
 
@@ -40,12 +58,21 @@ Inter-service URLs inside the compose network use Docker DNS
 ```bash
 cd baked-superiorsix/local-dev
 cp .env.example .env
-# set BAKED_AUTH_CLIENT_GIT_TOKEN (PAT, Contents: Read on baked-auth-client)
-export BAKED_AUTH_CLIENT_GIT_TOKEN=…   # or leave it in .env for Compose
 # Keep CORS_ORIGINS / JWT_PREVIOUS_SECRET_KEYS single-quoted JSON strings in .env
+# No BAKED_AUTH_CLIENT_GIT_TOKEN needed.
 
 docker compose up --build
 ```
+
+### Docker / Compose versions
+
+- Works with **Docker Compose V2** that ships with Docker Desktop / Docker
+  Engine (no `additional_contexts` required).
+- BuildKit is the default on current Docker; the Dockerfiles use the
+  `# syntax=docker/dockerfile:1` directive. If builds look stuck on the
+  legacy builder, set `DOCKER_BUILDKIT=1`.
+- Optional: copy `parent.dockerignore.example` to `../../.dockerignore` to
+  shrink the parent context upload when other large sibling folders exist.
 
 Health checks:
 
@@ -55,15 +82,25 @@ curl -s http://127.0.0.1:8020/health
 curl -s http://127.0.0.1:8030/health
 ```
 
+### Rebuild after editing baked-auth-client
+
+```bash
+docker compose build --no-cache
+docker compose up
+```
+
+The client is copied at **image build** time (not bind-mounted), so client
+source changes need a rebuild.
+
 ## Env (shared)
 
 | Variable | Purpose |
 |----------|---------|
-| `BAKED_AUTH_CLIENT_GIT_TOKEN` | BuildKit secret for private `baked-auth-client` git dep |
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
 | `AUTH_BOOTSTRAP_EMAIL` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for inviteplayer → `POST /v1/users` (`aud=auth`) |
 | `SUPERIORSIX_AUTH_ADMIN_EMAIL` / `PASSWORD` | Optional override for invite auth-admin (defaults nest to `AUTH_BOOTSTRAP_*`) |
+| `AUTH_ACCESS_TOKEN_EXPIRE_MINUTES` / `AUTH_REFRESH_TOKEN_EXPIRE_MINUTES` | Optional JWT TTLs (defaults ~3h access / ~31d refresh) |
 | `CORS_ORIGINS` | Expo web + optional `:8040` origins — **quote as JSON**: `CORS_ORIGINS='["http://localhost:8081",…]'` (unquoted `[…]` is mangled by Compose and crashes auth) |
 | `FOOTBALL_DATA_API_TOKEN` / `GOAL_API_KEY` | Optional match ingest |
 

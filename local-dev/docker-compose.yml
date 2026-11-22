@@ -1,24 +1,23 @@
 # Superior Six local Mac / Linux backend stack.
 # Expect sibling checkouts next to baked-superiorsix:
-#   ../baked-auth  ../baked-user
+#   ../baked-auth  ../baked-user  ../baked-auth-client
 #
 #   cp .env.example .env
-#   export BAKED_AUTH_CLIENT_GIT_TOKEN=…   # or put it in .env
 #   docker compose up --build
+#
+# Builds use context ../.. (parent of the sibling repos) + local-dev/dockerfiles/*
+# so baked-auth-client is installed from the sibling path (no PAT / no GitHub).
+# Does not use Compose additional_contexts (unsupported on older Compose).
 #
 # Host ports: auth 8010 · user 8020 · superiorsix 8030
 # Front end: run Expo on the host (baked-superiorsix-app) against these ports,
 # or that repo's own docker compose for an optional nginx container on :8040.
 
-x-build-auth-client: &build-auth-client
-  secrets:
-    - baked_auth_client_git_token
-
 services:
   baked-auth:
     build:
-      context: ../../baked-auth
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-auth
     image: baked-auth:local-dev
     container_name: baked-auth
     ports:
@@ -29,7 +28,8 @@ services:
       AUTH_JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       AUTH_JWT_KEY_ID: ${JWT_KEY_ID:-}
       AUTH_JWT_PREVIOUS_SECRET_KEYS: ${JWT_PREVIOUS_SECRET_KEYS:-'[]'}
-      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-44640}
+      AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: ${AUTH_ACCESS_TOKEN_EXPIRE_MINUTES:-180}
+      AUTH_REFRESH_TOKEN_EXPIRE_MINUTES: ${AUTH_REFRESH_TOKEN_EXPIRE_MINUTES:-44640}
       AUTH_DEFAULT_AUDIENCE: ${AUTH_DEFAULT_AUDIENCE:-}
       # Default is a quoted JSON string so Compose does not expand [...] as a list.
       AUTH_CORS_ORIGINS: ${CORS_ORIGINS:-'["http://localhost:8081","http://127.0.0.1:8081","http://localhost:19006","http://127.0.0.1:19006","http://localhost:8040","http://127.0.0.1:8040","http://localhost:3000"]'}
@@ -54,8 +54,8 @@ services:
 
   baked-user:
     build:
-      context: ../../baked-user
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-user
     image: baked-user:local-dev
     container_name: baked-user
     depends_on:
@@ -93,8 +93,8 @@ services:
 
   baked-superiorsix:
     build:
-      context: ..
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-superiorsix
     image: baked-superiorsix:local-dev
     container_name: baked-superiorsix
     depends_on:
@@ -139,10 +139,6 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
-
-secrets:
-  baked_auth_client_git_token:
-    environment: BAKED_AUTH_CLIENT_GIT_TOKEN
 
 volumes:
   baked-auth-data:
