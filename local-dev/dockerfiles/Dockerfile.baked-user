@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Local-dev only. Build context is the parent of the sibling checkouts
-# (../.. from local-dev/). Installs baked-auth-client from the sibling
-# path (no GitHub / no PAT). Prod/CI keep the service-root Dockerfile + git pin.
+# Local-dev only. Installs baked-auth-client from a sibling checkout via
+# BuildKit additional context (no GitHub / no PAT). Prod/CI keep the
+# service-root Dockerfile + git pin.
 
 FROM python:3.12.3-slim-bookworm
 
@@ -19,11 +19,11 @@ RUN apt-get update \
 
 RUN pip install --no-cache-dir "poetry>=2.0,<3.0"
 
-# Sibling trees from parent build context (no additional_contexts).
-COPY baked-auth-client/pyproject.toml baked-auth-client/README.md /vendor/baked-auth-client/
-COPY baked-auth-client/src /vendor/baked-auth-client/src
+# Sibling tree from compose additional_contexts.baked_auth_client
+COPY --from=baked_auth_client pyproject.toml README.md /vendor/baked-auth-client/
+COPY --from=baked_auth_client src /vendor/baked-auth-client/src
 
-COPY baked-user/pyproject.toml baked-user/poetry.lock baked-user/poetry.toml baked-user/README.md ./
+COPY pyproject.toml poetry.lock poetry.toml README.md ./
 
 # Replace the published git pin with a path dep.
 RUN python3 <<'PY'
@@ -49,8 +49,8 @@ RUN poetry update baked-auth-client --lock --no-interaction --no-ansi
 
 RUN poetry install --only main --no-root --no-interaction --no-ansi
 
-COPY baked-user/src ./src
-COPY baked-user/config ./config
+COPY src ./src
+COPY config ./config
 RUN poetry install --only main --no-interaction --no-ansi
 
 EXPOSE 8020

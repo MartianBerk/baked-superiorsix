@@ -20,15 +20,12 @@ parent/
   baked-superiorsix-app/ ← Expo / optional nginx on :8040
 ```
 
-Build context for every service is **`../..`** (the `parent/` directory above).
-Dockerfiles live under **`local-dev/dockerfiles/`** and `COPY` from
-`baked-auth/`, `baked-user/`, `baked-superiorsix/`, and `baked-auth-client/`
-relative to that parent. This avoids Compose `additional_contexts` (which
-older Compose rejects with `Additional property additional_contexts is not
-allowed`).
+Build contexts: `../../baked-auth`, `../../baked-user`, `..` (this repo), plus
+BuildKit **additional context** `baked_auth_client` → `../../baked-auth-client`.
 
-Those local Dockerfiles install the sibling client as a Poetry **path**
-package, so:
+Images are built from **`local-dev/dockerfiles/`** (not the service-root
+Dockerfiles). Those local Dockerfiles `COPY` the sibling client tree and
+install it as a Poetry **path** package, so:
 
 - no `BAKED_AUTH_CLIENT_GIT_TOKEN`
 - no GitHub clone of `baked-auth-client` during `docker compose build`
@@ -61,18 +58,12 @@ cp .env.example .env
 # Keep CORS_ORIGINS / JWT_PREVIOUS_SECRET_KEYS single-quoted JSON strings in .env
 # No BAKED_AUTH_CLIENT_GIT_TOKEN needed.
 
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
 docker compose up --build
 ```
 
-### Docker / Compose versions
-
-- Works with **Docker Compose V2** that ships with Docker Desktop / Docker
-  Engine (no `additional_contexts` required).
-- BuildKit is the default on current Docker; the Dockerfiles use the
-  `# syntax=docker/dockerfile:1` directive. If builds look stuck on the
-  legacy builder, set `DOCKER_BUILDKIT=1`.
-- Optional: copy `parent.dockerignore.example` to `../../.dockerignore` to
-  shrink the parent context upload when other large sibling folders exist.
+Requires Docker BuildKit (Compose v2 defaults are fine on recent Docker Desktop).
 
 Health checks:
 
