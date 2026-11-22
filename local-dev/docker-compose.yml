@@ -5,24 +5,19 @@
 #   cp .env.example .env
 #   docker compose up --build
 #
-# Builds use local-dev/dockerfiles/* + BuildKit additional_contexts so
-# baked-auth-client is installed from the sibling path (no PAT / no GitHub).
+# Builds use context ../.. (parent of the sibling repos) + local-dev/dockerfiles/*
+# so baked-auth-client is installed from the sibling path (no PAT / no GitHub).
+# Does not use Compose additional_contexts (unsupported on older Compose).
 #
 # Host ports: auth 8010 · user 8020 · superiorsix 8030
 # Front end: run Expo on the host (baked-superiorsix-app) against these ports,
 # or that repo's own docker compose for an optional nginx container on :8040.
 
-x-build-auth-client: &build-auth-client
-  additional_contexts:
-    baked_auth_client: ../../baked-auth-client
-
 services:
   baked-auth:
     build:
-      context: ../../baked-auth
-      # Path relative to this service build context (sibling layout).
-      dockerfile: ../baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-auth
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-auth
     image: baked-auth:local-dev
     container_name: baked-auth
     ports:
@@ -59,9 +54,8 @@ services:
 
   baked-user:
     build:
-      context: ../../baked-user
-      dockerfile: ../baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-user
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-user
     image: baked-user:local-dev
     container_name: baked-user
     depends_on:
@@ -99,9 +93,8 @@ services:
 
   baked-superiorsix:
     build:
-      context: ..
-      dockerfile: local-dev/dockerfiles/Dockerfile.baked-superiorsix
-      <<: *build-auth-client
+      context: ../..
+      dockerfile: baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-superiorsix
     image: baked-superiorsix:local-dev
     container_name: baked-superiorsix
     depends_on:
