@@ -1,23 +1,27 @@
 # Superior Six local Mac / Linux backend stack.
 # Expect sibling checkouts next to baked-superiorsix:
-#   ../baked-auth  ../baked-user
+#   ../baked-auth  ../baked-user  ../baked-auth-client
 #
 #   cp .env.example .env
-#   export BAKED_AUTH_CLIENT_GIT_TOKEN=…   # or put it in .env
 #   docker compose up --build
+#
+# Builds use local-dev/dockerfiles/* + BuildKit additional_contexts so
+# baked-auth-client is installed from the sibling path (no PAT / no GitHub).
 #
 # Host ports: auth 8010 · user 8020 · superiorsix 8030
 # Front end: run Expo on the host (baked-superiorsix-app) against these ports,
 # or that repo's own docker compose for an optional nginx container on :8040.
 
 x-build-auth-client: &build-auth-client
-  secrets:
-    - baked_auth_client_git_token
+  additional_contexts:
+    baked_auth_client: ../../baked-auth-client
 
 services:
   baked-auth:
     build:
       context: ../../baked-auth
+      # Path relative to this service build context (sibling layout).
+      dockerfile: ../baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-auth
       <<: *build-auth-client
     image: baked-auth:local-dev
     container_name: baked-auth
@@ -56,6 +60,7 @@ services:
   baked-user:
     build:
       context: ../../baked-user
+      dockerfile: ../baked-superiorsix/local-dev/dockerfiles/Dockerfile.baked-user
       <<: *build-auth-client
     image: baked-user:local-dev
     container_name: baked-user
@@ -95,6 +100,7 @@ services:
   baked-superiorsix:
     build:
       context: ..
+      dockerfile: local-dev/dockerfiles/Dockerfile.baked-superiorsix
       <<: *build-auth-client
     image: baked-superiorsix:local-dev
     container_name: baked-superiorsix
@@ -140,10 +146,6 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
-
-secrets:
-  baked_auth_client_git_token:
-    environment: BAKED_AUTH_CLIENT_GIT_TOKEN
 
 volumes:
   baked-auth-data:

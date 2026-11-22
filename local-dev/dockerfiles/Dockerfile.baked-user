@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1
+# Local-dev only. Installs baked-auth-client from a sibling checkout via
+# BuildKit additional context (no GitHub / no PAT). Prod/CI keep the
+# service-root Dockerfile + git pin.
+
+FROM python:3.12.3-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_VIRTUALENVS_CREATE=false \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_NO_ANSI=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir "poetry>=2.0,<3.0"
+
+# Sibling tree from compose additional_contexts.baked_auth_client
+COPY --from=baked_auth_client pyproject.toml README.md /vendor/baked-auth-client/
+COPY --from=baked_auth_client src /vendor/baked-auth-client/src
+
+COPY pyproject.toml poetry.lock poetry.toml README.md ./
+
+# Replace the published git pin with a path dep.
+RUN python3 <<'PY'
+from pathlib import Path
+import re
+
+path = Path("pyproject.toml")
+text = path.read_text()
+new, n = re.subn(
+    r"^baked-auth-client\s*=\s*\{[^}\n]*\}\s*$",
+    'baked-auth-client = { path = "/vendor/baked-auth-client", develop = false }',
+    text,
+    count=1,
+    flags=re.M,
+)
+if n != 1:
+    raise SystemExit(f"expected to rewrite exactly one baked-auth-client dep, got {n}")
+path.write_text(new)
+PY
+
+# Refresh only that package in the lock (directory source; no git clone).
+RUN poetry update baked-auth-client --lock --no-interaction --no-ansi
+
+RUN poetry install --only main --no-root --no-interaction --no-ansi
+
+COPY src ./src
+COPY config ./config
+RUN poetry install --only main --no-interaction --no-ansi
+
+EXPOSE 8020
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+
+CMD ["uvicorn", "baked.user.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

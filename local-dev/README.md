@@ -16,13 +16,28 @@ parent/
   baked-superiorsix/     ← you are here (local-dev/)
   baked-auth/
   baked-user/
+  baked-auth-client/     ← required for image builds (path install)
   baked-superiorsix-app/ ← Expo / optional nginx on :8040
 ```
 
-Build contexts: `../../baked-auth`, `../../baked-user`, and `..` (this repo).
+Build contexts: `../../baked-auth`, `../../baked-user`, `..` (this repo), plus
+BuildKit **additional context** `baked_auth_client` → `../../baked-auth-client`.
 
-Root `docker-compose.yml` still builds **only** the superiorsix image for
-standalone rebuilds; use this `local-dev/` stack for the full backend.
+Images are built from **`local-dev/dockerfiles/`** (not the service-root
+Dockerfiles). Those local Dockerfiles `COPY` the sibling client tree and
+install it as a Poetry **path** package, so:
+
+- no `BAKED_AUTH_CLIENT_GIT_TOKEN`
+- no GitHub clone of `baked-auth-client` during `docker compose build`
+- stale git branch pins in a sibling `pyproject.toml` (e.g. deleted
+  `cursor/app-scoped-roles-aud-f776` on baked-auth) do **not** matter here
+
+Prod / CI / published `pyproject.toml` git pins and service-root Dockerfiles
+are unchanged — they still use HTTPS git + PAT.
+
+Root `docker-compose.yml` still builds **only** the superiorsix image via the
+**service-root** Dockerfile (git + PAT). Use this `local-dev/` stack for the
+full backend without a token.
 
 ## Ports
 
@@ -40,12 +55,15 @@ Inter-service URLs inside the compose network use Docker DNS
 ```bash
 cd baked-superiorsix/local-dev
 cp .env.example .env
-# set BAKED_AUTH_CLIENT_GIT_TOKEN (PAT, Contents: Read on baked-auth-client)
-export BAKED_AUTH_CLIENT_GIT_TOKEN=…   # or leave it in .env for Compose
 # Keep CORS_ORIGINS / JWT_PREVIOUS_SECRET_KEYS single-quoted JSON strings in .env
+# No BAKED_AUTH_CLIENT_GIT_TOKEN needed.
 
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
 docker compose up --build
 ```
+
+Requires Docker BuildKit (Compose v2 defaults are fine on recent Docker Desktop).
 
 Health checks:
 
@@ -55,11 +73,20 @@ curl -s http://127.0.0.1:8020/health
 curl -s http://127.0.0.1:8030/health
 ```
 
+### Rebuild after editing baked-auth-client
+
+```bash
+docker compose build --no-cache
+docker compose up
+```
+
+The client is copied at **image build** time (not bind-mounted), so client
+source changes need a rebuild.
+
 ## Env (shared)
 
 | Variable | Purpose |
 |----------|---------|
-| `BAKED_AUTH_CLIENT_GIT_TOKEN` | BuildKit secret for private `baked-auth-client` git dep |
 | `JWT_SECRET` | Shared HS256 secret → `AUTH_` / `USER_` / `SUPERIORSIX_JWT_SECRET_KEY` |
 | `USER_JWT_AUDIENCE` / `SUPERIORSIX_JWT_AUDIENCE` | Must be `superiorsix` (JWT `aud`) |
 | `AUTH_BOOTSTRAP_EMAIL` / `AUTH_BOOTSTRAP_PASSWORD` | Deploy-time auth admin (CLI); also wired into superiorsix for inviteplayer → `POST /v1/users` (`aud=auth`) |
